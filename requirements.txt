@@ -1,0 +1,4 @@
+Cython
+PySide6
+xmltodict
+setuptools

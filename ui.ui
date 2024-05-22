@@ -1,0 +1,878 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CDIGradingTool</class>
+ <widget class="QMainWindow" name="CDIGradingTool">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>959</width>
+    <height>477</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Circular Drive Initiative | Grading Tool</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">		QMainWindow {
+            background-color: #ffffff;
+            color: #000000;
+            selection-background-color: #5cb85c;
+            selection-color: #000000;
+        }</string>
+  </property>
+  <widget class="QWidget" name="erase_it_central_widget">
+   <property name="styleSheet">
+    <string notr="true"/>
+   </property>
+   <layout class="QGridLayout" name="gridLayout">
+    <item row="0" column="0">
+     <layout class="QHBoxLayout" name="header_layout">
+      <item>
+       <widget class="QLabel" name="logo_lbl">
+        <property name="maximumSize">
+         <size>
+          <width>175</width>
+          <height>100</height>
+         </size>
+        </property>
+        <property name="autoFillBackground">
+         <bool>false</bool>
+        </property>
+        <property name="frameShadow">
+         <enum>QFrame::Plain</enum>
+        </property>
+        <property name="lineWidth">
+         <number>0</number>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="textFormat">
+         <enum>Qt::AutoText</enum>
+        </property>
+        <property name="pixmap">
+         <pixmap>assets/images/cdi.png</pixmap>
+        </property>
+        <property name="scaledContents">
+         <bool>true</bool>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+        <property name="textInteractionFlags">
+         <set>Qt::NoTextInteraction</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="header_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QLabel" name="devices_count">
+        <property name="styleSheet">
+         <string notr="true">color: #3b7351;</string>
+        </property>
+        <property name="text">
+         <string>Devices: 0</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="jobs_count">
+        <property name="styleSheet">
+         <string notr="true">color: #3b7351;</string>
+        </property>
+        <property name="text">
+         <string>Jobs: 0</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item row="2" column="0">
+     <layout class="QHBoxLayout" name="header_layout_2">
+      <item>
+       <widget class="QPushButton" name="power_button">
+        <property name="styleSheet">
+         <string notr="true"> background-color: #914343;
+ color: #fff;</string>
+        </property>
+        <property name="text">
+         <string>Exit</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="settings_button">
+        <property name="styleSheet">
+         <string notr="true">background-color: #3b7351;
+color: rgb(255, 255, 255);</string>
+        </property>
+        <property name="text">
+         <string>Settings</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="manual_button">
+        <property name="styleSheet">
+         <string notr="true">background-color: #3b7351;
+color: rgb(255, 255, 255);</string>
+        </property>
+        <property name="text">
+         <string>Manual</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="about_button">
+        <property name="styleSheet">
+         <string notr="true">background-color: #3b7351;
+color: rgb(255, 255, 255);</string>
+        </property>
+        <property name="text">
+         <string>About</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="header_spacer_2">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QLabel" name="time_label">
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item row="1" column="0">
+     <widget class="QTabWidget" name="tab_widget">
+      <property name="styleSheet">
+       <string notr="true">	QTabWidget::pane {
+        border: none;
+        border-bottom-left-radius: 4px;
+        border-bottom-right-radius: 4px;
+        background-color: 	#3e6071;
+        
+    }
+    
+    QTabWidget::tab-bar {
+        spacing: 5px;
+    }
+    
+    QTabBar::tab {
+        background-color:  #9298a6;
+        border-top-left-radius: 3px;
+        border-top-right-radius: 3px;
+        padding: 6px 8px;
+        margin: 0;
+        color: #fff;
+        font-size: 14px;
+    }
+    
+    QTabBar::tab:selected, QTabBar::tab:hover {
+        background-color: #3e6071;
+	 	 margin-left: 1px; 
+    }
+    
+    QTabBar::tab:!selected {
+        margin-top: 2px; 
+		 margin-left: 1px; 
+    }
+    
+    QTabBar::tab:first {
+        margin-left: 0; 
+    }</string>
+      </property>
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <property name="iconSize">
+       <size>
+        <width>20</width>
+        <height>20</height>
+       </size>
+      </property>
+      <widget class="QWidget" name="tab">
+       <attribute name="icon">
+        <iconset>
+         <normaloff>assets/images/hdd-tick.png</normaloff>assets/images/hdd-tick.png</iconset>
+       </attribute>
+       <attribute name="title">
+        <string>DEVICES</string>
+       </attribute>
+       <layout class="QGridLayout" name="gridLayout_4">
+        <item row="0" column="0">
+         <layout class="QHBoxLayout" name="devices_actions_layout">
+          <item>
+           <widget class="QPushButton" name="refresh_devices_button">
+            <property name="styleSheet">
+             <string notr="true"/>
+            </property>
+            <property name="text">
+             <string>Refresh</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="process_all_button">
+            <property name="styleSheet">
+             <string notr="true"/>
+            </property>
+            <property name="text">
+             <string>Grade All</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="process_selected_button">
+            <property name="styleSheet">
+             <string notr="true"/>
+            </property>
+            <property name="text">
+             <string>Grade Selected</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="hexview_selected_button">
+            <property name="styleSheet">
+             <string notr="true"/>
+            </property>
+            <property name="text">
+             <string>Hex</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="blink_selected_button">
+            <property name="styleSheet">
+             <string notr="true"/>
+            </property>
+            <property name="text">
+             <string>Blink</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="devices_actions_spacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="filter_button">
+            <property name="styleSheet">
+             <string notr="true"/>
+            </property>
+            <property name="text">
+             <string>Filter</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="devices_search_field">
+            <property name="placeholderText">
+             <string>Search for Devices...</string>
+            </property>
+            <property name="clearButtonEnabled">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item row="1" column="0">
+         <layout class="QGridLayout" name="devices_layout">
+          <item row="0" column="0">
+           <widget class="QTableWidget" name="devices_table">
+            <property name="focusPolicy">
+             <enum>Qt::NoFocus</enum>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">QTableWidget {
+        background-color: #fff; /* White background */
+        border: 1px solid #dee2e6; /* Light gray border */
+        border-radius: 4px;
+        color: #000;
+    }
+
+    QTableWidget QHeaderView::section,
+    QTableWidget::verticalHeader {
+        background-color: #f8f9fa;
+        color: #495057; 
+        border: none;
+		border-bottom: 1px solid #d3d3d3;
+        padding: 3px;
+        font-size: 12px;
+		font-weight: bold;
+    }
+
+    QTableWidget::item:selected {
+        background-color: #3d9970; 
+        color: #fff;
+    }</string>
+            </property>
+            <property name="selectionMode">
+             <enum>QAbstractItemView::ExtendedSelection</enum>
+            </property>
+            <property name="selectionBehavior">
+             <enum>QAbstractItemView::SelectRows</enum>
+            </property>
+            <property name="textElideMode">
+             <enum>Qt::ElideNone</enum>
+            </property>
+            <property name="sortingEnabled">
+             <bool>false</bool>
+            </property>
+            <attribute name="horizontalHeaderCascadingSectionResizes">
+             <bool>true</bool>
+            </attribute>
+            <attribute name="horizontalHeaderShowSortIndicator" stdset="0">
+             <bool>false</bool>
+            </attribute>
+            <attribute name="horizontalHeaderStretchLastSection">
+             <bool>true</bool>
+            </attribute>
+            <attribute name="verticalHeaderVisible">
+             <bool>false</bool>
+            </attribute>
+            <row/>
+            <column>
+             <property name="text">
+              <string>#</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>DUT</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>STATE</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>TYPE</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>TRAN</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>VENDOR</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>MODEL NUMBER</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>SERIAL NUMBER</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>F/W</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>GB</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>B/S</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>PoH</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>SMART</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>GRADE</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>HEALTH</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>REMARKS</string>
+             </property>
+            </column>
+            <item row="0" column="0">
+             <property name="text">
+              <string>1</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="1">
+             <property name="text">
+              <string>/dev/sda</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="2">
+             <property name="text">
+              <string>Ready</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="3">
+             <property name="text">
+              <string>HDD</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="4">
+             <property name="text">
+              <string>ATA</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="5">
+             <property name="text">
+              <string>SEAGATE</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="6">
+             <property name="text">
+              <string>ST1000NM0095-2DC10C</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="7">
+             <property name="text">
+              <string>ZBS0HSJW</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="8">
+             <property name="text">
+              <string>DB34</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="9">
+             <property name="text">
+              <string>1000 GB</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="10">
+             <property name="text">
+              <string>512 BPS</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="11">
+             <property name="text">
+              <string>1024768</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="12">
+             <property name="text">
+              <string>PASS</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="14">
+             <property name="text">
+              <string>OK</string>
+             </property>
+             <property name="textAlignment">
+              <set>AlignCenter</set>
+             </property>
+            </item>
+            <item row="0" column="15">
+             <property name="text">
+              <string>Sanitize supported, Can IEEE Purge, Can NIST Purge</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tab_2">
+       <attribute name="icon">
+        <iconset>
+         <normaloff>assets/images/jobs.png</normaloff>assets/images/jobs.png</iconset>
+       </attribute>
+       <attribute name="title">
+        <string>JOBS</string>
+       </attribute>
+       <layout class="QGridLayout" name="gridLayout_3">
+        <item row="0" column="0">
+         <layout class="QHBoxLayout" name="devices_actions_layout_2">
+          <item>
+           <widget class="QPushButton" name="refresh_devices_button_2">
+            <property name="text">
+             <string>Clear Completed</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="devices_actions_spacer_2">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <spacer name="horizontalSpacer_3">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="devices_search_label_2">
+            <property name="text">
+             <string>Search Jobs</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="jobs_search_field"/>
+          </item>
+         </layout>
+        </item>
+        <item row="1" column="0">
+         <layout class="QGridLayout" name="devices_layout_2">
+          <item row="0" column="0">
+           <widget class="QTableWidget" name="jobs_table">
+            <property name="focusPolicy">
+             <enum>Qt::NoFocus</enum>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">QTableWidget {
+        background-color: #fff; /* White background */
+        border: 1px solid #dee2e6; /* Light gray border */
+        border-radius: 4px;
+        color: #000;
+    }
+
+    QTableWidget QHeaderView::section,
+    QTableWidget::verticalHeader {
+        background-color: #f8f9fa;
+        color: #495057; 
+        border: none;
+		border-bottom: 1px solid #d3d3d3;
+        padding: 3px;
+        font-size: 12px;
+		font-weight: bold;
+    }
+
+    QTableWidget::item:selected {
+        background-color: #3d9970; 
+        color: #fff;
+    }</string>
+            </property>
+            <property name="selectionMode">
+             <enum>QAbstractItemView::ContiguousSelection</enum>
+            </property>
+            <property name="selectionBehavior">
+             <enum>QAbstractItemView::SelectRows</enum>
+            </property>
+            <property name="rowCount">
+             <number>0</number>
+            </property>
+            <attribute name="horizontalHeaderCascadingSectionResizes">
+             <bool>true</bool>
+            </attribute>
+            <attribute name="horizontalHeaderShowSortIndicator" stdset="0">
+             <bool>true</bool>
+            </attribute>
+            <attribute name="horizontalHeaderStretchLastSection">
+             <bool>true</bool>
+            </attribute>
+            <attribute name="verticalHeaderVisible">
+             <bool>false</bool>
+            </attribute>
+            <column>
+             <property name="text">
+              <string>DUT</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>MODEL NUMBER</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>SERIAL NUMBER</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>GB</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>STATE</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>PROGRESS</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>RESULT</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>GRADE</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>REMARKS</string>
+             </property>
+            </column>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tab_3">
+       <attribute name="icon">
+        <iconset>
+         <normaloff>assets/images/certificate.png</normaloff>assets/images/certificate.png</iconset>
+       </attribute>
+       <attribute name="title">
+        <string>REPORTS</string>
+       </attribute>
+       <layout class="QGridLayout" name="gridLayout_2">
+        <item row="0" column="0">
+         <layout class="QHBoxLayout" name="horizontalLayout">
+          <item>
+           <widget class="QPushButton" name="pushButton_2">
+            <property name="text">
+             <string>Customize</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="Line" name="line">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="pushButton_3">
+            <property name="text">
+             <string>Open</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="pushButton_4">
+            <property name="text">
+             <string>Export</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="horizontalSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="label">
+            <property name="text">
+             <string>Search</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="lineEdit"/>
+          </item>
+         </layout>
+        </item>
+        <item row="1" column="0">
+         <widget class="QListWidget" name="listWidget"/>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tab_4">
+       <attribute name="icon">
+        <iconset>
+         <normaloff>assets/images/command.png</normaloff>assets/images/command.png</iconset>
+       </attribute>
+       <attribute name="title">
+        <string>CONSOLE</string>
+       </attribute>
+       <layout class="QGridLayout" name="gridLayout_7">
+        <item row="0" column="0">
+         <layout class="QGridLayout" name="gridLayout_6">
+          <item row="0" column="2">
+           <spacer name="horizontalSpacer_2">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item row="0" column="0">
+           <widget class="QPushButton" name="pushButton_8">
+            <property name="text">
+             <string>Run Command</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="3">
+           <widget class="QPushButton" name="pushButton">
+            <property name="text">
+             <string>Clear Console</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="lineEdit_2">
+            <property name="font">
+             <font>
+              <family>Sans</family>
+              <pointsize>11</pointsize>
+              <italic>false</italic>
+              <bold>false</bold>
+             </font>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="4">
+           <widget class="QPushButton" name="pushButton_9">
+            <property name="text">
+             <string>Export Console</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item row="1" column="0">
+         <widget class="QTextBrowser" name="textBrowser"/>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <action name="actionExit">
+   <property name="text">
+    <string>Exit</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
