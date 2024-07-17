@@ -262,7 +262,8 @@ class Device:
         self.seatools = SeaTools(device_id=self.dut_sg)
         self.smartctl = Smartctl(device_id=self.dut_sg)
 
-        # TODO - Add more tools?
+        # TODO - Add more tools? Remove tools? Do we only want Smartctl and Seatools for now?
+        # TODO - sg3-utils, nvme-cli, sedutil-cli
 
         # Outputs
         self.smartctl_json = None
@@ -270,6 +271,51 @@ class Device:
 
         # Initialize Device
         self.initialize()
+
+    def to_dict(self, redacted=False, pop=False):
+        """
+        To Dictionary
+        @return:
+        """
+
+        # Attributes to Modify
+        attributes_to_modify = [
+            'smartctl',
+            'seatools',
+            'sedutil',
+            'sgutils',
+            'hdsentinel',
+            'hdparm'
+        ]
+
+        # Object Copy
+        obj_dict = self.__dict__.copy()
+
+        # Modify Attributes
+        if redacted:
+            # For Attribute in Attributes to Modify
+            for attr in attributes_to_modify:
+                # If Attribute in Dict
+                if attr in obj_dict:
+                    # Amend to Redacted
+                    obj_dict[attr] = "<redacted>"
+
+            # Return Copy
+            return obj_dict
+
+        # If Pop Attribute
+        if pop:
+            # For Attribute in Attributes to Modify
+            for attr in attributes_to_modify:
+                # If Attribute in Dict
+                if attr in obj_dict:
+                    # Amend to Popped
+                    del obj_dict[attr]
+
+            # Return Copy
+            return obj_dict
+
+        return obj_dict
 
     def initialize(self) -> None:
         """
@@ -351,6 +397,8 @@ class Device:
         Check Brand on Model Starts with
         :param model: the model number of the device
         :return: a brand if it exists
+        Todo - Add more known Model Numbers that start with XXX - helps with ATA devices that don't share a Vendor in the Model Number
+        Todo - See known_brands_list in constants.py
         """
 
         """
@@ -468,12 +516,12 @@ class Device:
 
         # Loop Brands
         for brand in known_brands_list:
-            # If Brand in Model
+            # If Brand in Model Number
             if brand in model:
-                # Return Model
+                # Return Model Number with the Brand removed
                 return model.replace(f"{brand} ", "")
 
-        # Return Model
+        # Return Model as is
         return model
 
     @property
@@ -1098,7 +1146,7 @@ class Devices:
         return True
 
     @staticmethod
-    def analyse_device(device_id: str) -> bool | Device:
+    def analyse_device(device_id: str):
         """
         Analyse Device
         :param device_id: Device ID
@@ -1108,7 +1156,7 @@ class Devices:
         # Try
         try:
             # Get Device
-            device = Device(device_id=device_id)
+            device = Device(device_id=device_id).to_dict(pop=True)
 
         # If CommandException
         except CommandException:

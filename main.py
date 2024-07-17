@@ -1,49 +1,41 @@
 """
-Circular Drive Initiative - Main
-
-@language    Python 3.12
-@framework   PySide 6
-@version     2.0.0
+Circular Drive Initiative
+@language Python 3.12
+@version 0.0.1
 """
 
 # Modules
-import sys
+import argparse
+import json
 
-# Circular Drive Initiative
-from CDI import CDIGradingTool
-
-# PySide6
-from PySide6.QtWidgets import QApplication
-
-# Exceptions
-from classes.exceptions import CDIException, ConfigurationException, SystemException
+# Classes
+from classes.devices import Devices
 
 # Main Function
 if __name__ == '__main__':
+    # Set Argument Parser
+    parser = argparse.ArgumentParser(description="CDI Grading Tool")
+    parser.add_argument('--verbose', action='store_true', help='Launch in Verbose Mode')
+    parser.add_argument('--ignore-ata', action='store_true', help='Ignore ATA devices when scanning for Devices')
+    parser.add_argument('--ignore-nvme', action='store_true', help='Ignore NVMe devices when scanning for Devices')
+    parser.add_argument('--ignore-scsi', action='store_true', help='Ignore SCSI devices when scanning for Devices')
+    parser.add_argument('--ignore-removable', action='store_true', help='Ignore USB/SD/MSD/MMC/eMMC devices when scanning for Devices')
+    parser.add_argument('--log-for-each', action='store_true', help='Generate a log for each Device found')
+    parser.add_argument('--json', action='store_true', help="Output the Data as JSON string")
 
-    # Try
-    try:
-        # Set Qt Application
-        app = QApplication(sys.argv)
+    # Parse Arguments
+    args = parser.parse_args()
 
-        # Load CDI Grading Tool
-        cdi_grading_tool = CDIGradingTool()
+    # Scan Devices
+    devices = Devices(
+        ignore_ata=args.ignore_ata,
+        ignore_nvme=args.ignore_nvme,
+        ignore_scsi=args.ignore_scsi,
+        ignore_removable=args.ignore_removable,
+    )
 
-        # Setup CDI Grading Tool
-        cdi_grading_tool.do_initial_setup()
+    # Convert Device to JSON String
+    devices_json = json.dumps(devices.devices, indent=4)
 
-        # Execute Qt Application
-        sys.exit(app.exec())
-
-    # Catch
-    except CDIException as exception:
-        # Exit
-        sys.exit(exception.message)
-    # Catch
-    except ConfigurationException as exception:
-        # Exit
-        sys.exit(exception.message)
-    # Catch
-    except SystemException as exception:
-        # Exit
-        sys.exit(exception.message)
+    # Print
+    print(devices_json)

@@ -1,9 +1,8 @@
 """
 Circular Drive Initiative - Toolkit Classes
 
-@language    Python 3.12
-@framework   PySide 6
-@version     0.0.1
+@language Python 3.12
+@version  0.0.1
 """
 
 # Modules
@@ -217,9 +216,6 @@ class HDSentinel:
         # Properties
         self.dut = device_id
 
-        # Create Logger
-        self.logger: Logger = Logger("hdsentinel", log_to_console=True, log_to_file=True, log_file_path="logs/hdsentinel")
-
     """
     Device Information Commands
     """
@@ -334,9 +330,6 @@ class SeaTools:
 
         # Device ID
         self.dut = device_id
-
-        # Create Logger
-        self.logger: Logger = Logger("seatools", log_to_console=True, log_to_file=True, log_file_path="logs/seatools")
 
     """
     Device Information Commands
@@ -583,9 +576,6 @@ class Smartctl:
             7: "S.M.A.R.T Self-test Log contains 1 or more record of failed self-tests",
         }
 
-        # Set Logger
-        self.logger: Logger = Logger("smartctl", log_to_console=True, log_to_file=True, log_file_path="logs/smartctl")
-
     """
     Helpers
     """
@@ -662,7 +652,8 @@ class Smartctl:
                 # Check if Bit is Set
                 if command.get_return_code() & (1 << bit_position):
                     # Print Error
-                    print(f"{self.dut} - {error_message}")
+                    # print(f"{self.dut} - {error_message}")
+                    pass
 
         # Return Smartctl Output as JSON
         return json.loads(command.get_output().strip().decode('utf-8'))
