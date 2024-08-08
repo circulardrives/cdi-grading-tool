@@ -19,6 +19,21 @@ This software requires the following to launch:
 
 #### Required 3rd Party Software
 ```sh
+# Install Pre-Requisites
+apt install wget gcc meson
+
+# nvme-cli - https://github.com/linux-nvme/nvme-cli
+apt install nvme-cli
+
+# sg3-utils - https://sg.danny.cz/sg/sg3_utils.html
+apt install sg3-utils
+
+# openseachest - https://github.com/Seagate/openSeaChest
+git clone --recurse-submodules --branch develop https://github.com/Seagate/openSeaChest.git openSeaChest-develop
+cd openSeahChest-develop
+meson --buildtype=release builddir
+ninja -C builddir
+
 # smartmontools - https://www.smartmontools.org/
 wget https://downloads.sourceforge.net/project/smartmontools/smartmontools/7.4/smartmontools-7.4.tar.gz && \
   tar zxvf smartmontools-7.4.tar.gz && \

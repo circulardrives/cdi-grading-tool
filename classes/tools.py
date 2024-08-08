@@ -17,9 +17,6 @@ from datetime import datetime
 # Exceptions
 from classes.exceptions import CommandException
 
-# Helpers
-from classes.helpers import Logger
-
 
 class Command:
     """
@@ -89,11 +86,13 @@ class Command:
 
         # If FileNotFoundError
         except FileNotFoundError:
+
             # Raise Command Exception
             raise CommandException("Command not found")
 
         # If Exception
         except Exception:
+
             # Raise Command Exception
             raise CommandException("An Error occurred while running the Command")
 

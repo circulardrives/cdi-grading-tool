@@ -10,10 +10,6 @@ Circular Drive Initiative - Constants
 import os
 import sys
 
-# PySide6
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHeaderView
-
 """
 APP
 """
@@ -39,20 +35,6 @@ configuration_file = f'{config_path}/configuration.ini'
 splashscreen = f'{images_path}/cdi.jpg'
 splashscreen_height = 1440
 splashscreen_width = 1440
-
-# Alignment
-align_center = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter
-align_left = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
-align_right = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight
-
-# Aspect Ratio
-ignore_aspect_ratio = Qt.AspectRatioMode.IgnoreAspectRatio
-keep_aspect_ratio = Qt.AspectRatioMode.KeepAspectRatio
-keep_by_expanding_aspect_ratio = Qt.AspectRatioMode.KeepAspectRatioByExpanding
-
-# Resize
-resize_stretch = QHeaderView.ResizeMode.Stretch
-resize_to_contents = QHeaderView.ResizeMode.ResizeToContents
 
 """
 Stylesheets
