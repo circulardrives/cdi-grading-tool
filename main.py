@@ -19,13 +19,25 @@ from classes.devices import Devices
 
 
 # Functions
-def create_logs(device, output_types):
+def create_logs(devices, output_types, log_for_each):
     """
     Create Logs
     """
 
     # Create Logs Directory
     os.makedirs('logs', exist_ok=True)
+
+    if log_for_each:
+        for device in devices:
+            device_logs(device, output_types)
+    else:
+        all_devices_logs(devices, output_types)
+
+
+def device_logs(device, output_types):
+    """
+    Create logs for a single device
+    """
 
     # CSV
     if 'csv' in output_types:
@@ -91,6 +103,95 @@ def create_logs(device, output_types):
         tree.write(f'logs/{device["model_number"]}-{device["serial_number"]}.xml')
 
 
+def all_devices_logs(devices, output_types):
+    """
+    Create logs for all devices combined
+    """
+
+    # CSV
+    if 'csv' in output_types:
+        # Open CSV File
+        with open('logs/all_devices.csv', 'w', newline='') as csvfile:
+            # Write CSV File
+            writer = csv.writer(csvfile)
+
+            # Add Keys
+            writer.writerow(devices[0].keys())
+
+            # Loop Devices
+            for device in devices:
+                # Add Values
+                writer.writerow(device.values())
+
+    # JSON
+    if 'json' in output_types:
+        # Open JSON File
+        with open('logs/all_devices.json', 'w') as jsonfile:
+            # Write JSON
+            json.dump(devices, jsonfile, indent=4)
+
+    # HTML
+    if 'html' in output_types:
+        # Open HTML File
+        with open('logs/all_devices.html', 'w') as htmlfile:
+            # Write HTML
+            htmlfile.write("<html><body><table border='1'>")
+
+            # Add Table Headers
+            htmlfile.write("<tr>")
+            for key in devices[0].keys():
+                htmlfile.write(f"<th>{html.escape(key)}</th>")
+            htmlfile.write("</tr>")
+
+            # Loop Devices
+            for device in devices:
+                # Write HTML Items
+                htmlfile.write("<tr>")
+                for value in device.values():
+                    htmlfile.write(f"<td>{html.escape(str(value))}</td>")
+                htmlfile.write("</tr>")
+
+            # End HTML
+            htmlfile.write("</table></body></html>")
+
+    # TXT
+    if 'text' in output_types:
+        # Open TXT File
+        with open('logs/all_devices.txt', 'w') as txtfile:
+            # Loop Devices
+            for device in devices:
+                # Loop Items
+                for key, value in device.items():
+                    # Write Item
+                    txtfile.write(f"{key}: {value}\n")
+                # Add a newline between devices
+                txtfile.write("\n")
+
+    # XML
+    if 'xml' in output_types:
+        # Create XML
+        root = Element('Devices')
+
+        # Loop Devices
+        for device in devices:
+            # Create Device Element
+            device_elem = SubElement(root, 'Device')
+
+            # Loop Items
+            for key, value in device.items():
+                # Create Child Element
+                child = SubElement(device_elem, key)
+
+                # Add Text
+                child.text = str(value)
+
+        # Create XML Tree
+        tree = ElementTree(root)
+
+        # Write XML Tree
+        tree.write('logs/all_devices.xml')
+
+
 # Main Function
 if __name__ == '__main__':
     # Set Argument Parser
@@ -121,9 +222,6 @@ if __name__ == '__main__':
     # Convert Device to JSON String
     devices_json = json.dumps(devices.devices, indent=4)
 
-    # Print
-    print(devices_json)
-
     # Determine output types based on arguments
     output_types = []
     if args.csv:
@@ -137,7 +235,6 @@ if __name__ == '__main__':
     if args.xml:
         output_types.append('xml')
 
-    # Create a Log for each Drive
-    for device in devices.devices:
-        # Create Logs
-        create_logs(device, output_types)
+    # Create Logs
+    create_logs(devices.devices, output_types, args.log_for_each)
+

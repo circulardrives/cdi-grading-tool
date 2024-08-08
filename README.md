@@ -71,6 +71,9 @@ pip install -r requirements.txt
 # Go to CDI Grading Tool Directory
 cd cdi-grading-tool-alpha;
 
+# Create folder for Logs
+mkdir logs
+
 # Launch Console 
 python3 main.py;
 ```
