@@ -30,9 +30,11 @@ apt install sg3-utils
 
 # openseachest - https://github.com/Seagate/openSeaChest
 git clone --recurse-submodules --branch develop https://github.com/Seagate/openSeaChest.git openSeaChest-develop
-cd openSeahChest-develop
+cd openSeaChest-develop
 meson --buildtype=release builddir
 ninja -C builddir
+cd builddir
+cp openSeaChest_* !(*.p) /opt/openSeaChest/
 
 # smartmontools - https://www.smartmontools.org/
 wget https://downloads.sourceforge.net/project/smartmontools/smartmontools/7.4/smartmontools-7.4.tar.gz && \
@@ -42,28 +44,6 @@ wget https://downloads.sourceforge.net/project/smartmontools/smartmontools/7.4/s
   make && \
   make install && \
   smartctl;
-
-# hdsentinel - https://www.hdsentinel.com/
-wget https://www.hdsentinel.com/hdslin/hdsentinel-019c-x64.gz && \
-  gunzip hdsentinel-019c-x64.gz && \
-  chmod 777 hdsentinel-019c-x64 && \
-  mv hdsentinel-019c-x64 /usr/local/sbin/hdsentinel && \
-  hdsentinel;
-
-# Install hdparm - https://github.com/Distrotech/hdparm/tree/master
-wget https://sourceforge.net/projects/hdparm/files/hdparm/hdparm-9.65.tar.gz && \
-  tar zxvf hdparm-9.65.tar.gz && \
-  cd hdparm-9.65 && \
-  make install && \
-  hdparm;
-```
-
-#### Install Dependencies
-```shell
-pip install -r requirements.txt
-
-# This will install the following:
-- xmltodict
 ```
 
 ### Execution

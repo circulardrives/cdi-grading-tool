@@ -22,7 +22,7 @@ from classes.exceptions import CommandException, DevicesException
 from classes.helpers import Helper
 
 # Tools
-from classes.tools import HDParm, HDSentinel, SeaTools, Smartctl, SG3Utils, Command
+from classes.tools import SeaTools, Smartctl, SG3Utils, Command
 
 # Constants
 from constants import known_brands_list, none, CDI_MAXIMUM_REALLOCATED_SECTORS, CDI_MAXIMUM_PENDING_SECTORS, CDI_MAXIMUM_UNCORRECTABLE_ERRORS
@@ -115,12 +115,10 @@ class Device:
         self.megabytes = None
         self.gigabytes = None
         self.terabytes = None
-        self.petabytes = None
         self.kibibytes = None
         self.mebibytes = None
         self.gibibytes = None
         self.tebibytes = None
-        self.pebibytes = None
 
         # Sectors
         self.sectors = None
@@ -199,8 +197,6 @@ class Device:
         self.cdi_grade = "U"  # Defaults to "U" which means "Ungraded"
 
         # Generic Attributes
-        self.health = None
-        self.performance = None
         self.pending_sectors = None
         self.reallocated_sectors = None
         self.reallocated_event_count = None
@@ -257,8 +253,6 @@ class Device:
         self.flags = list()
 
         # Tools
-        self.hdparm = HDParm(device_id=self.dut_sg)
-        self.hdsentinel = HDSentinel(device_id=self.dut_sg)
         self.seatools = SeaTools(device_id=self.dut_sg)
         self.smartctl = Smartctl(device_id=self.dut_sg)
 
@@ -267,7 +261,6 @@ class Device:
 
         # Outputs
         self.smartctl_json = None
-        self.hdsentinel_json = None
 
         # Initialize Device
         self.initialize()
@@ -282,10 +275,7 @@ class Device:
         attributes_to_modify = [
             'smartctl',
             'seatools',
-            'sedutil',
             'sgutils',
-            'hdsentinel',
-            'hdparm'
         ]
 
         # Object Copy
@@ -326,9 +316,6 @@ class Device:
         # Collect Smartctl Information as JSON
         self.smartctl_json = self.smartctl.get_all_as_json()
 
-        # Collect HDSentinel Information as JSON
-        self.hdsentinel_json = self.hdsentinel.get_all_as_json()
-
         # Check Transport Protocol - ! MUST BE BEFORE MEDIA !
         self.transport_protocol = self.determine_transport_protocol
 
@@ -338,17 +325,17 @@ class Device:
         # If ATA
         if self.is_ata:
             # Collect ATA Information
-            ATAProtocol(device=self, smartctl=self.smartctl_json, hdsentinel=self.hdsentinel_json)
+            ATAProtocol(device=self, smartctl=self.smartctl_json)
 
         # If NVMe
         if self.is_nvme:
             # Collect NVMe Information
-            NVMeProtocol(device=self, smartctl=self.smartctl_json, hdsentinel=self.hdsentinel_json)
+            NVMeProtocol(device=self, smartctl=self.smartctl_json)
 
         # If SCSI
         if self.is_scsi:
             # Collect SCSI Information
-            SCSIProtocol(device=self, smartctl=self.smartctl_json, hdsentinel=self.hdsentinel_json)
+            SCSIProtocol(device=self, smartctl=self.smartctl_json)
 
         # If USB
         if self.is_usb:
@@ -369,9 +356,7 @@ class Device:
         # Initialize
         self.initialize()
 
-    """
-    Helpers
-    """
+    """ Helpers """
 
     @staticmethod
     def determine_brand_by_model_number(model: str) -> str | None:
@@ -524,6 +509,8 @@ class Device:
         # Return Model as is
         return model
 
+    """ Type Properties """
+
     @property
     def determine_media_type(self) -> str:
         """
@@ -564,6 +551,8 @@ class Device:
             # Fallback
             "Unknown"
         )
+
+    """ Is Properties"""
 
     @property
     def is_ready(self) -> bool:
@@ -673,9 +662,7 @@ class Device:
         # Return False
         return False
 
-    """
-    Grading
-    """
+    """ Grading Methods """
 
     def determine_grade(self):
         pass
@@ -770,36 +757,12 @@ class Device:
         # Return False
         return False
 
-    """
-    Information Commands
-    """
+    """ Information Commands """
 
     def execute_identify_command(self):
         """
         Execute Identify
         :return: Command if OK | bool (False) if Fail
-        :version: 1.0:
-
-        # Identify Test Report
-        example_report = {
-            'id': str(uuid.uuid4()),
-            'pid': identify.process_id,
-            'name': "Identify",
-            'description': "S.M.A.R.T Firmware based internal self test",
-            'version': 1.0,
-            'started': identify_test.started,
-            'finished': identify_test.finished,
-            'duration': identify_test.duration,
-            'command': identify_test.command,
-            'arguments': identify_test.arguments,
-            'return_code': identify_test.return_code,
-            'stdout': identify_test.output,
-            'stderr': identify_test.errors,
-            'limit': "Must Pass",
-            'value': "Pass",
-            'result': "Pass",
-            'comment': "S.M.A.R.T Short Self-Test passed",
-        }
         """
 
         # Try
@@ -829,9 +792,7 @@ class Device:
             # Return False
             return False
 
-    """
-    Self-Test Commands
-    """
+    """ Self-Test Commands """
 
     def execute_smart_short_self_test(self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False) -> Command | bool:
         """
@@ -949,53 +910,6 @@ class Device:
             return False
 
 
-class DeviceSimple:
-    """
-    Device Simple Class
-    """
-
-    def __init__(self, device_id: str = None):
-        """
-        Initialize
-        :param device_id:
-        """
-
-        # Properties
-        self.dut = device_id
-        self.dut_sg = None
-        self.wwn = None
-        self.vendor = None
-        self.model_number = None
-        self.serial_number = None
-        self.firmware_revision = None
-        self.media_type = None
-        self.transport_protocol = None
-        self.transport_version = None
-        self.transport_revision = None
-        self.rotation_rate = None
-
-        # Capacity
-        self.bytes = None
-        self.kilobytes = None
-        self.megabytes = None
-        self.gigabytes = None
-        self.terabytes = None
-        self.petabytes = None
-        self.kibibytes = None
-        self.mebibytes = None
-        self.gibibytes = None
-        self.tebibytes = None
-        self.pebibytes = None
-
-        # Sectors
-        self.sectors = None
-        self.logical_sector_size = None
-        self.physical_sector_size = None
-
-        # Flags
-        self.flags = list()
-
-
 class Devices:
     """
     Devices Class
@@ -1086,7 +1000,7 @@ class Devices:
 
             # If MegaRAID Bus
             if device['name'].startswith("/dev/bus"):
-                # Continue # TODO - provide handler for MegaRAID volumes? No?
+                # Continue - TODO - provide handler for MegaRAID volumes? No?
                 continue
 
             # Get Type
@@ -1284,48 +1198,6 @@ class Devices:
         return all(device.is_ssd for device in self.devices)
 
 
-class DevicesSimple:
-    """
-    Devices Simple Class
-    """
-
-    # Devices
-    devices = dict()
-
-    # Command
-    command = 'lsblk -d -b -e 11,1,252,259,7 -O -J'
-    usb_only_command = 'lsblk -d -b -e 11,1,252,259,7 -O -J'
-
-    def __init__(self, console):
-        # Console
-        console.rule("Scanning for Devices (Simple)")
-
-        # Get Console
-        self.console = console
-
-        # Set Command
-        command = Command(command=self.usb_only_command)
-
-        # Get Devices
-        command.run()
-
-        # If Return Code is not 0
-        if command.get_return_code() != 0:
-            print(command.get_output())
-            # If Command has Errors
-            if command.has_errors():
-                print(command.get_errors())
-
-        # Set Devices
-        devices = json.loads(command.get_output())['blockdevices']
-
-        for device in devices:
-            # If USB Device
-            if device['tran'] == 'usb':
-                # Append USB Device to Device List
-                self.devices[device['path']] = device
-
-
 @dataclass
 class ATAProtocol:
     """
@@ -1335,12 +1207,11 @@ class ATAProtocol:
     # Set Helper
     helper: Helper = Helper()
 
-    def __init__(self, device: Device, smartctl: dict, hdsentinel: dict):
+    def __init__(self, device: Device, smartctl: dict):
         """
         Initialize ATA Protocol Collection
         :param device: Device instance
         :param smartctl: Smartctl dictionary
-        :param hdsentinel: HDSentinel dictionary
         """
 
         # If State is Not Ready
@@ -1520,22 +1391,6 @@ class ATAProtocol:
 
         # Get Device Load Cycle Count
         device.load_cycle_count = self.get_smart_attribute_by_id(attribute_id=193, attributes=device.smart_attributes)
-
-        # HDSentinel Device Summary Page
-        hdsentinel_device_summary = hdsentinel.get('Physical_Disk_Information_Disk_0', {}).get('Hard_Disk_Summary', {})
-
-        # Get Health
-        health = hdsentinel_device_summary.get('Health', '0')
-
-        # If Health is ? %
-        if health == "? %":
-            # Set Not Reported
-            device.health = 0
-
-        # Else
-        else:
-            # Get Integer Value
-            device.health = int(health.replace(" %", ""))
 
         """
         Device Statistics Log Pages
@@ -1758,7 +1613,7 @@ class NVMeProtocol:
     # Set Helper
     helper: Helper = Helper()
 
-    def __init__(self, device: Device, smartctl: dict, hdsentinel: dict):
+    def __init__(self, device: Device, smartctl: dict):
         # Initialize
         super().__init__()
 
@@ -1830,7 +1685,7 @@ class NVMeProtocol:
 
 @dataclass
 class SCSIProtocol:
-    def __init__(self, device: Device, smartctl: dict, hdsentinel: dict):
+    def __init__(self, device: Device, smartctl: dict):
         # Initialize
         super().__init__()
 
@@ -1928,22 +1783,6 @@ class SCSIProtocol:
         # Set Self Tests
         device.smart_self_tests = self_tests
 
-        # HDSentinel Device Summary Page
-        hdsentinel_device_summary = hdsentinel.get('Physical_Disk_Information_Disk_0', {}).get('Hard_Disk_Summary', {})
-
-        # Get Health
-        health = hdsentinel_device_summary.get('Health', '0')
-
-        # If Health is ? %
-        if health == "? %":
-            # Set Not Reported
-            device.health = 0
-
-        # Else
-        else:
-            # Get Integer Value
-            device.health = int(health.replace(" %", ""))
-
         # Get Grown Defects
         grown_defects = smartctl.get('scsi_grown_defect_list', "Not Reported")
 
@@ -2002,6 +1841,7 @@ class SCSIProtocol:
             else:
                 # Count Total excluding Verify Errors
                 uncorrectable_errors = int(read_errors) + int(write_errors)
+
         # Else
         else:
             # Set Uncorrectable Errors to None

@@ -8,8 +8,6 @@ Circular Drive Initiative - Toolkit Classes
 # Modules
 import json
 import subprocess
-import xmltodict
-import xml.etree.ElementTree as XMLElementTree
 
 # Date and Time
 from datetime import datetime
@@ -195,116 +193,6 @@ class Command:
         return True
 
 
-class HDParm:
-    def __init__(self, device_id: str):
-        pass
-
-
-class HDSentinel:
-    """
-    Hard Disk Sentinel
-    """
-
-    # Get Commands
-    get_devices_command = 'hdsentinel -dump'
-    get_devices_xml_command = 'hdsentinel -dump -xml'
-    get_device_information_command = 'hdsentinel -dump -dev'
-    get_device_information_xml_command = 'hdsentinel -dump -xml -dev'
-
-    def __init__(self, device_id: str):
-        # Properties
-        self.dut = device_id
-
-    """
-    Device Information Commands
-    """
-
-    def get_all_as_text(self):
-        """
-        Get All as Text
-        :return:
-        """
-
-        # Prepare Command String
-        get_all_command = f'{self.get_device_information_command} {self.dut}'
-
-        # Prepare Command
-        command = Command(get_all_command)
-
-        # Run Command
-        command.run()
-
-        # If Return Code is not Zero
-        if command.get_return_code() != 0:
-            # Return False
-            return False
-
-        # Return Smartctl Output as Text
-        return command.get_output().strip().decode('utf-8')
-
-    def get_all_as_json(self) -> dict | bool:
-        """
-        Get All as JSON (converted from XML)
-        :return: dict if OK | False if not
-        """
-
-        # Prepare Command String
-        get_all_command = f'{self.get_device_information_xml_command} {self.dut}'
-
-        # Prepare Command
-        command = Command(get_all_command)
-
-        # Run Command
-        command.run()
-
-        # If Return Code is not Zero
-        if command.get_return_code() != 0:
-            # Return False
-            return False
-
-        # Parse XML Output
-        xml_to_dict = xmltodict.parse(command.get_output())
-
-        # Convert XML to JSON
-        xml_to_json = json.dumps(xml_to_dict)
-
-        # Return HDSentinel Output as JSON
-        return json.loads(xml_to_json)['Hard_Disk_Sentinel']
-
-    def get_all_as_xml(self) -> XMLElementTree.ElementTree | bool:
-        """
-        Get All as XML
-        :return: XMLElementTree if OK | False if not
-        """
-
-        # Prepare Command String
-        get_all_command = f'{self.get_device_information_xml_command} {self.dut}'
-
-        # Prepare Command
-        command = Command(get_all_command)
-
-        # Run Command
-        command.run()
-
-        # If Return Code is not Zero
-        if command.get_return_code() != 0:
-            # Return False
-            return False
-
-        # Try
-        try:
-            # Parse XML Output
-            xml_tree = XMLElementTree.ElementTree(XMLElementTree.fromstring(command.get_output()))
-
-        # If Parse Error
-        except XMLElementTree.ParseError:
-            # Return False
-            return False
-
-        # Return XML Tree
-        return xml_tree
-
-
 class SeaTools:
     """
     SeaTools Class
@@ -447,6 +335,10 @@ class SG3Utils:
     """
 
     def __init__(self, device_id: str):
+        """
+        Constructor
+        """
+
         # Properties
         self.dut = device_id
 
@@ -504,6 +396,7 @@ class SG3Utils:
 
             # Return Ready
             return "Ready"
+
         # If Command Exception
         except CommandException:
             # Return False

@@ -212,7 +212,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Scan Devices
-    devices = Devices(
+    d = Devices(
         ignore_ata=args.ignore_ata,
         ignore_nvme=args.ignore_nvme,
         ignore_scsi=args.ignore_scsi,
@@ -220,21 +220,33 @@ if __name__ == '__main__':
     )
 
     # Convert Device to JSON String
-    devices_json = json.dumps(devices.devices, indent=4)
+    devices_json = json.dumps(d.devices, indent=4)
 
-    # Determine output types based on arguments
+    # Create List
     output_types = []
+
+    # CSV
     if args.csv:
         output_types.append('csv')
+
+    # HTML
     if args.html:
         output_types.append('html')
+
+    # JSON
     if args.json:
         output_types.append('json')
+
+    # Text
     if args.text:
         output_types.append('text')
+
+    # XML
     if args.xml:
         output_types.append('xml')
 
     # Create Logs
-    create_logs(devices.devices, output_types, args.log_for_each)
+    create_logs(d.devices, output_types, args.log_for_each)
 
+    # Print
+    print("Logs successfully generated.")
