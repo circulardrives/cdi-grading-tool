@@ -14,7 +14,7 @@ Circular Drive Initiative - Open Source Storage Device Grading Toolkit.
 
 This software requires the following to launch:
 
-* Linux GNU x86/x86
+* Linux GNU x86/x64
 * Python 3.12
 
 #### Required 3rd Party Software
