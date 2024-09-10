@@ -5,6 +5,9 @@ Circular Drive Initiative - Toolkit Classes
 @version  0.0.1
 """
 
+# TODO: manage via isort
+from __future__ import annotations
+
 # Modules
 import json
 import subprocess

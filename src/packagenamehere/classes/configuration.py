@@ -6,6 +6,9 @@ Circular Drive Initiative - Configuration Class
 @version     0.0.1
 """
 
+# TODO: manage via isort
+from __future__ import annotations
+
 # Modules
 import configparser
 import os
