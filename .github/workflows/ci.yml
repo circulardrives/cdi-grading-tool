@@ -1,0 +1,90 @@
+name: 🧪 test
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+
+concurrency:
+  # only for PRs, cancel a previous run if it's still running
+  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow_ref, github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          # TODO: used if we use dynamic versioning based on git tags
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: install build tooling
+        run: |
+          python -m pip install build
+
+      - name: build package
+        run: |
+          # specifying neither sdist nor bdist results in the bdist being
+          # built from the sdist.  this tests to verify that the sdist is
+          # valid.
+          python -m build
+
+      - name: workflow upload built packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: dist/*
+          if-no-files-found: error
+
+  test:
+    name: ${{ matrix.os.emoji }} Python ${{ matrix.python.major-dot-minor }}
+    runs-on: ${{ matrix.os.runs-on }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - emoji: 🐧
+            matrix: ubuntu
+            name: Ubuntu
+            runs-on: ubuntu-latest
+        python:
+          - major-dot-minor: "3.9"
+          - major-dot-minor: "3.10"
+          - major-dot-minor: "3.11"
+          - major-dot-minor: "3.12"
+
+    steps:
+      - name: workflow download built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: dist/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python.major-dot-minor }}
+
+      - name: install package
+        run: |
+          python -m pip install dist/*.whl
+
+      - name: test
+        # TODO: tests should not be defined here
+        run: |
+          venv/bin/packagenamehere -h
+          venv/bin/python -m packagenamehere -h

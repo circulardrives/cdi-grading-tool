@@ -11,10 +11,10 @@ import configparser
 import os
 
 # Exceptions
-from classes.exceptions import ConfigurationException
+from packagenamehere.classes.exceptions import ConfigurationException
 
 # Constants
-from constants import configuration_file
+from packagenamehere.constants import configuration_file
 
 
 class Configuration:

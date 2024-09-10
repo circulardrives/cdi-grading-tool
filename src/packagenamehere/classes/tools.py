@@ -13,7 +13,7 @@ import subprocess
 from datetime import datetime
 
 # Exceptions
-from classes.exceptions import CommandException
+from packagenamehere.classes.exceptions import CommandException
 
 
 class Command:

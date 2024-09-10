@@ -15,7 +15,7 @@ import os
 from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 # Classes
-from classes.devices import Devices
+from packagenamehere.classes.devices import Devices
 
 
 # Functions
@@ -193,7 +193,7 @@ def all_devices_logs(devices, output_types):
 
 
 # Main Function
-if __name__ == '__main__':
+def main():
     # Set Argument Parser
     parser = argparse.ArgumentParser(description="CDI Grading Tool")
     parser.add_argument('--verbose', action='store_true', help='Launch in Verbose Mode')

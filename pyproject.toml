@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools >= 64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# TODO: pick a package name and search the project for all instances of packagenamehere
+name = "packagenamehere"
+description = "Open Source Storage Device Grading Toolkit"
+# TODO: consider policies around contributing author acknowledgement
+authors = [
+    {name = "Circular Drive Initiative"}
+]
+maintainers = [
+# TODO: review by nick
+  {name = "Nick Hayhurst", email = "nick.hayhurst@interactdc.com"},
+# TODO: review by jm
+  {name = "Jonmichael Hands", email = "jmhands@chia.net"},
+]
+# TODO: use identifiers from https://spdx.org/licenses/
+# license = {text = ""}
+# TODO: review by those familiar with terminology
+keywords = [
+    "drive",
+    "hdd",
+    "ssd",
+    "cdi",
+    "circular drive initiative",
+    "grading",
+]
+# https://pypi.org/classifiers/
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Topic :: Utilities",
+    "Intended Audience :: Information Technology",
+
+    "Operating System :: POSIX :: Linux",
+    # TODO: review platforms
+    # "Operating System :: MacOS :: MacOS X",
+    # "Operating System :: POSIX :: BSD",
+    # "Operating System :: Microsoft :: Windows",
+    # "Programming Language :: Python :: Implementation :: CPython",
+
+    "Programming Language :: Python :: 3 :: Only",
+    # TODO: review pending testing in CI
+    # "Programming Language :: Python :: Implementation :: PyPy",
+    # "Programming Language :: Python :: 3.8",
+    # "Programming Language :: Python :: 3.9",
+    # "Programming Language :: Python :: 3.10",
+    # "Programming Language :: Python :: 3.11",
+    # "Programming Language :: Python :: 3.12",
+    # "Programming Language :: Python :: 3.13",
+
+    "Topic :: Security",
+    "Topic :: System :: Hardware",
+
+    # TODO: after adding type checking
+    # "Typing :: Typed",
+]
+# TODO: review pending testing in CI
+# requires-python = ">=3.8"
+dependencies = []
+# TODO: decide how versioning will be handled
+dynamic = ["version"]
+
+[project.readme]
+file = "README.md"
+content-type = "text/markdown"
+
+[project.urls]
+# TODO: consider more from https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#urls
+Homepage = "https://github.com/circulardrives/cdi-grading-tool-alpha"
+
+[project.scripts]
+# TODO: review if package name and executable name should match.  is kinda nice when reasonable
+packagenamehere = "packagenamehere.__main__:main"
+
+[tool.setuptools]
+include-package-data = true
