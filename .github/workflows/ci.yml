@@ -79,9 +79,13 @@ jobs:
         with:
           python-version: ${{ matrix.python.major-dot-minor }}
 
+      - name: create venv
+        run: |
+          python -m venv venv
+
       - name: install package
         run: |
-          python -m pip install dist/*.whl
+          venv/bin/python -m pip install dist/*.whl
 
       - name: test
         # TODO: tests should not be defined here
