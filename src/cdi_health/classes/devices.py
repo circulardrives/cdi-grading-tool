@@ -19,16 +19,16 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
 # Exceptions
-from packagenamehere.classes.exceptions import CommandException, DevicesException
+from cdi_health.classes.exceptions import CommandException, DevicesException
 
 # Helpers
-from packagenamehere.classes.helpers import Helper
+from cdi_health.classes.helpers import Helper
 
 # Tools
-from packagenamehere.classes.tools import SeaTools, Smartctl, SG3Utils, Command
+from cdi_health.classes.tools import SeaTools, Smartctl, SG3Utils, Command
 
 # Constants
-from packagenamehere.constants import known_brands_list, none, CDI_MAXIMUM_REALLOCATED_SECTORS, CDI_MAXIMUM_PENDING_SECTORS, CDI_MAXIMUM_UNCORRECTABLE_ERRORS
+from cdi_health.constants import known_brands_list, none, CDI_MAXIMUM_REALLOCATED_SECTORS, CDI_MAXIMUM_PENDING_SECTORS, CDI_MAXIMUM_UNCORRECTABLE_ERRORS
 
 
 class Device:

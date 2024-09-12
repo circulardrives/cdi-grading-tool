@@ -18,7 +18,7 @@ import os
 from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 # Classes
-from packagenamehere.classes.devices import Devices
+from cdi_health.classes.devices import Devices
 
 
 # Functions

@@ -14,10 +14,10 @@ import configparser
 import os
 
 # Exceptions
-from packagenamehere.classes.exceptions import ConfigurationException
+from cdi_health.classes.exceptions import ConfigurationException
 
 # Constants
-from packagenamehere.constants import configuration_file
+from cdi_health.constants import configuration_file
 
 
 class Configuration:

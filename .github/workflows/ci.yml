@@ -90,5 +90,5 @@ jobs:
       - name: test
         # TODO: tests should not be defined here
         run: |
-          venv/bin/packagenamehere -h
-          venv/bin/python -m packagenamehere -h
+          venv/bin/cdi_health -h
+          venv/bin/python -m cdi_health -h

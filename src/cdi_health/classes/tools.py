@@ -16,7 +16,7 @@ import subprocess
 from datetime import datetime
 
 # Exceptions
-from packagenamehere.classes.exceptions import CommandException
+from cdi_health.classes.exceptions import CommandException
 
 
 class Command:

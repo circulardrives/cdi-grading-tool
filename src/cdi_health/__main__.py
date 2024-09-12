@@ -1,6 +1,6 @@
 # TODO: manage via isort
 from __future__ import annotations
 
-from packagenamehere.main import main
+from cdi_health.main import main
 
 main()

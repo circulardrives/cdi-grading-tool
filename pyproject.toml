@@ -3,8 +3,7 @@ requires = ["setuptools >= 64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-# TODO: pick a package name and search the project for all instances of packagenamehere
-name = "packagenamehere"
+name = "cdi_health"
 description = "Open Source Storage Device Grading Toolkit"
 # TODO: consider policies around contributing author acknowledgement
 authors = [
@@ -72,7 +71,7 @@ Homepage = "https://github.com/circulardrives/cdi-grading-tool-alpha"
 
 [project.scripts]
 # TODO: review if package name and executable name should match.  is kinda nice when reasonable
-packagenamehere = "packagenamehere.__main__:main"
+cdi_health = "cdi_health.__main__:main"
 
 [tool.setuptools]
 include-package-data = true
