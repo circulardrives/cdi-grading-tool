@@ -15,7 +15,6 @@ maintainers = [
 ]
 # TODO: use identifiers from https://spdx.org/licenses/ and add a license file and reference it here as well
 # license = {text = ""}
-# TODO: review by those familiar with terminology
 keywords = [
     "drive",
     "disk",
