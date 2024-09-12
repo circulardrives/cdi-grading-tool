@@ -5,26 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cdi_health"
 description = "Open Source Storage Device Grading Toolkit"
-# TODO: consider policies around contributing author acknowledgement
+# TODO: consider policies around contributing author acknowledgement since we're an open project
 authors = [
     {name = "Circular Drive Initiative"}
 ]
 maintainers = [
-# TODO: review by nick
   {name = "Nick Hayhurst", email = "nick.hayhurst@interactdc.com"},
-# TODO: review by jm
   {name = "Jonmichael Hands", email = "jmhands@chia.net"},
 ]
-# TODO: use identifiers from https://spdx.org/licenses/
+# TODO: use identifiers from https://spdx.org/licenses/ and add a license file and reference it here as well
 # license = {text = ""}
 # TODO: review by those familiar with terminology
 keywords = [
     "drive",
+    "disk",
     "hdd",
     "ssd",
     "cdi",
     "circular drive initiative",
     "grading",
+    "health",
 ]
 # https://pypi.org/classifiers/
 classifiers = [
@@ -33,20 +33,19 @@ classifiers = [
     "Intended Audience :: Information Technology",
 
     "Operating System :: POSIX :: Linux",
-    # TODO: review platforms
+    # uncomment as support and testing are added
     # "Operating System :: MacOS :: MacOS X",
     # "Operating System :: POSIX :: BSD",
     # "Operating System :: Microsoft :: Windows",
-    # "Programming Language :: Python :: Implementation :: CPython",
 
     "Programming Language :: Python :: 3 :: Only",
-    # TODO: review pending testing in CI
+    "Programming Language :: Python :: Implementation :: CPython",
     # "Programming Language :: Python :: Implementation :: PyPy",
-    # "Programming Language :: Python :: 3.8",
-    # "Programming Language :: Python :: 3.9",
-    # "Programming Language :: Python :: 3.10",
-    # "Programming Language :: Python :: 3.11",
-    # "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     # "Programming Language :: Python :: 3.13",
 
     "Topic :: Security",
@@ -55,8 +54,7 @@ classifiers = [
     # TODO: after adding type checking
     # "Typing :: Typed",
 ]
-# TODO: review pending testing in CI
-# requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = []
 # TODO: decide how versioning will be handled
 dynamic = ["version"]
@@ -66,11 +64,9 @@ file = "README.md"
 content-type = "text/markdown"
 
 [project.urls]
-# TODO: consider more from https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#urls
-Homepage = "https://github.com/circulardrives/cdi-grading-tool-alpha"
+Repository = "https://github.com/circulardrives/cdi-grading-tool-alpha"
 
 [project.scripts]
-# TODO: review if package name and executable name should match.  is kinda nice when reasonable
 cdi_health = "cdi_health.__main__:main"
 
 [tool.setuptools]
