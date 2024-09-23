@@ -7,6 +7,10 @@ Circular Drive Initiative - Exceptions
 """
 
 
+# TODO: manage via isort
+from __future__ import annotations
+
+
 class CDIException(Exception):
     """
     Command Exception

@@ -5,6 +5,9 @@ Circular Drive Initiative - Toolkit Classes
 @version  0.0.1
 """
 
+# TODO: manage via isort
+from __future__ import annotations
+
 # Modules
 import json
 import subprocess
@@ -13,7 +16,7 @@ import subprocess
 from datetime import datetime
 
 # Exceptions
-from classes.exceptions import CommandException
+from cdi_health.classes.exceptions import CommandException
 
 
 class Command:

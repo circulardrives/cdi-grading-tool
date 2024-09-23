@@ -6,15 +6,18 @@ Circular Drive Initiative - Configuration Class
 @version     0.0.1
 """
 
+# TODO: manage via isort
+from __future__ import annotations
+
 # Modules
 import configparser
 import os
 
 # Exceptions
-from classes.exceptions import ConfigurationException
+from cdi_health.classes.exceptions import ConfigurationException
 
 # Constants
-from constants import configuration_file
+from cdi_health.constants import configuration_file
 
 
 class Configuration:

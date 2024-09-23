@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools >= 64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cdi_health"
+description = "Open Source Storage Device Grading Toolkit"
+# TODO: consider policies around contributing author acknowledgement since we're an open project
+authors = [
+    {name = "Circular Drive Initiative"}
+]
+maintainers = [
+  {name = "Nick Hayhurst", email = "nick.hayhurst@interactdc.com"},
+  {name = "Jonmichael Hands", email = "jmhands@chia.net"},
+]
+# TODO: use identifiers from https://spdx.org/licenses/ and add a license file and reference it here as well
+# license = {text = ""}
+keywords = [
+    "drive",
+    "disk",
+    "hdd",
+    "ssd",
+    "cdi",
+    "circular drive initiative",
+    "grading",
+    "health",
+]
+# https://pypi.org/classifiers/
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Topic :: Utilities",
+    "Intended Audience :: Information Technology",
+
+    "Operating System :: POSIX :: Linux",
+    # uncomment as support and testing are added
+    # "Operating System :: MacOS :: MacOS X",
+    # "Operating System :: POSIX :: BSD",
+    # "Operating System :: Microsoft :: Windows",
+
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    # "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    # "Programming Language :: Python :: 3.13",
+
+    "Topic :: Security",
+    "Topic :: System :: Hardware",
+
+    # TODO: after adding type checking
+    # "Typing :: Typed",
+]
+requires-python = ">=3.9"
+dependencies = []
+# TODO: decide how versioning will be handled
+dynamic = ["version"]
+
+[project.readme]
+file = "README.md"
+content-type = "text/markdown"
+
+[project.urls]
+Repository = "https://github.com/circulardrives/cdi-grading-tool-alpha"
+
+[project.scripts]
+cdi_health = "cdi_health.__main__:main"
+
+[tool.setuptools]
+include-package-data = true

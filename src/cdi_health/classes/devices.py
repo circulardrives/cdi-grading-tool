@@ -6,6 +6,9 @@ Circular Drive Initiative - Devices Class
 @version     0.0.1
 """
 
+# TODO: manage via isort
+from __future__ import annotations
+
 # Modules
 import json
 
@@ -16,16 +19,16 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
 # Exceptions
-from classes.exceptions import CommandException, DevicesException
+from cdi_health.classes.exceptions import CommandException, DevicesException
 
 # Helpers
-from classes.helpers import Helper
+from cdi_health.classes.helpers import Helper
 
 # Tools
-from classes.tools import SeaTools, Smartctl, SG3Utils, Command
+from cdi_health.classes.tools import SeaTools, Smartctl, SG3Utils, Command
 
 # Constants
-from constants import known_brands_list, none, CDI_MAXIMUM_REALLOCATED_SECTORS, CDI_MAXIMUM_PENDING_SECTORS, CDI_MAXIMUM_UNCORRECTABLE_ERRORS
+from cdi_health.constants import known_brands_list, none, CDI_MAXIMUM_REALLOCATED_SECTORS, CDI_MAXIMUM_PENDING_SECTORS, CDI_MAXIMUM_UNCORRECTABLE_ERRORS
 
 
 class Device:

@@ -4,6 +4,9 @@ Circular Drive Initiative
 @version 0.0.1
 """
 
+# TODO: manage via isort
+from __future__ import annotations
+
 # Modules
 import argparse
 import csv
@@ -15,7 +18,7 @@ import os
 from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 # Classes
-from classes.devices import Devices
+from cdi_health.classes.devices import Devices
 
 
 # Functions
@@ -193,7 +196,7 @@ def all_devices_logs(devices, output_types):
 
 
 # Main Function
-if __name__ == '__main__':
+def main():
     # Set Argument Parser
     parser = argparse.ArgumentParser(description="CDI Grading Tool")
     parser.add_argument('--verbose', action='store_true', help='Launch in Verbose Mode')
