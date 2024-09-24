@@ -13,8 +13,7 @@ maintainers = [
   {name = "Nick Hayhurst", email = "nick.hayhurst@interactdc.com"},
   {name = "Jonmichael Hands", email = "jmhands@chia.net"},
 ]
-# TODO: use identifiers from https://spdx.org/licenses/ and add a license file and reference it here as well
-# license = {text = ""}
+license = {file = "LICENSE", text = "Apache-2.0"}
 keywords = [
     "drive",
     "disk",
