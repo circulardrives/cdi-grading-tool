@@ -29,6 +29,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Topic :: Utilities",
     "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: Apache Software License",
 
     "Operating System :: POSIX :: Linux",
     # uncomment as support and testing are added
