@@ -13,7 +13,7 @@ maintainers = [
   {name = "Nick Hayhurst", email = "nick.hayhurst@interactdc.com"},
   {name = "Jonmichael Hands", email = "jmhands@chia.net"},
 ]
-license = {file = "LICENSE", text = "Apache-2.0"}
+license = {file = "LICENSE"}
 keywords = [
     "drive",
     "disk",
