@@ -102,6 +102,7 @@ jobs:
         task:
           - name: License Headers
             run: |
+              # TODO: would be nice to have all this in a config file, even if we need to use another tool
               venv/bin/licenseheaders --ext py --tmpl license.template --current-year --owner 'Circular Drive Initiative' --projname 'CDI Health' --projurl 'https://github.com/circulardrives/cdi-grading-tool-alpha/'
               git diff --exit-code
         os:
