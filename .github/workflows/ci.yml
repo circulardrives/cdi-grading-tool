@@ -117,6 +117,11 @@ jobs:
           - major-dot-minor: "3.12"
 
     steps:
+      - uses: actions/checkout@v3
+        with:
+          # TODO: used if we use dynamic versioning based on git tags
+          fetch-depth: 0
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python.major-dot-minor }}
