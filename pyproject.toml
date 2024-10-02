@@ -58,6 +58,9 @@ dependencies = []
 # TODO: decide how versioning will be handled
 dynamic = ["version"]
 
+[project.optional-dependencies]
+dev = ["licenseheaders"]
+
 [project.readme]
 file = "README.md"
 content-type = "text/markdown"

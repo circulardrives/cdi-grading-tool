@@ -125,5 +125,9 @@ jobs:
         run: |
           python -m venv venv
 
+      - name: install
+        run: |
+          venv/bin/pip install -e .[dev]
+
       - name: check
         run: ${{ matrix.task.run }}
