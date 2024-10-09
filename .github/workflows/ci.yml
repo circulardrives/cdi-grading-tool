@@ -92,3 +92,49 @@ jobs:
         run: |
           venv/bin/cdi_health -h
           venv/bin/python -m cdi_health -h
+
+  check:
+    name: Check ${{ matrix.task.name }} - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }}
+    runs-on: ${{ matrix.os.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        task:
+          - name: License Headers
+            run: |
+              # TODO: would be nice to have all this in a config file, even if we need to use another tool
+              venv/bin/licenseheaders --ext py --tmpl license.template --current-year --owner 'Circular Drive Initiative' --projname 'CDI Health' --projurl 'https://github.com/circulardrives/cdi-grading-tool-alpha/'
+              git diff --exit-code
+        os:
+          - name: Linux
+            runs-on: ubuntu-latest
+#          - name: macOS
+#            runs-on: macos-latest
+#          - name: Windows
+#            runs-on: windows-latest
+        python:
+          - major-dot-minor: "3.9"
+          - major-dot-minor: "3.10"
+          - major-dot-minor: "3.11"
+          - major-dot-minor: "3.12"
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          # TODO: used if we use dynamic versioning based on git tags
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python.major-dot-minor }}
+
+      - name: create venv
+        run: |
+          python -m venv venv
+
+      - name: install
+        run: |
+          venv/bin/pip install -e .[dev]
+
+      - name: check
+        run: ${{ matrix.task.run }}

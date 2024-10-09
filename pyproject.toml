@@ -13,8 +13,7 @@ maintainers = [
   {name = "Nick Hayhurst", email = "nick.hayhurst@interactdc.com"},
   {name = "Jonmichael Hands", email = "jmhands@chia.net"},
 ]
-# TODO: use identifiers from https://spdx.org/licenses/ and add a license file and reference it here as well
-# license = {text = ""}
+license = {file = "LICENSE"}
 keywords = [
     "drive",
     "disk",
@@ -30,6 +29,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Topic :: Utilities",
     "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: Apache Software License",
 
     "Operating System :: POSIX :: Linux",
     # uncomment as support and testing are added
@@ -57,6 +57,9 @@ requires-python = ">=3.9"
 dependencies = []
 # TODO: decide how versioning will be handled
 dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = ["licenseheaders"]
 
 [project.readme]
 file = "README.md"
