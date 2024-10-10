@@ -33,7 +33,7 @@ import json
 import os
 
 # XML
-from xml.etree.ElementTree import Element, SubElement, ElementTree
+from xml.etree.ElementTree import Element, ElementTree, SubElement
 
 # Classes
 from cdi_health.classes.devices import Devices

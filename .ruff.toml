@@ -33,14 +33,27 @@ indent-width = 4
 
 target-version = "py39"
 
+unsafe-fixes = true
+
 [lint]
-select = []
+select = [
+    "I",
+    "UP",
+]
 ignore = []
 
 fixable = ["ALL"]
 unfixable = []
 
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[lint.isort]
+required-imports = [
+    "from __future__ import annotations",
+]
+
+[lint.pyupgrade]
+keep-runtime-typing = true
 
 [format]
 quote-style = "double"

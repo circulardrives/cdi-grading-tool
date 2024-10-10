@@ -30,11 +30,11 @@ from __future__ import annotations
 # Modules
 import json
 
-# Data Classes
-from dataclasses import dataclass
-
 # Concurrent Futures
 from concurrent.futures import ThreadPoolExecutor
+
+# Data Classes
+from dataclasses import dataclass
 
 # Exceptions
 from cdi_health.classes.exceptions import CommandException, DevicesException
@@ -43,15 +43,15 @@ from cdi_health.classes.exceptions import CommandException, DevicesException
 from cdi_health.classes.helpers import Helper
 
 # Tools
-from cdi_health.classes.tools import SeaTools, Smartctl, SG3Utils, Command
+from cdi_health.classes.tools import Command, SeaTools, SG3Utils, Smartctl
 
 # Constants
 from cdi_health.constants import (
+    CDI_MAXIMUM_PENDING_SECTORS,
+    CDI_MAXIMUM_REALLOCATED_SECTORS,
+    CDI_MAXIMUM_UNCORRECTABLE_ERRORS,
     known_brands_list,
     none,
-    CDI_MAXIMUM_REALLOCATED_SECTORS,
-    CDI_MAXIMUM_PENDING_SECTORS,
-    CDI_MAXIMUM_UNCORRECTABLE_ERRORS,
 )
 
 
