@@ -46,7 +46,13 @@ from cdi_health.classes.helpers import Helper
 from cdi_health.classes.tools import SeaTools, Smartctl, SG3Utils, Command
 
 # Constants
-from cdi_health.constants import known_brands_list, none, CDI_MAXIMUM_REALLOCATED_SECTORS, CDI_MAXIMUM_PENDING_SECTORS, CDI_MAXIMUM_UNCORRECTABLE_ERRORS
+from cdi_health.constants import (
+    known_brands_list,
+    none,
+    CDI_MAXIMUM_REALLOCATED_SECTORS,
+    CDI_MAXIMUM_PENDING_SECTORS,
+    CDI_MAXIMUM_UNCORRECTABLE_ERRORS,
+)
 
 
 class Device:
@@ -61,7 +67,7 @@ class Device:
         "NVMe": "NVMe",
         "SCSI": "SCSI",
         "SD": "SD",
-        "USB": "USB"
+        "USB": "USB",
     }
 
     # Rotation Rate Map
@@ -74,30 +80,30 @@ class Device:
         15030: "HDD",
         10500: "HDD",
         15000: "HDD",
-        "Not Reported": "Not Reported"
+        "Not Reported": "Not Reported",
     }
 
     # Grading Map - TODO - Complete a grading mapping and create loop?
     grading_map = {
-        'smart': {
-            'equality': "==",
-            'value': "Pass",
+        "smart": {
+            "equality": "==",
+            "value": "Pass",
         },
-        'smart_self_test': {
-            'equality': "==",
-            'value': "Pass",
+        "smart_self_test": {
+            "equality": "==",
+            "value": "Pass",
         },
-        'smart_conveyance_self_test': {
-            'equality': "==",
-            'value': "Pass",
+        "smart_conveyance_self_test": {
+            "equality": "==",
+            "value": "Pass",
         },
-        'health': {
-            'equality': ">=",
-            'value': 80,
+        "health": {
+            "equality": ">=",
+            "value": 80,
         },
-        'reallocated_sectors': {
-            'equality': "<=",
-            'value': 50,
+        "reallocated_sectors": {
+            "equality": "<=",
+            "value": 50,
         },
     }
 
@@ -294,9 +300,9 @@ class Device:
 
         # Attributes to Modify
         attributes_to_modify = [
-            'smartctl',
-            'seatools',
-            'sgutils',
+            "smartctl",
+            "seatools",
+            "sgutils",
         ]
 
         # Object Copy
@@ -413,9 +419,9 @@ class Device:
 
         # HPE List
         hpe_list = [
-            'MB',
-            'MK',
-            'MM',
+            "MB",
+            "MK",
+            "MM",
         ]
 
         # Loop HPE prefixes
@@ -431,7 +437,7 @@ class Device:
 
         # HGST List
         hgst_devices = [
-            'HUS',
+            "HUS",
         ]
 
         for prefix in hgst_devices:
@@ -443,9 +449,7 @@ class Device:
         """
 
         # Intel List
-        intel_devices = [
-            'SSDS'
-        ]
+        intel_devices = ["SSDS",]
 
         # Loop
         for prefix in intel_devices:
@@ -457,11 +461,7 @@ class Device:
         """
 
         # Samsung List
-        samsung_devices = [
-            'MZ-',
-            'MZ7',
-            'MZ7K'
-        ]
+        samsung_devices = ["MZ-", "MZ7", "MZ7K",]
 
         # Loop
         for prefix in samsung_devices:
@@ -473,10 +473,7 @@ class Device:
         """
 
         # Seagate List
-        seagate_devices = [
-            'ST',
-            'ST500'
-        ]
+        seagate_devices = ["ST", "ST500",]
 
         # Loop
         for prefix in seagate_devices:
@@ -489,7 +486,7 @@ class Device:
 
         # Toshiba List
         toshiba_devices = [
-            'THN',
+            "THN",
         ]
 
         for prefix in toshiba_devices:
@@ -502,7 +499,7 @@ class Device:
 
         # Western Digital List
         wdc_devices = [
-            'WDC-',
+            "WDC-",
         ]
 
         for prefix in wdc_devices:
@@ -540,13 +537,13 @@ class Device:
         """
 
         # Check Rotation Rate
-        if 'rotation_rate' in self.smartctl_json:
+        if "rotation_rate" in self.smartctl_json:
             # Set Media Type
             return self.rotation_rate_map.get(
                 # Get Rotation Rate
-                self.smartctl_json.get('rotation_rate', "Not Reported"),
+                self.smartctl_json.get("rotation_rate", "Not Reported"),
                 # Fallback
-                "Not Reported"
+                "Not Reported",
             )
         else:
             # If Transport Protocol is NVMe
@@ -568,9 +565,9 @@ class Device:
         # Return Transport Protocol
         return self.protocol_map.get(
             # Get Transport Protocol
-            self.smartctl_json['device']['protocol'],
+            self.smartctl_json["device"]["protocol"],
             # Fallback
-            "Unknown"
+            "Unknown",
         )
 
     """ Is Properties"""
@@ -815,7 +812,9 @@ class Device:
 
     """ Self-Test Commands """
 
-    def execute_smart_short_self_test(self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False) -> Command | bool:
+    def execute_smart_short_self_test(
+        self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False,
+    ) -> Command | bool:
         """
         Execute a Firmware-based S.M.A.R.T Short Self-test
         :param captive: execute self-test in Captive mode
@@ -835,14 +834,19 @@ class Device:
             # If SeaTools
             if use_seatools:
                 # Execute Short Self-test
-                return self.smartctl.execute_self_test_short(captive=captive)  # TODO - write seatools self-test logic and handler
+                # TODO - write seatools self-test logic and handler
+                return self.smartctl.execute_self_test_short(
+                    captive=captive
+                )  
 
         # If Command Exception
         except CommandException:
             # Return False
             return False
 
-    def execute_smart_long_self_test(self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False) -> Command | bool:
+    def execute_smart_long_self_test(
+        self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False,
+    ) -> Command | bool:
         """
         Execute a Firmware-based S.M.A.R.T Extended Self-test
         :param captive: execute self-test in Captive mode
@@ -862,14 +866,19 @@ class Device:
             # If SeaTools
             if use_seatools:
                 # Execute Short Self-test
-                return self.smartctl.execute_self_test_long(captive=captive)  # TODO - write seatools self-test logic and handler
+                # TODO - write seatools self-test logic and handler
+                return self.smartctl.execute_self_test_long(
+                    captive=captive
+                )  
 
         # If Command Exception
         except CommandException:
             # Return False
             return False
 
-    def execute_smart_conveyance_self_test(self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False) -> Command | bool:
+    def execute_smart_conveyance_self_test(
+        self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False,
+    ) -> Command | bool:
         """
         Execute a Firmware-based S.M.A.R.T Conveyance Self-test
         :param captive: execute self-test in Captive mode
@@ -889,14 +898,23 @@ class Device:
             # If SeaTools
             if use_seatools:
                 # Execute Conveyance Self-test
-                return self.smartctl.execute_self_test_conveyance(captive=captive)  # TODO - write seatools self-test logic and handler
+                # TODO - write seatools self-test logic and handler
+                return self.smartctl.execute_self_test_conveyance(
+                    captive=captive
+                )  
 
         # If Command Exception
         except CommandException:
             # Return False
             return False
 
-    def execute_smart_vendor_self_test(self, vendor_specific_command: str = "0x00", captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False) -> Command | bool:
+    def execute_smart_vendor_self_test(
+        self,
+        vendor_specific_command: str = "0x00",
+        captive: bool = False,
+        use_smartctl: bool = True,
+        use_seatools: bool = False,
+    ) -> Command | bool:
         """
         Execute a Firmware-based S.M.A.R.T Vendor-specific Self-test
         :param vendor_specific_command: the vendor-specific command code
@@ -913,16 +931,14 @@ class Device:
             if use_smartctl:
                 # Execute Short Self-test
                 return self.smartctl.execute_self_test_vendor_specific(
-                    vendor_specific_command=vendor_specific_command,
-                    captive=captive
+                    vendor_specific_command=vendor_specific_command, captive=captive,
                 )
 
             # If SeaTools
             if use_seatools:
                 # Execute Short Self-test
                 return self.smartctl.execute_self_test_vendor_specific(
-                    vendor_specific_command=vendor_specific_command,
-                    captive=captive
+                    vendor_specific_command=vendor_specific_command, captive=captive,
                 )  # TODO - write seatools self-test logic and handler
 
         # If Command Exception
@@ -937,10 +953,16 @@ class Devices:
     """
 
     # Commands
-    scan_devices_command: str = 'smartctl --scan-open -j'
-    scan_devices_alt_command: str = 'lsblk -d -b -e 1,7,11,252 -O -J'
+    scan_devices_command: str = "smartctl --scan-open -j"
+    scan_devices_alt_command: str = "lsblk -d -b -e 1,7,11,252 -O -J"
 
-    def __init__(self, ignore_ata: bool = False, ignore_nvme: bool = False, ignore_scsi: bool = False, ignore_removable: bool = False):
+    def __init__(
+        self,
+        ignore_ata: bool = False,
+        ignore_nvme: bool = False,
+        ignore_scsi: bool = False,
+        ignore_removable: bool = False,
+    ):
         """
         Constructor
         """
@@ -976,7 +998,7 @@ class Devices:
         # If Exception
         except CommandException as exception:
             # Raise Device Exception
-            raise DevicesException(f'An error occurred initializing Devices: Command Exception = {exception}')
+            raise DevicesException(f"An error occurred initializing Devices: Command Exception = {exception}")
 
     def __repr__(self):
         """
@@ -1010,9 +1032,9 @@ class Devices:
         json_output = json.loads(self.scan_command.get_output())
 
         # Loop Devices
-        for device in json_output['devices']:
+        for device in json_output["devices"]:
             # If Open Error in Drive
-            if 'open_error' in device:
+            if "open_error" in device:
                 # Append to Failure List
                 self.failures.append(device)
 
@@ -1020,12 +1042,12 @@ class Devices:
                 continue
 
             # If MegaRAID Bus
-            if device['name'].startswith("/dev/bus"):
+            if device["name"].startswith("/dev/bus"):
                 # Continue - TODO - provide handler for MegaRAID volumes? No?
                 continue
 
             # Get Type
-            device_type = device['protocol']
+            device_type = device["protocol"]
 
             # If Device Type is ATA and Ignore is True, skip the device
             if device_type == "ATA" and self.ignore_ata:
@@ -1074,7 +1096,7 @@ class Devices:
             # Devices List
             self.devices = list(
                 # Map List Comprehension
-                analysis.map(self.analyse_device, [drive['name'] for drive in self.scanned])
+                analysis.map(self.analyse_device, [drive["name"] for drive in self.scanned])
             )
 
         # Return
@@ -1238,21 +1260,21 @@ class ATAProtocol:
         # If State is Not Ready
         if device.state == "Not Ready":
             # Check Why... First, Sanitize Status...
-            ata_sanitize_status = Command(f'hdparm --sanitize-status {device.dut}')
+            ata_sanitize_status = Command(f"hdparm --sanitize-status {device.dut}")
 
             # Check Sanitize Status
             ata_sanitize_status.run()
 
             # If Sanitize Operation in Process
-            if b'SD2 Sanitize operation In Process' in ata_sanitize_status.get_output():
+            if b"SD2 Sanitize operation In Process" in ata_sanitize_status.get_output():
                 # Get Percent Complete
-                returned = ata_sanitize_status.get_output().decode('utf-8').split('\n')
+                returned = ata_sanitize_status.get_output().decode("utf-8").split("\n")
 
                 # Remove Empty Strings
-                returned = [item for item in returned if item != '']
+                returned = [item for item in returned if item != ""]
 
                 # Decode and Split
-                percent = int(returned[-1].split()[-1].strip('()').replace('%', ''))
+                percent = int(returned[-1].split()[-1].strip("()").replace("%", ""))
 
                 # Set State to Sanitizing
                 device.state = f"Sanitizing ({percent}%)"
@@ -1261,7 +1283,7 @@ class ATAProtocol:
                 device.flags.append("Sanitize In Progress")
 
         # Set Properties
-        model_name = smartctl.get('model_name', "Not Reported")
+        model_name = smartctl.get("model_name", "Not Reported")
 
         # Vendor
         device.vendor = str(device.determine_brand_by_model_number(model_name)).upper()
@@ -1269,79 +1291,83 @@ class ATAProtocol:
         # If Vendor is None
         if device.vendor == none:
             # Determine Vendor by Starting Characters of the Model Number
-            device.vendor = self.helper.clean_string(device.determine_brand_by_model_number_starts_with(model_name).upper())
+            device.vendor = self.helper.clean_string(
+                device.determine_brand_by_model_number_starts_with(model_name).upper(),
+            )
 
         # Model Number
         device.model_number = self.helper.clean_string(device.determine_model_by_model_number(model_name).upper())
 
         # Serial Number
-        device.serial_number = smartctl.get('serial_number', "Not Reported")
+        device.serial_number = smartctl.get("serial_number", "Not Reported")
 
         # Firmware Revision
-        device.firmware_revision = smartctl.get('firmware_version', "Not Reported")
+        device.firmware_revision = smartctl.get("firmware_version", "Not Reported")
 
         # Transport Revision
-        device.transport_revision = smartctl.get('ata_version', dict()).get('string', "Not Reported")
+        device.transport_revision = smartctl.get("ata_version", dict()).get("string", "Not Reported")
 
         # Transport Version
-        device.transport_version = smartctl.get('sata_version', dict()).get('string', "Not Reported")
+        device.transport_version = smartctl.get("sata_version", dict()).get("string", "Not Reported")
 
         # Rotation Rate
-        device.rotation_rate = smartctl.get('rotation_rate', "Not Reported")
+        device.rotation_rate = smartctl.get("rotation_rate", "Not Reported")
 
         # Form Factor
-        device.form_factor = smartctl.get('form_factor', dict()).get('name', "Not Reported")
+        device.form_factor = smartctl.get("form_factor", dict()).get("name", "Not Reported")
 
         # Power On Hours
-        device.power_on_hours = smartctl.get('power_on_time', dict()).get('hours', "Not Reported") if device.state == "Ready" else "0"
+        device.power_on_hours = (
+            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0",
+        )
 
         # Get Capacity Information
-        capacity_info = smartctl.get('user_capacity', dict())
+        capacity_info = smartctl.get("user_capacity", dict())
 
         # Get Capacity in Bytes
-        capacity_in_bytes = int(capacity_info.get('bytes', 0))
+        capacity_in_bytes = int(capacity_info.get("bytes", 0))
 
         # Convert Capacity
-        device.size = round(capacity_in_bytes / (1000 ** 3))
+        device.size = round(capacity_in_bytes / (1000**3))
         device.bytes = capacity_in_bytes
         device.kilobytes = capacity_in_bytes / 1000
-        device.megabytes = capacity_in_bytes / (1000 ** 2)
-        device.gigabytes = capacity_in_bytes / (1000 ** 3)
-        device.terabytes = capacity_in_bytes / (1000 ** 4)
+        device.megabytes = capacity_in_bytes / (1000**2)
+        device.gigabytes = capacity_in_bytes / (1000**3)
+        device.terabytes = capacity_in_bytes / (1000**4)
         device.kibibytes = capacity_in_bytes / 1024
-        device.mebibytes = capacity_in_bytes / (1024 ** 2)
-        device.gibibytes = capacity_in_bytes / (1024 ** 3)
-        device.tebibytes = capacity_in_bytes / (1024 ** 4)
+        device.mebibytes = capacity_in_bytes / (1024**2)
+        device.gibibytes = capacity_in_bytes / (1024**3)
+        device.tebibytes = capacity_in_bytes / (1024**4)
 
         # Get Sector Information
-        device.sectors = int(smartctl.get('user_capacity', dict()).get('blocks', 0))
-        device.logical_sector_size = int(smartctl.get('logical_block_size', 0))
-        device.physical_sector_size = int(smartctl.get('physical_block_size', 0))
+        device.sectors = int(smartctl.get("user_capacity", dict()).get("blocks", 0))
+        device.logical_sector_size = int(smartctl.get("logical_block_size", 0))
+        device.physical_sector_size = int(smartctl.get("physical_block_size", 0))
 
         # S.M.A.R.T Support
-        device.smart_supported = smartctl.get('smart_support', dict()).get('available', "Not Reported")
-        device.smart_enabled = smartctl.get('smart_support', dict()).get('enabled', "Not Reported")
+        device.smart_supported = smartctl.get("smart_support", dict()).get("available", "Not Reported")
+        device.smart_enabled = smartctl.get("smart_support", dict()).get("enabled", "Not Reported")
 
         # S.M.A.R.T Status
-        device.smart_status = smartctl.get('smart_status', dict()).get('passed', "Not Reported")
+        device.smart_status = smartctl.get("smart_status", dict()).get("passed", "Not Reported")
 
         # S.M.A.R.T Attributes
-        device.smart_attributes = smartctl.get('ata_smart_attributes', dict()).get('table', "Not Reported")
+        device.smart_attributes = smartctl.get("ata_smart_attributes", dict()).get("table", "Not Reported")
 
         # If Self Test Supported
-        if 'ata_smart_data' in smartctl:
+        if "ata_smart_data" in smartctl:
             # Set ATA SMART Data
-            ata_smart_data = smartctl['ata_smart_data']
+            ata_smart_data = smartctl["ata_smart_data"]
 
             # If Capabilities
-            if 'capabilities' in ata_smart_data:
+            if "capabilities" in ata_smart_data:
                 # Get Capabilities
-                capabilities = ata_smart_data['capabilities']
+                capabilities = ata_smart_data["capabilities"]
 
                 # Standard Self Tests
-                standard = 'self_tests_supported'
-                selective = 'selective_self_test_supported'
-                conveyance = 'conveyance_self_test_supported'
+                standard = "self_tests_supported"
+                selective = "selective_self_test_supported"
+                conveyance = "conveyance_self_test_supported"
 
                 # Set Supported Self Tests
                 device.smart_self_tests_supported = capabilities.get(standard, False)
@@ -1363,14 +1389,14 @@ class ATAProtocol:
             device.smart_self_tests_selective_supported = False
 
         # Check ATA Self Test Log
-        if 'ata_smart_self_test_log' in smartctl:
+        if "ata_smart_self_test_log" in smartctl:
             # Set Smartctl S.M.A.R.T Self Test Log
-            self_test_log = smartctl.get('ata_smart_self_test_log')
+            self_test_log = smartctl.get("ata_smart_self_test_log")
 
             # Self Test Tables
-            table = 'table'
-            standard = 'standard'
-            extended = 'extended'
+            table = "table"
+            standard = "standard"
+            extended = "extended"
 
             # If Extended S.M.A.R.T Self Test Log
             if extended in self_test_log and table in self_test_log.get(extended):
@@ -1399,10 +1425,14 @@ class ATAProtocol:
         device.reallocated_sectors = self.get_smart_attribute_by_id(attribute_id=5, attributes=device.smart_attributes)
 
         # Get Pending Sectors
-        device.pending_reallocated_sectors = self.get_smart_attribute_by_id(attribute_id=197, attributes=device.smart_attributes)
+        device.pending_reallocated_sectors = self.get_smart_attribute_by_id(
+            attribute_id=197, attributes=device.smart_attributes,
+        )
 
         # Get Offline Uncorrectable Sectors
-        device.offline_uncorrectable_sectors = self.get_smart_attribute_by_id(attribute_id=198, attributes=device.smart_attributes)
+        device.offline_uncorrectable_sectors = self.get_smart_attribute_by_id(
+            attribute_id=198, attributes=device.smart_attributes,
+        )
 
         # Get Device Start/Stop Count
         device.start_stop_count = self.get_smart_attribute_by_id(attribute_id=4, attributes=device.smart_attributes)
@@ -1418,76 +1448,76 @@ class ATAProtocol:
         """
 
         # Get Device Statistics Pages
-        device_statistics_pages = smartctl.get('ata_device_statistics', {}).get('pages', [])
+        device_statistics_pages = smartctl.get("ata_device_statistics", {}).get("pages", [])
 
         # Iterate Device Statistics Logs Pages
         for page in device_statistics_pages:
             # Rotating Media Statistics Page
-            if page.get('name') == "Rotating Media Statistics":
+            if page.get("name") == "Rotating Media Statistics":
                 # Get Page Information
                 device.rotating_media_statistics = None
 
             # Temperature Statistics
-            if page.get('name') == "Temperature Statistics":
+            if page.get("name") == "Temperature Statistics":
                 # Extract Table
-                temperature_table = page.get('table', [])
+                temperature_table = page.get("table", [])
 
                 # Iterate Table
                 for temperature in temperature_table:
                     # If Specified Maximum Operating Temperature
-                    if temperature.get('name') == "Specified Maximum Operating Temperature":
+                    if temperature.get("name") == "Specified Maximum Operating Temperature":
                         # Get Specified Maximum Operating Temperature
-                        device.maximum_temperature = temperature.get('value', "Not Reported")
+                        device.maximum_temperature = temperature.get("value", "Not Reported")
 
                     # If Specified Minimum Operating Temperature
-                    if temperature.get('name') == "Specified Minimum Operating Temperature":
+                    if temperature.get("name") == "Specified Minimum Operating Temperature":
                         # Get Specified Minimum Operating Temperature
-                        device.minimum_temperature = temperature.get('value', "Not Reported")
+                        device.minimum_temperature = temperature.get("value", "Not Reported")
 
                     # If Current Temperature
-                    if temperature.get('name') == "Current Temperature":
+                    if temperature.get("name") == "Current Temperature":
                         # Get Current Temperature
-                        device.current_temperature = temperature.get('value', "Not Reported")
+                        device.current_temperature = temperature.get("value", "Not Reported")
 
                     # If Highest Temperature
-                    if temperature.get('name') == "Highest Temperature":
+                    if temperature.get("name") == "Highest Temperature":
                         # Get Highest Temperature
-                        device.highest_temperature = temperature.get('value', "Not Reported")
+                        device.highest_temperature = temperature.get("value", "Not Reported")
 
                     # If Lowest Temperature
-                    if temperature.get('name') == "Lowest Temperature":
+                    if temperature.get("name") == "Lowest Temperature":
                         # Get Lowest Temperature
-                        device.lowest_temperature = temperature.get('value', "Not Reported")
+                        device.lowest_temperature = temperature.get("value", "Not Reported")
 
                     # If Average Short Term Temperature
-                    if temperature.get('name') == "Average Short Term Temperature":
+                    if temperature.get("name") == "Average Short Term Temperature":
                         # Get Current Temperature
-                        device.average_short_temperature = temperature.get('value', "Not Reported")
+                        device.average_short_temperature = temperature.get("value", "Not Reported")
 
                     # If Average Long Term Temperature
-                    if temperature.get('name') == "Average Long Term Temperature":
+                    if temperature.get("name") == "Average Long Term Temperature":
                         # Get Current Temperature
-                        device.average_long_temperature = temperature.get('value', "Not Reported")
+                        device.average_long_temperature = temperature.get("value", "Not Reported")
 
                     # If Highest Average Short Term Temperature
-                    if temperature.get('name') == "Highest Average Short Term Temperature":
+                    if temperature.get("name") == "Highest Average Short Term Temperature":
                         # Get Current Temperature
-                        device.highest_average_short_temperature = temperature.get('value', "Not Reported")
+                        device.highest_average_short_temperature = temperature.get("value", "Not Reported")
 
                     # If Lowest Average Short Term Temperature
-                    if temperature.get('name') == "Lowest Average Short Term Temperature":
+                    if temperature.get("name") == "Lowest Average Short Term Temperature":
                         # Get Current Temperature
-                        device.lowest_average_short_temperature = temperature.get('value', "Not Reported")
+                        device.lowest_average_short_temperature = temperature.get("value", "Not Reported")
 
                     # If Highest Average Long Term Temperature
-                    if temperature.get('name') == "Highest Average Long Term Temperature":
+                    if temperature.get("name") == "Highest Average Long Term Temperature":
                         # Get Current Temperature
-                        device.highest_average_long_temperature = temperature.get('value', "Not Reported")
+                        device.highest_average_long_temperature = temperature.get("value", "Not Reported")
 
                     # If Lowest Average Long Term Temperature
-                    if temperature.get('name') == "Lowest Average Long Term Temperature":
+                    if temperature.get("name") == "Lowest Average Long Term Temperature":
                         # Get Current Temperature
-                        device.lowest_average_long_temperature = temperature.get('value', "Not Reported")
+                        device.lowest_average_long_temperature = temperature.get("value", "Not Reported")
 
         """
         Grading
@@ -1576,7 +1606,9 @@ class ATAProtocol:
             device.flags.append(f"{device.offline_uncorrectable_sectors} Offline Uncorrectable Errors")
 
     @staticmethod
-    def get_smart_attribute_by_id(attributes, attribute_id=5, actual_value=False, worst_value=False, threshold=False, flags=False):
+    def get_smart_attribute_by_id(
+        attributes, attribute_id=5, actual_value=False, worst_value=False, threshold=False, flags=False,
+    ):
         """
         Get ATA S.M.A.R.T. Attribute by ID
         @param attributes: S.M.A.R.T Attributes Object
@@ -1596,30 +1628,29 @@ class ATAProtocol:
             # Loop
             for att in attributes:
                 # If ID is found
-                if att['id'] == attribute_id:
-
+                if att["id"] == attribute_id:
                     # If Actual
                     if actual_value:
                         # Return Actual Value
-                        return att['value']
+                        return att["value"]
 
                     # If Worst
                     if worst_value:
                         # Return Worst Value
-                        return att['worst']
+                        return att["worst"]
 
                     # If Threshold
                     if threshold:
                         # Return Threshold Value
-                        return att['threshold']
+                        return att["threshold"]
 
                     # If Flags
                     if threshold:
                         # Return Flags
-                        return att['flags']
+                        return att["flags"]
 
                     # Else return Attribute Raw Value
-                    return att['raw']['value']
+                    return att["raw"]["value"]
 
             # If attribute is not found, return default value
             return default
@@ -1639,7 +1670,7 @@ class NVMeProtocol:
         super().__init__()
 
         # Set Properties
-        model_name = smartctl.get('model_name', "Not Reported")
+        model_name = smartctl.get("model_name", "Not Reported")
 
         # Vendor
         device.vendor = str(device.determine_brand_by_model_number(model_name)).upper()
@@ -1647,61 +1678,65 @@ class NVMeProtocol:
         # If Vendor is None
         if device.vendor == none:
             # Determine Vendor by Starting Characters of the Model Number
-            device.vendor = self.helper.clean_string(device.determine_brand_by_model_number_starts_with(model_name).upper())
+            device.vendor = self.helper.clean_string(
+                device.determine_brand_by_model_number_starts_with(model_name).upper(),
+            )
 
         # Model Number
         device.model_number = self.helper.clean_string(device.determine_model_by_model_number(model_name).upper())
 
         # Serial Number
-        device.serial_number = smartctl.get('serial_number', "Not Reported")
+        device.serial_number = smartctl.get("serial_number", "Not Reported")
 
         # Firmware Revision
-        device.firmware_revision = smartctl.get('firmware_version', "Not Reported")
+        device.firmware_revision = smartctl.get("firmware_version", "Not Reported")
 
         # Transport Revision
-        device.transport_revision = smartctl.get('ata_version', dict()).get('string', "Not Reported")
+        device.transport_revision = smartctl.get("ata_version", dict()).get("string", "Not Reported")
 
         # Transport Version
-        device.transport_version = smartctl.get('sata_version', dict()).get('string', "Not Reported")
+        device.transport_version = smartctl.get("sata_version", dict()).get("string", "Not Reported")
 
         # Rotation Rate
-        device.rotation_rate = smartctl.get('rotation_rate', "Not Reported")
+        device.rotation_rate = smartctl.get("rotation_rate", "Not Reported")
 
         # Form Factor
-        device.form_factor = smartctl.get('form_factor', dict()).get('name', "Not Reported")
+        device.form_factor = smartctl.get("form_factor", dict()).get("name", "Not Reported")
 
         # Power On Hours
-        device.power_on_hours = smartctl.get('power_on_time', dict()).get('hours',"Not Reported") if device.state == "Ready" else "0"
+        device.power_on_hours = (
+            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0",
+        )
 
         # Get Capacity Information
-        capacity_info = smartctl.get('user_capacity', dict())
+        capacity_info = smartctl.get("user_capacity", dict())
 
         # Get Capacity in Bytes
-        capacity_in_bytes = int(capacity_info.get('bytes', 0))
+        capacity_in_bytes = int(capacity_info.get("bytes", 0))
 
         # Convert Capacity
-        device.size = round(capacity_in_bytes / (1000 ** 3))
+        device.size = round(capacity_in_bytes / (1000**3))
         device.bytes = capacity_in_bytes
         device.kilobytes = capacity_in_bytes / 1000
-        device.megabytes = capacity_in_bytes / (1000 ** 2)
-        device.gigabytes = capacity_in_bytes / (1000 ** 3)
-        device.terabytes = capacity_in_bytes / (1000 ** 4)
+        device.megabytes = capacity_in_bytes / (1000**2)
+        device.gigabytes = capacity_in_bytes / (1000**3)
+        device.terabytes = capacity_in_bytes / (1000**4)
         device.kibibytes = capacity_in_bytes / 1024
-        device.mebibytes = capacity_in_bytes / (1024 ** 2)
-        device.gibibytes = capacity_in_bytes / (1024 ** 3)
-        device.tebibytes = capacity_in_bytes / (1024 ** 4)
+        device.mebibytes = capacity_in_bytes / (1024**2)
+        device.gibibytes = capacity_in_bytes / (1024**3)
+        device.tebibytes = capacity_in_bytes / (1024**4)
 
         # Get Sector Information
-        device.sectors = int(smartctl.get('user_capacity', dict()).get('blocks', 0))
-        device.logical_sector_size = int(smartctl.get('logical_block_size', 0))
-        device.physical_sector_size = int(smartctl.get('physical_block_size', 0))
+        device.sectors = int(smartctl.get("user_capacity", dict()).get("blocks", 0))
+        device.logical_sector_size = int(smartctl.get("logical_block_size", 0))
+        device.physical_sector_size = int(smartctl.get("physical_block_size", 0))
 
         # S.M.A.R.T Support
-        device.smart_supported = smartctl.get('smart_support', dict()).get('available', "Not Reported")
-        device.smart_enabled = smartctl.get('smart_support', dict()).get('enabled', "Not Reported")
+        device.smart_supported = smartctl.get("smart_support", dict()).get("available", "Not Reported")
+        device.smart_enabled = smartctl.get("smart_support", dict()).get("enabled", "Not Reported")
 
         # S.M.A.R.T Status
-        device.smart_status = smartctl.get('smart_status', dict()).get('passed', "Not Reported")
+        device.smart_status = smartctl.get("smart_status", dict()).get("passed", "Not Reported")
 
 
 @dataclass
@@ -1715,35 +1750,37 @@ class SCSIProtocol:
         self.smartctl = smartctl
 
         # Get Vendor
-        device.vendor = smartctl.get('scsi_vendor', "Not Reported")
+        device.vendor = smartctl.get("scsi_vendor", "Not Reported")
 
         # Get Model Number
-        device.model_number = str(device.determine_model_by_model_number(smartctl.get('scsi_model_name', "Not Reported"))).upper()
+        device.model_number = str(
+            device.determine_model_by_model_number(smartctl.get("scsi_model_name", "Not Reported")),
+        ).upper()
 
         # Get Serial Number
-        device.serial_number = smartctl.get('serial_number', "Not Reported")
+        device.serial_number = smartctl.get("serial_number", "Not Reported")
 
         # Get Firmware Version
-        device.firmware_revision = smartctl.get('scsi_revision', "Not Reported")
+        device.firmware_revision = smartctl.get("scsi_revision", "Not Reported")
 
         # Transport Revision
-        device.transport_revision = smartctl.get('scsi_version', "Not Reported")
+        device.transport_revision = smartctl.get("scsi_version", "Not Reported")
 
         # Transport Version
-        device.transport_version = smartctl.get('scsi_transport_protocol', "Not Reported")
+        device.transport_version = smartctl.get("scsi_transport_protocol", "Not Reported")
 
         # Form Factor
-        device.form_factor = smartctl.get('form_factor', {}).get('name')
+        device.form_factor = smartctl.get("form_factor", {}).get("name")
 
         # Rotation Rate
-        device.rotation_rate = smartctl.get('rotation_rate', "Not Reported")
+        device.rotation_rate = smartctl.get("rotation_rate", "Not Reported")
 
         # Power on Hours
-        device.power_on_hours = smartctl.get('power_on_time', {}).get('hours', 0)
+        device.power_on_hours = smartctl.get("power_on_time", {}).get("hours", 0)
 
         # Get Capacities
-        capacity_info = smartctl.get('user_capacity', {})
-        capacity_in_bytes = capacity_info.get('bytes')
+        capacity_info = smartctl.get("user_capacity", {})
+        capacity_in_bytes = capacity_info.get("bytes")
 
         # Check if not Integer
         if not isinstance(capacity_in_bytes, int):
@@ -1762,28 +1799,28 @@ class SCSIProtocol:
 
         # Convert Capacity
         device.kilobytes = capacity_in_bytes / 1000
-        device.megabytes = capacity_in_bytes / (1000 ** 2)
-        device.gigabytes = capacity_in_bytes / (1000 ** 3)
-        device.terabytes = capacity_in_bytes / (1000 ** 4)
+        device.megabytes = capacity_in_bytes / (1000**2)
+        device.gigabytes = capacity_in_bytes / (1000**3)
+        device.terabytes = capacity_in_bytes / (1000**4)
         device.kibibytes = capacity_in_bytes / 1024
-        device.mebibytes = capacity_in_bytes / (1024 ** 2)
-        device.gibibytes = capacity_in_bytes / (1024 ** 3)
-        device.tebibytes = capacity_in_bytes / (1024 ** 4)
+        device.mebibytes = capacity_in_bytes / (1024**2)
+        device.gibibytes = capacity_in_bytes / (1024**3)
+        device.tebibytes = capacity_in_bytes / (1024**4)
 
         # Get Sector Information
-        device.sectors = int(smartctl.get('user_capacity', dict()).get('blocks', 0))
-        device.logical_sector_size = int(smartctl.get('logical_block_size', 0))
-        device.physical_sector_size = int(smartctl.get('physical_block_size', 0))
+        device.sectors = int(smartctl.get("user_capacity", dict()).get("blocks", 0))
+        device.logical_sector_size = int(smartctl.get("logical_block_size", 0))
+        device.physical_sector_size = int(smartctl.get("physical_block_size", 0))
 
         # S.M.A.R.T Support
-        device.smart_supported = smartctl.get('smart_support', dict()).get('available', "Not Reported")
-        device.smart_enabled = smartctl.get('smart_support', dict()).get('enabled', "Not Reported")
+        device.smart_supported = smartctl.get("smart_support", dict()).get("available", "Not Reported")
+        device.smart_enabled = smartctl.get("smart_support", dict()).get("enabled", "Not Reported")
 
         # S.M.A.R.T Status
-        device.smart_status = smartctl.get('smart_status', dict()).get('passed', "Not Reported")
+        device.smart_status = smartctl.get("smart_status", dict()).get("passed", "Not Reported")
 
         # S.M.A.R.T Attributes
-        device.smart_attributes = smartctl.get('scsi_error_counter_log', "Not Reported")
+        device.smart_attributes = smartctl.get("scsi_error_counter_log", "Not Reported")
 
         """
         Self Tests
@@ -1805,7 +1842,7 @@ class SCSIProtocol:
         device.smart_self_tests = self_tests
 
         # Get Grown Defects
-        grown_defects = smartctl.get('scsi_grown_defect_list', "Not Reported")
+        grown_defects = smartctl.get("scsi_grown_defect_list", "Not Reported")
 
         # If Grown Defects not reported
         if grown_defects == "Not Reported":
@@ -1822,11 +1859,11 @@ class SCSIProtocol:
         """
 
         # If Error Counter Log
-        if 'scsi_error_counter_log' in smartctl:
+        if "scsi_error_counter_log" in smartctl:
             # If Read Errors in Log
-            if 'read' in smartctl['scsi_error_counter_log']:
+            if "read" in smartctl["scsi_error_counter_log"]:
                 # Set Read Errors
-                read_errors = smartctl['scsi_error_counter_log']['read']['total_uncorrected_errors']
+                read_errors = smartctl["scsi_error_counter_log"]["read"]["total_uncorrected_errors"]
 
             # Else
             else:
@@ -1834,9 +1871,9 @@ class SCSIProtocol:
                 read_errors = 0
 
             # If Write Errors in Log
-            if 'write' in smartctl['scsi_error_counter_log']:
+            if "write" in smartctl["scsi_error_counter_log"]:
                 # Set Write Errors
-                write_errors = smartctl['scsi_error_counter_log']['write']['total_uncorrected_errors']
+                write_errors = smartctl["scsi_error_counter_log"]["write"]["total_uncorrected_errors"]
 
             # Else
             else:
@@ -1844,9 +1881,9 @@ class SCSIProtocol:
                 write_errors = 0
 
             # If Verify Errors in Log
-            if 'verify' in smartctl['scsi_error_counter_log']:
+            if "verify" in smartctl["scsi_error_counter_log"]:
                 # Set Verify Errors
-                verify_errors = smartctl['scsi_error_counter_log']['verify']['total_uncorrected_errors']
+                verify_errors = smartctl["scsi_error_counter_log"]["verify"]["total_uncorrected_errors"]
 
             # Else
             else:

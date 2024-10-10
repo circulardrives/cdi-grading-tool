@@ -247,7 +247,7 @@ class Configuration:
             raise ConfigurationException(f"Warning: Configuration file '{self.configuration_file}' not found.")
 
         # Open Configuration File
-        with open(self.configuration_file, 'w') as config_file:
+        with open(self.configuration_file, "w") as config_file:
             # Write Configuration File
             self.configuration.write(config_file)
 

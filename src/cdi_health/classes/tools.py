@@ -49,7 +49,7 @@ class Command:
         """
 
         # Properties
-        self.command = ' '.join(command.split()) if command else None
+        self.command = " ".join(command.split()) if command else None
         self.arguments = None
         self.process = None
         self.process_id = None
@@ -105,13 +105,11 @@ class Command:
 
         # If FileNotFoundError
         except FileNotFoundError:
-
             # Raise Command Exception
             raise CommandException("Command not found")
 
         # If Exception
         except Exception:
-
             # Raise Command Exception
             raise CommandException("An Error occurred while running the Command")
 
@@ -184,7 +182,7 @@ class Command:
             process_id=self.get_process_id(),
             output=self.get_output(),
             errors=self.get_errors(),
-            duration=self.get_duration()
+            duration=self.get_duration(),
         )
 
     def has_errors(self):
@@ -220,15 +218,15 @@ class SeaTools:
     """
 
     # Get Commands
-    get_version_command = '/opt/openSeaChest/openSeaChest_Basics --version'
-    get_devices_command = '/opt/openSeaChest/openSeaChest_Basics --scan'
-    get_device_information_command = '/opt/openSeaChest/openSeaChest_Basics --deviceInfo --device'
+    get_version_command = "/opt/openSeaChest/openSeaChest_Basics --version"
+    get_devices_command = "/opt/openSeaChest/openSeaChest_Basics --scan"
+    get_device_information_command = "/opt/openSeaChest/openSeaChest_Basics --deviceInfo --device"
 
     # Self Test Commands
-    abort_self_test_command = '/opt/openSeaChest/openSeaChest_SMART --abortDST --device'
-    execute_self_test_short_command = '/opt/openSeaChest/openSeaChest_SMART --shortDST --device'
-    execute_self_test_long_command = '/opt/openSeaChest/openSeaChest_SMART --longDST --device'
-    execute_self_test_conveyance_command = '/opt/openSeaChest/openSeaChest_SMART --conveyanceDST --device'
+    abort_self_test_command = "/opt/openSeaChest/openSeaChest_SMART --abortDST --device"
+    execute_self_test_short_command = "/opt/openSeaChest/openSeaChest_SMART --shortDST --device"
+    execute_self_test_long_command = "/opt/openSeaChest/openSeaChest_SMART --longDST --device"
+    execute_self_test_conveyance_command = "/opt/openSeaChest/openSeaChest_SMART --conveyanceDST --device"
 
     def __init__(self, device_id: str = None):
         """
@@ -250,7 +248,7 @@ class SeaTools:
         """
 
         # Prepare Command String
-        get_all_command = f'{self.get_device_information_command} {self.dut}'
+        get_all_command = f"{self.get_device_information_command} {self.dut}"
 
         # Prepare Command
         command = Command(get_all_command)
@@ -264,7 +262,7 @@ class SeaTools:
             return False
 
         # Return Smartctl Output as Text
-        return command.get_output().strip().decode('utf-8')
+        return command.get_output().strip().decode("utf-8")
 
     """
     Self-test Commands
@@ -277,7 +275,7 @@ class SeaTools:
         """
 
         # Prepare Command String
-        short_self_test = f'{self.abort_self_test_command} {self.dut}'
+        short_self_test = f"{self.abort_self_test_command} {self.dut}"
 
         # Prepare Command
         command = Command(short_self_test)
@@ -297,7 +295,9 @@ class SeaTools:
         """
 
         # Prepare Command String
-        short_self_test = f'{self.execute_self_test_short_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+        short_self_test = (
+            f'{self.execute_self_test_short_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+        )
 
         # Prepare Command
         command = Command(short_self_test)
@@ -318,7 +318,9 @@ class SeaTools:
         """
 
         # Prepare Command String
-        extended_self_test_command = f'{self.execute_self_test_long_command} {"force" if force else ""} {"-C" if captive else ""} {self.dut}'
+        extended_self_test_command = (
+            f'{self.execute_self_test_long_command} {"force" if force else ""} {"-C" if captive else ""} {self.dut}'
+        )
 
         # Prepare Command
         command = Command(extended_self_test_command)
@@ -371,14 +373,14 @@ class SG3Utils:
         """
 
         # If is NVMe
-        if '/dev/nvme' in self.dut:
+        if "/dev/nvme" in self.dut:
             # Return DUT
             return self.dut
 
         # Try
         try:
             # Set Command
-            command = Command(f'sg_map26 {self.dut}')
+            command = Command(f"sg_map26 {self.dut}")
 
             # Run Command
             command.run()
@@ -389,7 +391,7 @@ class SG3Utils:
                 return False
 
             # Return SCSI Generic DUT
-            return command.get_output().strip().decode('utf-8')
+            return command.get_output().strip().decode("utf-8")
 
         # If Command Exception
         except CommandException:
@@ -398,14 +400,14 @@ class SG3Utils:
 
     def test_unit_ready(self):
         # If is NVMe
-        if '/dev/nvme' in self.dut:
+        if "/dev/nvme" in self.dut:
             # Return DUT
             return self.dut
 
         # Try
         try:
             # Set Command
-            command = Command(f'sg_turs -vvvv {self.dut}')
+            command = Command(f"sg_turs -vvvv {self.dut}")
 
             # Run Command
             command.run()
@@ -430,33 +432,33 @@ class Smartctl:
     """
 
     # Get Commands
-    get_version_command = 'smartctl --version'
-    get_devices_command = 'smartctl --scan'
-    get_devices_open_command = 'smartctl --scan-open'
-    get_identify_command = 'smartctl --identify'
-    get_identity_command = 'smartctl --info'
-    get_health_command = 'smartctl --health'
-    get_device_information_command = 'smartctl --all'
-    get_all_device_information_command = 'smartctl --xall'
+    get_version_command = "smartctl --version"
+    get_devices_command = "smartctl --scan"
+    get_devices_open_command = "smartctl --scan-open"
+    get_identify_command = "smartctl --identify"
+    get_identity_command = "smartctl --info"
+    get_health_command = "smartctl --health"
+    get_device_information_command = "smartctl --all"
+    get_all_device_information_command = "smartctl --xall"
 
     # S.M.A.R.T Commands
-    set_enable_smart_command = 'smartctl --smart=on'
-    set_disable_smart_command = 'smartctl --smart=off'
-    set_enable_smart_automatic_offline_testing_command = 'smartctl --offlineauto=on'
-    set_disable_smart_automatic_offline_testing_command = 'smartctl --offlineauto=off'
-    set_enable_smart_automatic_attribute_autosave_command = 'smartctl --saveauto=on'
-    set_disable_smart_automatic_attribute_autosave_command = 'smartctl --saveauto=off'
-    set_enable_smart_all_options = 'smartctl --smart=off --offlineauto=off --saveauto=off'
-    set_disable_smart_all_options = 'smartctl --smart=off --offlineauto=off --saveauto=off'
+    set_enable_smart_command = "smartctl --smart=on"
+    set_disable_smart_command = "smartctl --smart=off"
+    set_enable_smart_automatic_offline_testing_command = "smartctl --offlineauto=on"
+    set_disable_smart_automatic_offline_testing_command = "smartctl --offlineauto=off"
+    set_enable_smart_automatic_attribute_autosave_command = "smartctl --saveauto=on"
+    set_disable_smart_automatic_attribute_autosave_command = "smartctl --saveauto=off"
+    set_enable_smart_all_options = "smartctl --smart=off --offlineauto=off --saveauto=off"
+    set_disable_smart_all_options = "smartctl --smart=off --offlineauto=off --saveauto=off"
 
     # Self Test Commands
-    abort_self_test_command = 'smartctl --abort --json=ov'
-    execute_self_test_offline_command = 'smartctl --test=offline --json=ov'
-    execute_self_test_short_command = 'smartctl --test=short --json=ov'
-    execute_self_test_long_command = 'smartctl --test=long --json=ov'
-    execute_self_test_conveyance_command = 'smartctl --test=conveyance --json=ov'
-    execute_self_test_selective_command = 'smartctl --test=select'
-    execute_self_test_vendor_specific_command = 'smartctl --test=vendor'
+    abort_self_test_command = "smartctl --abort --json=ov"
+    execute_self_test_offline_command = "smartctl --test=offline --json=ov"
+    execute_self_test_short_command = "smartctl --test=short --json=ov"
+    execute_self_test_long_command = "smartctl --test=long --json=ov"
+    execute_self_test_conveyance_command = "smartctl --test=conveyance --json=ov"
+    execute_self_test_selective_command = "smartctl --test=select"
+    execute_self_test_vendor_specific_command = "smartctl --test=vendor"
 
     def __init__(self, device_id: str = None):
         """
@@ -468,14 +470,7 @@ class Smartctl:
         self.dut = device_id
 
         # Set Acceptable Return Codes
-        self.acceptable_return_codes = [
-            0,
-            4,
-            64,
-            192,
-            196,
-            216
-        ]
+        self.acceptable_return_codes = [0, 4, 64, 192, 196, 216,]
 
         # Set Bit Mask Codes
         self.bitmask_codes = {
@@ -500,7 +495,7 @@ class Smartctl:
         """
 
         # Prepare Command String
-        get_version_command = f'{self.get_version_command} {self.dut}'
+        get_version_command = f"{self.get_version_command} {self.dut}"
 
         # Prepare Command
         command = Command(get_version_command)
@@ -514,7 +509,7 @@ class Smartctl:
             return False
 
         # Return Smartctl Output as Text
-        return command.get_output().strip().decode('utf-8')
+        return command.get_output().strip().decode("utf-8")
 
     """
     Device Information Commands
@@ -527,7 +522,7 @@ class Smartctl:
         """
 
         # Prepare Command String
-        get_all_command = f'{self.get_all_device_information_command} {self.dut}'
+        get_all_command = f"{self.get_all_device_information_command} {self.dut}"
 
         # Prepare Command
         command = Command(get_all_command)
@@ -541,7 +536,7 @@ class Smartctl:
             return False
 
         # Return Smartctl Output as Text
-        return command.get_output().strip().decode('utf-8')
+        return command.get_output().strip().decode("utf-8")
 
     def get_all_as_json(self) -> dict | bool:
         """
@@ -550,7 +545,7 @@ class Smartctl:
         """
 
         # Prepare Command String
-        get_all_command = f'{self.get_all_device_information_command} {self.dut} --json=ov'
+        get_all_command = f"{self.get_all_device_information_command} {self.dut} --json=ov"
 
         # Prepare Command
         command = Command(get_all_command)
@@ -569,7 +564,7 @@ class Smartctl:
                     pass
 
         # Return Smartctl Output as JSON
-        return json.loads(command.get_output().strip().decode('utf-8'))
+        return json.loads(command.get_output().strip().decode("utf-8"))
 
     def get_health(self, as_json=True):
         """
@@ -600,7 +595,7 @@ class Smartctl:
         """
 
         # Prepare Command String
-        short_self_test = f'{self.abort_self_test_command} {self.dut}'
+        short_self_test = f"{self.abort_self_test_command} {self.dut}"
 
         # Prepare Command
         command = Command(short_self_test)
@@ -620,7 +615,9 @@ class Smartctl:
         """
 
         # Prepare Command String
-        short_self_test = f'{self.execute_self_test_offline_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+        short_self_test = (
+            f'{self.execute_self_test_offline_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+        )
 
         # Prepare Command
         command = Command(short_self_test)
@@ -640,7 +637,9 @@ class Smartctl:
         """
 
         # Prepare Command String
-        short_self_test = f'{self.execute_self_test_short_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+        short_self_test = (
+            f'{self.execute_self_test_short_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+        )
 
         # Prepare Command
         command = Command(short_self_test)
@@ -661,7 +660,9 @@ class Smartctl:
         """
 
         # Prepare Command String
-        extended_self_test_command = f'{self.execute_self_test_long_command} {"force" if force else ""} {"-C" if captive else ""} {self.dut}'
+        extended_self_test_command = (
+            f'{self.execute_self_test_long_command} {"force" if force else ""} {"-C" if captive else ""} {self.dut}'
+        )
 
         # Prepare Command
         command = Command(extended_self_test_command)
@@ -692,7 +693,9 @@ class Smartctl:
         # Return
         return command
 
-    def execute_self_test_selective(self, starting_lba=0, ending_lba=100, captive: bool = False, force: bool = False, after_select: bool = False):
+    def execute_self_test_selective(
+        self, starting_lba=0, ending_lba=100, captive: bool = False, force: bool = False, after_select: bool = False,
+    ):
         """
         Execute Selective Self-test
         :param starting_lba: the lba to start test from
@@ -715,7 +718,9 @@ class Smartctl:
         # Return
         return command
 
-    def execute_self_test_vendor_specific(self, vendor_specific_command: str = "0x00", captive: bool = False, force: bool = False) -> Command:
+    def execute_self_test_vendor_specific(
+        self, vendor_specific_command: str = "0x00", captive: bool = False, force: bool = False,
+    ) -> Command:
         """
         Execute Vendor Self-test
         :param vendor_specific_command: the Vendor specific command to pass with the Self-test

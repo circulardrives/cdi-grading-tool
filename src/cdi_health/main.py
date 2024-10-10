@@ -46,7 +46,7 @@ def create_logs(devices, output_types, log_for_each):
     """
 
     # Create Logs Directory
-    os.makedirs('logs', exist_ok=True)
+    os.makedirs("logs", exist_ok=True)
 
     if log_for_each:
         for device in devices:
@@ -61,9 +61,9 @@ def device_logs(device, output_types):
     """
 
     # CSV
-    if 'csv' in output_types:
+    if "csv" in output_types:
         # Open CSV File
-        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.csv', 'w', newline='') as csvfile:
+        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.csv', "w", newline="") as csvfile:
             # Write CSV File
             writer = csv.writer(csvfile)
 
@@ -74,16 +74,16 @@ def device_logs(device, output_types):
             writer.writerow(device.values())
 
     # JSON
-    if 'json' in output_types:
+    if "json" in output_types:
         # Open JSON File
-        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.json', 'w') as jsonfile:
+        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.json', "w") as jsonfile:
             # Write JSON
             json.dump(device, jsonfile, indent=4)
 
     # HTML
-    if 'html' in output_types:
+    if "html" in output_types:
         # Open HTML File
-        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.html', 'w') as htmlfile:
+        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.html', "w") as htmlfile:
             # Write HTML
             htmlfile.write("<html><body><table border='1'>")
 
@@ -96,18 +96,18 @@ def device_logs(device, output_types):
             htmlfile.write("</table></body></html>")
 
     # TXT
-    if 'text' in output_types:
+    if "text" in output_types:
         # Open TXT File
-        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.txt', 'w') as txtfile:
+        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.txt', "w") as txtfile:
             # Loop Items
             for key, value in device.items():
                 # Write Item
                 txtfile.write(f"{key}: {value}\n")
 
     # XML
-    if 'xml' in output_types:
+    if "xml" in output_types:
         # Create XML
-        root = Element('Device')
+        root = Element("Device")
 
         # Loop Items
         for key, value in device.items():
@@ -130,9 +130,9 @@ def all_devices_logs(devices, output_types):
     """
 
     # CSV
-    if 'csv' in output_types:
+    if "csv" in output_types:
         # Open CSV File
-        with open('logs/all_devices.csv', 'w', newline='') as csvfile:
+        with open("logs/all_devices.csv", "w", newline="") as csvfile:
             # Write CSV File
             writer = csv.writer(csvfile)
 
@@ -145,16 +145,16 @@ def all_devices_logs(devices, output_types):
                 writer.writerow(device.values())
 
     # JSON
-    if 'json' in output_types:
+    if "json" in output_types:
         # Open JSON File
-        with open('logs/all_devices.json', 'w') as jsonfile:
+        with open("logs/all_devices.json", "w") as jsonfile:
             # Write JSON
             json.dump(devices, jsonfile, indent=4)
 
     # HTML
-    if 'html' in output_types:
+    if "html" in output_types:
         # Open HTML File
-        with open('logs/all_devices.html', 'w') as htmlfile:
+        with open("logs/all_devices.html", "w") as htmlfile:
             # Write HTML
             htmlfile.write("<html><body><table border='1'>")
 
@@ -176,9 +176,9 @@ def all_devices_logs(devices, output_types):
             htmlfile.write("</table></body></html>")
 
     # TXT
-    if 'text' in output_types:
+    if "text" in output_types:
         # Open TXT File
-        with open('logs/all_devices.txt', 'w') as txtfile:
+        with open("logs/all_devices.txt", "w") as txtfile:
             # Loop Devices
             for device in devices:
                 # Loop Items
@@ -189,14 +189,14 @@ def all_devices_logs(devices, output_types):
                 txtfile.write("\n")
 
     # XML
-    if 'xml' in output_types:
+    if "xml" in output_types:
         # Create XML
-        root = Element('Devices')
+        root = Element("Devices")
 
         # Loop Devices
         for device in devices:
             # Create Device Element
-            device_elem = SubElement(root, 'Device')
+            device_elem = SubElement(root, "Device")
 
             # Loop Items
             for key, value in device.items():
@@ -210,24 +210,26 @@ def all_devices_logs(devices, output_types):
         tree = ElementTree(root)
 
         # Write XML Tree
-        tree.write('logs/all_devices.xml')
+        tree.write("logs/all_devices.xml")
 
 
 # Main Function
 def main():
     # Set Argument Parser
     parser = argparse.ArgumentParser(description="CDI Grading Tool")
-    parser.add_argument('--verbose', action='store_true', help='Launch in Verbose Mode')
-    parser.add_argument('--ignore-ata', action='store_true', help='Ignore ATA devices when scanning for Devices')
-    parser.add_argument('--ignore-nvme', action='store_true', help='Ignore NVMe devices when scanning for Devices')
-    parser.add_argument('--ignore-scsi', action='store_true', help='Ignore SCSI devices when scanning for Devices')
-    parser.add_argument('--ignore-removable', action='store_true', help='Ignore USB/SD/MSD/MMC/eMMC devices when scanning for Devices')
-    parser.add_argument('--log-for-each', action='store_true', help='Generate a log for each Device found')
-    parser.add_argument('--csv', action='store_true', help="Output the Data as CSV")
-    parser.add_argument('--html', action='store_true', help="Output the Data as HTML")
-    parser.add_argument('--json', action='store_true', help="Output the Data as JSON")
-    parser.add_argument('--text', action='store_true', help="Output the Data as TXT")
-    parser.add_argument('--xml', action='store_true', help="Output the Data as XML")
+    parser.add_argument("--verbose", action="store_true", help="Launch in Verbose Mode")
+    parser.add_argument("--ignore-ata", action="store_true", help="Ignore ATA devices when scanning for Devices")
+    parser.add_argument("--ignore-nvme", action="store_true", help="Ignore NVMe devices when scanning for Devices")
+    parser.add_argument("--ignore-scsi", action="store_true", help="Ignore SCSI devices when scanning for Devices")
+    parser.add_argument(
+        "--ignore-removable", action="store_true", help="Ignore USB/SD/MSD/MMC/eMMC devices when scanning for Devices"
+    )
+    parser.add_argument("--log-for-each", action="store_true", help="Generate a log for each Device found")
+    parser.add_argument("--csv", action="store_true", help="Output the Data as CSV")
+    parser.add_argument("--html", action="store_true", help="Output the Data as HTML")
+    parser.add_argument("--json", action="store_true", help="Output the Data as JSON")
+    parser.add_argument("--text", action="store_true", help="Output the Data as TXT")
+    parser.add_argument("--xml", action="store_true", help="Output the Data as XML")
 
     # Parse Arguments
     args = parser.parse_args()
@@ -248,23 +250,23 @@ def main():
 
     # CSV
     if args.csv:
-        output_types.append('csv')
+        output_types.append("csv")
 
     # HTML
     if args.html:
-        output_types.append('html')
+        output_types.append("html")
 
     # JSON
     if args.json:
-        output_types.append('json')
+        output_types.append("json")
 
     # Text
     if args.text:
-        output_types.append('text')
+        output_types.append("text")
 
     # XML
     if args.xml:
-        output_types.append('xml')
+        output_types.append("xml")
 
     # Create Logs
     create_logs(d.devices, output_types, args.log_for_each)
