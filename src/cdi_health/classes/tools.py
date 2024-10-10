@@ -470,7 +470,14 @@ class Smartctl:
         self.dut = device_id
 
         # Set Acceptable Return Codes
-        self.acceptable_return_codes = [0, 4, 64, 192, 196, 216,]
+        self.acceptable_return_codes = [
+            0,
+            4,
+            64,
+            192,
+            196,
+            216,
+        ]
 
         # Set Bit Mask Codes
         self.bitmask_codes = {
@@ -694,7 +701,12 @@ class Smartctl:
         return command
 
     def execute_self_test_selective(
-        self, starting_lba=0, ending_lba=100, captive: bool = False, force: bool = False, after_select: bool = False,
+        self,
+        starting_lba=0,
+        ending_lba=100,
+        captive: bool = False,
+        force: bool = False,
+        after_select: bool = False,
     ):
         """
         Execute Selective Self-test
@@ -719,7 +731,10 @@ class Smartctl:
         return command
 
     def execute_self_test_vendor_specific(
-        self, vendor_specific_command: str = "0x00", captive: bool = False, force: bool = False,
+        self,
+        vendor_specific_command: str = "0x00",
+        captive: bool = False,
+        force: bool = False,
     ) -> Command:
         """
         Execute Vendor Self-test

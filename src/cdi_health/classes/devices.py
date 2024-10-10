@@ -449,7 +449,9 @@ class Device:
         """
 
         # Intel List
-        intel_devices = ["SSDS",]
+        intel_devices = [
+            "SSDS",
+        ]
 
         # Loop
         for prefix in intel_devices:
@@ -461,7 +463,11 @@ class Device:
         """
 
         # Samsung List
-        samsung_devices = ["MZ-", "MZ7", "MZ7K",]
+        samsung_devices = [
+            "MZ-",
+            "MZ7",
+            "MZ7K",
+        ]
 
         # Loop
         for prefix in samsung_devices:
@@ -473,7 +479,10 @@ class Device:
         """
 
         # Seagate List
-        seagate_devices = ["ST", "ST500",]
+        seagate_devices = [
+            "ST",
+            "ST500",
+        ]
 
         # Loop
         for prefix in seagate_devices:
@@ -813,7 +822,10 @@ class Device:
     """ Self-Test Commands """
 
     def execute_smart_short_self_test(
-        self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False,
+        self,
+        captive: bool = False,
+        use_smartctl: bool = True,
+        use_seatools: bool = False,
     ) -> Command | bool:
         """
         Execute a Firmware-based S.M.A.R.T Short Self-test
@@ -835,9 +847,7 @@ class Device:
             if use_seatools:
                 # Execute Short Self-test
                 # TODO - write seatools self-test logic and handler
-                return self.smartctl.execute_self_test_short(
-                    captive=captive
-                )  
+                return self.smartctl.execute_self_test_short(captive=captive)
 
         # If Command Exception
         except CommandException:
@@ -845,7 +855,10 @@ class Device:
             return False
 
     def execute_smart_long_self_test(
-        self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False,
+        self,
+        captive: bool = False,
+        use_smartctl: bool = True,
+        use_seatools: bool = False,
     ) -> Command | bool:
         """
         Execute a Firmware-based S.M.A.R.T Extended Self-test
@@ -867,9 +880,7 @@ class Device:
             if use_seatools:
                 # Execute Short Self-test
                 # TODO - write seatools self-test logic and handler
-                return self.smartctl.execute_self_test_long(
-                    captive=captive
-                )  
+                return self.smartctl.execute_self_test_long(captive=captive)
 
         # If Command Exception
         except CommandException:
@@ -877,7 +888,10 @@ class Device:
             return False
 
     def execute_smart_conveyance_self_test(
-        self, captive: bool = False, use_smartctl: bool = True, use_seatools: bool = False,
+        self,
+        captive: bool = False,
+        use_smartctl: bool = True,
+        use_seatools: bool = False,
     ) -> Command | bool:
         """
         Execute a Firmware-based S.M.A.R.T Conveyance Self-test
@@ -899,9 +913,7 @@ class Device:
             if use_seatools:
                 # Execute Conveyance Self-test
                 # TODO - write seatools self-test logic and handler
-                return self.smartctl.execute_self_test_conveyance(
-                    captive=captive
-                )  
+                return self.smartctl.execute_self_test_conveyance(captive=captive)
 
         # If Command Exception
         except CommandException:
@@ -931,14 +943,16 @@ class Device:
             if use_smartctl:
                 # Execute Short Self-test
                 return self.smartctl.execute_self_test_vendor_specific(
-                    vendor_specific_command=vendor_specific_command, captive=captive,
+                    vendor_specific_command=vendor_specific_command,
+                    captive=captive,
                 )
 
             # If SeaTools
             if use_seatools:
                 # Execute Short Self-test
                 return self.smartctl.execute_self_test_vendor_specific(
-                    vendor_specific_command=vendor_specific_command, captive=captive,
+                    vendor_specific_command=vendor_specific_command,
+                    captive=captive,
                 )  # TODO - write seatools self-test logic and handler
 
         # If Command Exception
@@ -1426,12 +1440,14 @@ class ATAProtocol:
 
         # Get Pending Sectors
         device.pending_reallocated_sectors = self.get_smart_attribute_by_id(
-            attribute_id=197, attributes=device.smart_attributes,
+            attribute_id=197,
+            attributes=device.smart_attributes,
         )
 
         # Get Offline Uncorrectable Sectors
         device.offline_uncorrectable_sectors = self.get_smart_attribute_by_id(
-            attribute_id=198, attributes=device.smart_attributes,
+            attribute_id=198,
+            attributes=device.smart_attributes,
         )
 
         # Get Device Start/Stop Count
@@ -1607,7 +1623,12 @@ class ATAProtocol:
 
     @staticmethod
     def get_smart_attribute_by_id(
-        attributes, attribute_id=5, actual_value=False, worst_value=False, threshold=False, flags=False,
+        attributes,
+        attribute_id=5,
+        actual_value=False,
+        worst_value=False,
+        threshold=False,
+        flags=False,
     ):
         """
         Get ATA S.M.A.R.T. Attribute by ID
