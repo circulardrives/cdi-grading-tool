@@ -109,11 +109,11 @@ dialog_stylesheet = """
     """
 
 # ATA/SATA Badge Stylesheet
-ata_badge = """ 
+ata_badge = """
     QLabel#ATA {
-        font-size: 12px; 
-        color: white; 
-        padding: 4px; 
+        font-size: 12px;
+        color: white;
+        padding: 4px;
         border-radius: 2px;
         margin: 4px;
     }
@@ -135,11 +135,11 @@ ata_badge = """
 """
 
 # NVMe Badge Stylesheet
-nvme_badge = """ 
+nvme_badge = """
     QLabel#NVMe {
-        font-size: 12px; 
-        color: white; 
-        padding: 4px; 
+        font-size: 12px;
+        color: white;
+        padding: 4px;
         border-radius: 2px;
         margin: 4px;
     }
@@ -161,11 +161,11 @@ nvme_badge = """
 """
 
 # SCSI Badge Stylesheet
-scsi_badge = """ 
+scsi_badge = """
     QLabel#SCSI {
-        font-size: 12px; 
-        color: white; 
-        padding: 4px; 
+        font-size: 12px;
+        color: white;
+        padding: 4px;
         border-radius: 2px;
         margin: 4px;
     }
@@ -187,11 +187,11 @@ scsi_badge = """
 """
 
 # SSD Badge Stylesheet
-ssd_badge = """ 
+ssd_badge = """
     QLabel#SSD {
-        font-size: 12px; 
-        color: white; 
-        padding: 4px; 
+        font-size: 12px;
+        color: white;
+        padding: 4px;
         border-radius: 2px;
         margin: 4px;
     }
@@ -213,11 +213,11 @@ ssd_badge = """
 """
 
 # HDD Badge Stylesheet
-hdd_badge = """ 
+hdd_badge = """
     QLabel#HDD {
-        font-size: 12px; 
-        color: white; 
-        padding: 4px; 
+        font-size: 12px;
+        color: white;
+        padding: 4px;
         border-radius: 2px;
         margin: 4px;
     }
@@ -246,9 +246,9 @@ information_badge = """
             stop: 0 rgb(82, 153, 224),
             stop: 1 rgb(52, 123, 193)
         );
-        font-size: 11px; 
-        color: white; 
-        padding: 4px; 
+        font-size: 11px;
+        color: white;
+        padding: 4px;
         border-radius: 2px;
     }
     QLabel:enabled {
@@ -276,9 +276,9 @@ defect_badge = """
             stop: 0 rgb(213, 164, 57),
             stop: 1 rgb(191, 136, 31)
         );
-        font-size: 11px; 
-        color: white; 
-        padding: 4px; 
+        font-size: 11px;
+        color: white;
+        padding: 4px;
         border-radius: 2px;
     }
     QLabel:enabled {
@@ -306,9 +306,9 @@ warning_badge = """
             stop: 0 rgb(199, 113, 113),
             stop: 1 rgb(174, 78, 78)
         );
-        font-size: 11px; 
-        color: white; 
-        padding: 4px; 
+        font-size: 11px;
+        color: white;
+        padding: 4px;
         border-radius: 2px;
     }
     QLabel:enabled {
@@ -336,9 +336,9 @@ utility_badge = """
             stop: 0 rgb(166, 110, 181),
             stop: 1 rgb(141, 82, 153)
         );
-        font-size: 11px; 
-        color: white; 
-        padding: 4px; 
+        font-size: 11px;
+        color: white;
+        padding: 4px;
         border-radius: 2px;
     }
     QLabel:enabled {
@@ -361,9 +361,9 @@ utility_badge = """
 # Pass Badge Stylesheet
 pass_badge = """
     QLabel {
-        font-size: 12px; 
-        color: white; 
-        padding: 5px; 
+        font-size: 12px;
+        color: white;
+        padding: 5px;
         border-radius: 2px;
         margin: 5px;
     }
@@ -387,9 +387,9 @@ pass_badge = """
 # Pending Badge Stylesheet
 pending_badge = """
     QLabel {
-        font-size: 12px; 
-        color: white; 
-        padding: 5px; 
+        font-size: 12px;
+        color: white;
+        padding: 5px;
         border-radius: 2px;
         margin: 5px;
         background: qlineargradient(
@@ -403,9 +403,9 @@ pending_badge = """
 # Cancelled Badge Stylesheet
 cancelled_badge = """
     QLabel {
-        font-size: 12px; 
-        color: white; 
-        padding: 5px; 
+        font-size: 12px;
+        color: white;
+        padding: 5px;
         border-radius: 2px;
         margin: 5px;
         background: qlineargradient(
@@ -419,9 +419,9 @@ cancelled_badge = """
 # Fail Badge Stylesheet
 failed_badge = """
     QLabel {
-        font-size: 12px; 
-        color: white; 
-        padding: 5px; 
+        font-size: 12px;
+        color: white;
+        padding: 5px;
         border-radius: 2px;
         margin: 5px;
     }
