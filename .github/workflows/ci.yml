@@ -67,6 +67,7 @@ jobs:
           - major-dot-minor: "3.10"
           - major-dot-minor: "3.11"
           - major-dot-minor: "3.12"
+          - major-dot-minor: "3.13"
 
     steps:
       - name: workflow download built packages
@@ -117,6 +118,7 @@ jobs:
           - major-dot-minor: "3.10"
           - major-dot-minor: "3.11"
           - major-dot-minor: "3.12"
+          - major-dot-minor: "3.13"
 
     steps:
       - uses: actions/checkout@v3
