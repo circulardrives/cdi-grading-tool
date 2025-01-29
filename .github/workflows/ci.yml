@@ -51,7 +51,7 @@ jobs:
           if-no-files-found: error
 
   test:
-    name: ${{ matrix.os.emoji }} Python ${{ matrix.python.major-dot-minor }}
+    name: Test ${{ matrix.os.emoji }} Python ${{ matrix.python.major-dot-minor }}
     runs-on: ${{ matrix.os.runs-on }}
     needs: build
     strategy:
