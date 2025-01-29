@@ -105,14 +105,6 @@ jobs:
               # TODO: would be nice to have all this in a config file, even if we need to use another tool
               venv/bin/licenseheaders --ext py --tmpl license.template --current-year --owner 'Circular Drive Initiative' --projname 'CDI Health' --projurl 'https://github.com/circulardrives/cdi-grading-tool-alpha/'
               git diff --exit-code
-          - name: Format
-            run: |
-              venv/bin/ruff format
-              git diff --exit-code
-          - name: Lint
-            run: |
-              venv/bin/ruff check --fix
-              git diff --exit-code
         os:
           - name: Linux
             runs-on: ubuntu-latest
@@ -146,3 +138,32 @@ jobs:
 
       - name: check
         run: ${{ matrix.task.run }}
+
+  pre-commit:
+    name: pre-commit ${{ matrix.os.name }} ${{ matrix.python.major_dot_minor }}
+    runs-on: ${{ matrix.os.runs-on }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: Linux
+            runs-on: ubuntu-latest
+#          - name: macOS
+#            runs-on: macos-latest
+#          - name: Windows
+#            runs-on: windows-latest
+        python:
+          - major_dot_minor: "3.9"
+          - major_dot_minor: "3.10"
+          - major_dot_minor: "3.11"
+          - major_dot_minor: "3.12"
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python.major-dot-minor }}
+
+      - uses: pre-commit/action@v3.0.1
