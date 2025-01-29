@@ -67,6 +67,7 @@ jobs:
           - major-dot-minor: "3.10"
           - major-dot-minor: "3.11"
           - major-dot-minor: "3.12"
+          - major-dot-minor: "3.13"
 
     steps:
       - name: workflow download built packages
@@ -117,6 +118,7 @@ jobs:
           - major-dot-minor: "3.10"
           - major-dot-minor: "3.11"
           - major-dot-minor: "3.12"
+          - major-dot-minor: "3.13"
 
     steps:
       - uses: actions/checkout@v3
@@ -140,7 +142,7 @@ jobs:
         run: ${{ matrix.task.run }}
 
   pre-commit:
-    name: pre-commit ${{ matrix.os.name }} ${{ matrix.python.major_dot_minor }}
+    name: pre-commit ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }}
     runs-on: ${{ matrix.os.runs-on }}
     timeout-minutes: 5
     strategy:
@@ -154,10 +156,11 @@ jobs:
 #          - name: Windows
 #            runs-on: windows-latest
         python:
-          - major_dot_minor: "3.9"
-          - major_dot_minor: "3.10"
-          - major_dot_minor: "3.11"
-          - major_dot_minor: "3.12"
+          - major-dot-minor: "3.9"
+          - major-dot-minor: "3.10"
+          - major-dot-minor: "3.11"
+          - major-dot-minor: "3.12"
+          - major-dot-minor: "3.13"
 
     steps:
       - uses: actions/checkout@v3
