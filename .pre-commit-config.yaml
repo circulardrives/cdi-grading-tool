@@ -16,3 +16,8 @@ repos:
       - id: check-merge-conflict
       - id: check-ast
       - id: debug-statements
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.10.0-2
+    hooks:
+      - id: shfmt
+        args: ["--diff", "--write", "-i", "2"]
