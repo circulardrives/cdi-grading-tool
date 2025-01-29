@@ -31,6 +31,7 @@ import subprocess
 
 # Date and Time
 from datetime import datetime
+from typing import Optional
 
 # Exceptions
 from cdi_health.classes.exceptions import CommandException
@@ -41,7 +42,7 @@ class Command:
     Command Class
     """
 
-    def __init__(self, command: str = None):
+    def __init__(self, command: Optional[str] = None):
         """
         Constructor
         :param command:
@@ -227,7 +228,7 @@ class SeaTools:
     execute_self_test_long_command = "/opt/openSeaChest/openSeaChest_SMART --longDST --device"
     execute_self_test_conveyance_command = "/opt/openSeaChest/openSeaChest_SMART --conveyanceDST --device"
 
-    def __init__(self, device_id: str = None):
+    def __init__(self, device_id: Optional[str] = None):
         """
         Smartctl
         :param device_id:
@@ -459,7 +460,7 @@ class Smartctl:
     execute_self_test_selective_command = "smartctl --test=select"
     execute_self_test_vendor_specific_command = "smartctl --test=vendor"
 
-    def __init__(self, device_id: str = None):
+    def __init__(self, device_id: Optional[str] = None):
         """
         Smartctl
         :param device_id:
