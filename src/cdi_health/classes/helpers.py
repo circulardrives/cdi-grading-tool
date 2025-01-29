@@ -24,7 +24,6 @@ Circular Drive Initiative - Helpers
 @version     0.0.1
 """
 
-# TODO: manage via isort
 from __future__ import annotations
 
 # Modules
