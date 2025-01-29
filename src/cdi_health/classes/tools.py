@@ -296,7 +296,7 @@ class SeaTools:
 
         # Prepare Command String
         short_self_test = (
-            f'{self.execute_self_test_short_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+            f"{self.execute_self_test_short_command} {'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
         )
 
         # Prepare Command
@@ -319,7 +319,7 @@ class SeaTools:
 
         # Prepare Command String
         extended_self_test_command = (
-            f'{self.execute_self_test_long_command} {"force" if force else ""} {"-C" if captive else ""} {self.dut}'
+            f"{self.execute_self_test_long_command} {'force' if force else ''} {'-C' if captive else ''} {self.dut}"
         )
 
         # Prepare Command
@@ -340,7 +340,7 @@ class SeaTools:
         """
 
         # Prepare Command String
-        conveyance_self_test_command = f'{self.execute_self_test_conveyance_command} {"force" if force else ""} {"-C" if captive else ""} {self.dut}'
+        conveyance_self_test_command = f"{self.execute_self_test_conveyance_command} {'force' if force else ''} {'-C' if captive else ''} {self.dut}"
 
         # Prepare Command
         command = Command(conveyance_self_test_command)
@@ -580,7 +580,7 @@ class Smartctl:
         """
 
         # Prepare Command String
-        get_health = f'{self.get_health_command} {"--json=ov" if as_json else ""} {self.dut}'
+        get_health = f"{self.get_health_command} {'--json=ov' if as_json else ''} {self.dut}"
 
         # Prepare Command
         command = Command(get_health)
@@ -623,7 +623,7 @@ class Smartctl:
 
         # Prepare Command String
         short_self_test = (
-            f'{self.execute_self_test_offline_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+            f"{self.execute_self_test_offline_command} {'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
         )
 
         # Prepare Command
@@ -645,7 +645,7 @@ class Smartctl:
 
         # Prepare Command String
         short_self_test = (
-            f'{self.execute_self_test_short_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+            f"{self.execute_self_test_short_command} {'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
         )
 
         # Prepare Command
@@ -668,7 +668,7 @@ class Smartctl:
 
         # Prepare Command String
         extended_self_test_command = (
-            f'{self.execute_self_test_long_command} {"force" if force else ""} {"-C" if captive else ""} {self.dut}'
+            f"{self.execute_self_test_long_command} {'force' if force else ''} {'-C' if captive else ''} {self.dut}"
         )
 
         # Prepare Command
@@ -689,7 +689,7 @@ class Smartctl:
         """
 
         # Prepare Command String
-        conveyance_self_test_command = f'{self.execute_self_test_conveyance_command} {"force" if force else ""} {"-C" if captive else ""} {self.dut}'
+        conveyance_self_test_command = f"{self.execute_self_test_conveyance_command} {'force' if force else ''} {'-C' if captive else ''} {self.dut}"
 
         # Prepare Command
         command = Command(conveyance_self_test_command)
@@ -719,7 +719,7 @@ class Smartctl:
         """
 
         # Prepare Command String
-        selective_self_test_command = f'{self.execute_self_test_selective_command},{starting_lba}-{ending_lba} {"afterselect,on" if after_select else " "}{"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+        selective_self_test_command = f"{self.execute_self_test_selective_command},{starting_lba}-{ending_lba} {'afterselect,on' if after_select else ' '}{'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
 
         # Prepare Command
         command = Command(selective_self_test_command)
@@ -745,7 +745,7 @@ class Smartctl:
         """
 
         # Prepare Command String
-        short_self_test = f'{self.execute_self_test_vendor_specific_command},{vendor_specific_command} {"force" if force else " "}{"-C" if captive else " "}{self.dut}'
+        short_self_test = f"{self.execute_self_test_vendor_specific_command},{vendor_specific_command} {'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
 
         # Prepare Command
         command = Command(short_self_test)

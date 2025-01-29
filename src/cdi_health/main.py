@@ -63,7 +63,7 @@ def device_logs(device, output_types):
     # CSV
     if "csv" in output_types:
         # Open CSV File
-        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.csv', "w", newline="") as csvfile:
+        with open(f"logs/{device['model_number']}-{device['serial_number']}.csv", "w", newline="") as csvfile:
             # Write CSV File
             writer = csv.writer(csvfile)
 
@@ -76,14 +76,14 @@ def device_logs(device, output_types):
     # JSON
     if "json" in output_types:
         # Open JSON File
-        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.json', "w") as jsonfile:
+        with open(f"logs/{device['model_number']}-{device['serial_number']}.json", "w") as jsonfile:
             # Write JSON
             json.dump(device, jsonfile, indent=4)
 
     # HTML
     if "html" in output_types:
         # Open HTML File
-        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.html', "w") as htmlfile:
+        with open(f"logs/{device['model_number']}-{device['serial_number']}.html", "w") as htmlfile:
             # Write HTML
             htmlfile.write("<html><body><table border='1'>")
 
@@ -98,7 +98,7 @@ def device_logs(device, output_types):
     # TXT
     if "text" in output_types:
         # Open TXT File
-        with open(f'logs/{device["model_number"]}-{device["serial_number"]}.txt', "w") as txtfile:
+        with open(f"logs/{device['model_number']}-{device['serial_number']}.txt", "w") as txtfile:
             # Loop Items
             for key, value in device.items():
                 # Write Item
@@ -121,7 +121,7 @@ def device_logs(device, output_types):
         tree = ElementTree(root)
 
         # Write XML Tree
-        tree.write(f'logs/{device["model_number"]}-{device["serial_number"]}.xml')
+        tree.write(f"logs/{device['model_number']}-{device['serial_number']}.xml")
 
 
 def all_devices_logs(devices, output_types):
