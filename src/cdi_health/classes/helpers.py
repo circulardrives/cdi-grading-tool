@@ -85,7 +85,7 @@ class Helper:
         """
 
         # Return Count of Vowels
-        return sum(1 for char in string if char.lower() in 'aeiou')
+        return sum(1 for char in string if char.lower() in "aeiou")
 
     @staticmethod
     def clean_string(string: str) -> str:
@@ -99,10 +99,10 @@ class Helper:
         cleaned_string = string.strip()
 
         # Replace Underscores
-        cleaned_string = cleaned_string.replace('_', ' ')
+        cleaned_string = cleaned_string.replace("_", " ")
 
         # Remove Extra Spaces
-        cleaned_string = ' '.join(cleaned_string.split())
+        cleaned_string = " ".join(cleaned_string.split())
 
         # Return Cleaned String
         return cleaned_string
@@ -116,7 +116,7 @@ class Helper:
         """
 
         # Return String
-        return ''.join(string.split())
+        return "".join(string.split())
 
     @staticmethod
     def reverse_string(string: str) -> str:
@@ -138,7 +138,7 @@ class Helper:
         """
 
         # Clean String
-        cleaned_string = ''.join(char.lower() for char in string if char.isalnum())
+        cleaned_string = "".join(char.lower() for char in string if char.isalnum())
 
         # Return Checked String
         return cleaned_string == cleaned_string[::-1]
@@ -205,7 +205,7 @@ class Helper:
             return False
 
         # Loop Numbers
-        for i in range(2, int(number ** 0.5) + 1):
+        for i in range(2, int(number**0.5) + 1):
             # If Number is Divisble by I
             if number % i == 0:
                 # Return False
@@ -231,7 +231,7 @@ class Logger:
     Logger Class
     """
 
-    def __init__(self, name, log_level=logging.INFO, log_to_console=True, log_to_file=False, log_file_path='logs'):
+    def __init__(self, name, log_level=logging.INFO, log_to_console=True, log_to_file=False, log_file_path="logs"):
         """
         Constructor
         :param name: Log Name
@@ -248,7 +248,7 @@ class Logger:
         self.logger.setLevel(log_level)
 
         # Format Logger
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
         # If Log to Console
         if log_to_console:
@@ -272,7 +272,7 @@ class Logger:
                 os.makedirs(log_file_path)
 
             # Create File Handler
-            fh = logging.FileHandler(os.path.join(log_file_path, f'{name}.log'))
+            fh = logging.FileHandler(os.path.join(log_file_path, f"{name}.log"))
 
             # Set Level
             fh.setLevel(log_level)

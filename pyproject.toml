@@ -59,7 +59,10 @@ dependencies = []
 dynamic = ["version"]
 
 [project.optional-dependencies]
-dev = ["licenseheaders"]
+dev = [
+    "licenseheaders",
+    "ruff",
+]
 
 [project.readme]
 file = "README.md"

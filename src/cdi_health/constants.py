@@ -36,24 +36,24 @@ APP
 """
 
 # Set OS Runtime Environment
-os.environ['XDG_RUNTIME_DIR'] = '/run/cdi_grading'
+os.environ["XDG_RUNTIME_DIR"] = "/run/cdi_grading"
 
 # Application Paths
-application_directory = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
+application_directory = getattr(sys, "_MEIPASS", os.path.abspath(os.path.dirname(__file__)))
 app_path = os.path.abspath(os.path.join(application_directory))
-config_path = os.path.join(app_path, 'config')
-images_path = os.path.join(app_path, 'images')
-reports_path = os.path.join(app_path, 'reports')
-logs_path = os.path.join(app_path, 'logs')
+config_path = os.path.join(app_path, "config")
+images_path = os.path.join(app_path, "images")
+reports_path = os.path.join(app_path, "reports")
+logs_path = os.path.join(app_path, "logs")
 
 # EULA File
-eula = f'{config_path}/eula.html'
+eula = f"{config_path}/eula.html"
 
 # Configuration File
-configuration_file = f'{config_path}/configuration.ini'
+configuration_file = f"{config_path}/configuration.ini"
 
 # Splashscreen Properties
-splashscreen = f'{images_path}/cdi.jpg'
+splashscreen = f"{images_path}/cdi.jpg"
 splashscreen_height = 1440
 splashscreen_width = 1440
 
@@ -585,91 +585,179 @@ uncorrectable_errors_tooltip = """
 # Brands List
 known_brands_list = [
     # 2-Power
-    '2-POWER', '2-Power', '2-power',
+    "2-POWER",
+    "2-Power",
+    "2-power",
     # ADATA
-    'ADATA', 'Adata', 'adata',
+    "ADATA",
+    "Adata",
+    "adata",
     # Corsair
-    'CORSAIR', 'Corsair', 'corsair',
+    "CORSAIR",
+    "Corsair",
+    "corsair",
     # Crucial
-    'CRUCIAL', 'Crucial', 'crucial',
+    "CRUCIAL",
+    "Crucial",
+    "crucial",
     # Fujitsu
-    'FUJITSU', 'Fujitsu', 'fujitsu',
+    "FUJITSU",
+    "Fujitsu",
+    "fujitsu",
     # Gigabyte
-    'GIGABYTE', 'Gigabyte', 'gigabyte',
+    "GIGABYTE",
+    "Gigabyte",
+    "gigabyte",
     # Hitachi
-    'HITACHI', 'Hitachi', 'hitachi',
+    "HITACHI",
+    "Hitachi",
+    "hitachi",
     # IBM
-    'IBM-ESXS', 'IBM-Esxs', 'ibm-esxs',
+    "IBM-ESXS",
+    "IBM-Esxs",
+    "ibm-esxs",
     # Intel
-    'INTEL', 'Intel', 'intel',
+    "INTEL",
+    "Intel",
+    "intel",
     # Intenso
-    'INTENSO', 'Intenso', 'intenso',
+    "INTENSO",
+    "Intenso",
+    "intenso",
     # KingFast
-    'KINGFAST', 'Kingfast', 'kingfast',
+    "KINGFAST",
+    "Kingfast",
+    "kingfast",
     # Kingston
-    'KINGSTON', 'Kingston', 'kingston',
+    "KINGSTON",
+    "Kingston",
+    "kingston",
     # Kioxia
-    'KIOXIA', 'Kioxia', 'kioxia',
+    "KIOXIA",
+    "Kioxia",
+    "kioxia",
     # Lexar
-    'LEXAR', 'Lexar', 'lexar',
+    "LEXAR",
+    "Lexar",
+    "lexar",
     # Lenovo
-    'LENOVO-X', 'Lenovo-X', 'lenovo-x',
+    "LENOVO-X",
+    "Lenovo-X",
+    "lenovo-x",
     # LITEON
-    'LITEON', 'Liteon', 'liteon',
+    "LITEON",
+    "Liteon",
+    "liteon",
     # Maxtor
-    'MAXTOR', 'Maxtor', 'maxtor',
+    "MAXTOR",
+    "Maxtor",
+    "maxtor",
     # Micron
-    'MICRON', 'Micron', 'micron',
+    "MICRON",
+    "Micron",
+    "micron",
     # NetApp
-    'NETAPP', 'NetApp', 'netapp',
+    "NETAPP",
+    "NetApp",
+    "netapp",
     # Ortial
-    'ORTIAL', 'Ortial', 'ortial',
+    "ORTIAL",
+    "Ortial",
+    "ortial",
     # Patriot
-    'PATRIOT', 'Patriot', 'patriot',
+    "PATRIOT",
+    "Patriot",
+    "patriot",
     # Plextor
-    'PLEXTOR', 'Plextor', 'plextor',
+    "PLEXTOR",
+    "Plextor",
+    "plextor",
     # PLIANT
-    'PLIANT', 'Pliant', 'pliant',
+    "PLIANT",
+    "Pliant",
+    "pliant",
     # Pioneer
-    'PIONEER', 'Pioneer', 'pioneer',
+    "PIONEER",
+    "Pioneer",
+    "pioneer",
     # SanDisk
-    'SANDISK', 'SanDisk', 'Sandisk', 'sandisk',
+    "SANDISK",
+    "SanDisk",
+    "Sandisk",
+    "sandisk",
     # Samsung
-    'SAMSUNG', 'Samsung', 'samsung',
+    "SAMSUNG",
+    "Samsung",
+    "samsung",
     # Seagate
-    'SEAGATE', 'Seagate', 'seagate',
+    "SEAGATE",
+    "Seagate",
+    "seagate",
     # SK Hynix
-    'SK HYNIX', 'SK hynix', 'sk hynix',
+    "SK HYNIX",
+    "SK hynix",
+    "sk hynix",
     # SMI
-    'SMI', 'Smi', 'smi',
+    "SMI",
+    "Smi",
+    "smi",
     # Sony
-    'SONY', 'Sony', 'sony',
+    "SONY",
+    "Sony",
+    "sony",
     # Super Talent
-    'SUPER TALENT', 'Super Talent', 'SuperTalent', 'super talent',
+    "SUPER TALENT",
+    "Super Talent",
+    "SuperTalent",
+    "super talent",
     # Silicon Power CC
-    'SPCC', 'Spcc', 'spcc',
+    "SPCC",
+    "Spcc",
+    "spcc",
     # Toshiba
-    'TOSHIBA', 'Toshiba', 'toshiba',
+    "TOSHIBA",
+    "Toshiba",
+    "toshiba",
     # Transcend
-    'TRANSCEND', 'Transcend', 'transcend',
+    "TRANSCEND",
+    "Transcend",
+    "transcend",
     # Western Digital
-    'WESTERN DIGITAL', 'Western Digital', 'western digital',
-    'WDC', 'wdc',
-    'WD', 'wd',
+    "WESTERN DIGITAL",
+    "Western Digital",
+    "western digital",
+    "WDC",
+    "wdc",
+    "WD",
+    "wd",
     # Dell
-    'DELL', 'Dell', 'dell',
+    "DELL",
+    "Dell",
+    "dell",
     # EMC
-    'EMC', 'Emc', 'emc',
+    "EMC",
+    "Emc",
+    "emc",
     # HGST
-    'HGST', 'Hgst', 'hgst',
+    "HGST",
+    "Hgst",
+    "hgst",
     # HPE
-    'HPE', 'Hpe', 'hpe',
+    "HPE",
+    "Hpe",
+    "hpe",
     # HP
-    'HP', 'Hp', 'hp',
+    "HP",
+    "Hp",
+    "hp",
     # IBM
-    'IBM', 'Ibm', 'ibm',
+    "IBM",
+    "Ibm",
+    "ibm",
     # PNY
-    'PNY', 'Pny', 'pny',
+    "PNY",
+    "Pny",
+    "pny",
 ]
 
 # None
