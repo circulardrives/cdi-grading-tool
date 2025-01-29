@@ -34,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Data Classes
 from dataclasses import dataclass
+from typing import Optional
 
 # Exceptions
 from cdi_health.classes.exceptions import CommandException, DevicesException
@@ -106,14 +107,14 @@ class Device:
         },
     }
 
-    def __init__(self, device_id: str = None):
+    def __init__(self, device_id: Optional[str] = None):
         """
         Constructor
         :param device_id: Device ID ("/dev/sda")
         """
 
         # Properties
-        self.dut: str = device_id
+        self.dut: Optional[str] = device_id
         self.dut_sg: str = SG3Utils(self.dut).sg_map26()
         self.state: str = SG3Utils(self.dut_sg).test_unit_ready()
         self.wwn: str = "Not Reported"
@@ -135,23 +136,23 @@ class Device:
         self.tip: str = "Not Reported"
 
         # Capacity
-        self.size = None
-        self.bytes = None
-        self.kilobytes = None
-        self.megabytes = None
-        self.gigabytes = None
-        self.terabytes = None
-        self.kibibytes = None
-        self.mebibytes = None
-        self.gibibytes = None
-        self.tebibytes = None
+        self.size: Optional[int] = None
+        self.bytes: Optional[int] = None
+        self.kilobytes: Optional[float] = None
+        self.megabytes: Optional[float] = None
+        self.gigabytes: Optional[float] = None
+        self.terabytes: Optional[float] = None
+        self.kibibytes: Optional[float] = None
+        self.mebibytes: Optional[float] = None
+        self.gibibytes: Optional[float] = None
+        self.tebibytes: Optional[float] = None
 
         # Sectors
-        self.sectors = None
-        self.logical_sector_size = None
-        self.physical_sector_size = None
-        self.native_maximum_sectors = None
-        self.current_maximum_sectors = None
+        self.sectors: Optional[int] = None
+        self.logical_sector_size: Optional[int] = None
+        self.physical_sector_size: Optional[int] = None
+        self.native_maximum_sectors: Optional[int] = None
+        self.current_maximum_sectors: Optional[int] = None
 
         # Namespaces
         self.namespaces = None
@@ -223,15 +224,15 @@ class Device:
         self.cdi_grade = "U"  # Defaults to "U" which means "Ungraded"
 
         # Generic Attributes
-        self.pending_sectors = None
-        self.reallocated_sectors = None
-        self.reallocated_event_count = None
-        self.uncorrectable_errors = None
+        self.pending_sectors: Optional[int] = None
+        self.reallocated_sectors: Optional[int] = None
+        self.reallocated_event_count: Optional[int] = None
+        self.uncorrectable_errors: Optional[int] = None
 
         # Counters
-        self.start_stop_count = None
-        self.power_cycle_count = None
-        self.load_cycle_count = None
+        self.start_stop_count: Optional[int] = None
+        self.power_cycle_count: Optional[int] = None
+        self.load_cycle_count: Optional[int] = None
 
         # SSD Attributes
         self.ssd_percentage_used_endurance = None
@@ -276,7 +277,7 @@ class Device:
         self.outputs = dict()
 
         # Flags
-        self.flags = list()
+        self.flags: list[str] = list()
 
         # Tools
         self.seatools = SeaTools(device_id=self.dut_sg)
@@ -286,7 +287,7 @@ class Device:
         # TODO - sg3-utils, nvme-cli, sedutil-cli
 
         # Outputs
-        self.smartctl_json = None
+        self.smartctl_json: Optional[dict] = None
 
         # Initialize Device
         self.initialize()
@@ -1331,7 +1332,7 @@ class ATAProtocol:
 
         # Power On Hours
         device.power_on_hours = (
-            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0",
+            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0"
         )
 
         # Get Capacity Information
