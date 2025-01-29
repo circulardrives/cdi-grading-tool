@@ -140,7 +140,7 @@ jobs:
         run: ${{ matrix.task.run }}
 
   pre-commit:
-    name: ${{ matrix.os.name }} ${{ matrix.python.major_dot_minor }}
+    name: pre-commit ${{ matrix.os.name }} ${{ matrix.python.major_dot_minor }}
     runs-on: ${{ matrix.os.runs-on }}
     timeout-minutes: 5
     strategy:
