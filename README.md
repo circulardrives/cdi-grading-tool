@@ -49,13 +49,25 @@ wget https://downloads.sourceforge.net/project/smartmontools/smartmontools/7.4/s
 ### Execution
 ```shell
 # Go to CDI Grading Tool Directory
-cd cdi-grading-tool-alpha;
+cd cdi-grading-tool-alpha
 
-# Create folder for Logs
+# Create a Virtual Environment
+python3 -m venv .venv
+
+# Activate the Virtual Environment
+source .venv/bin/activate
+
+# Upgrade Pip
+pip install --upgrade pip
+
+# Install CDI Grading Tool
+pip install -e .
+
+# Create Logs Folder
 mkdir logs
 
-# Launch Console
-python3 main.py;
+# Launch the CDI Grading Tool
+python3 main.py
 ```
 
 ## Roadmap
