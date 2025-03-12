@@ -742,8 +742,8 @@ class Devices:
     """
 
     # Commands
-    scan_devices_command: str = "smartctl --scan-open -j"
-    scan_devices_alt_command: str = "lsblk -d -b -e 1,7,11,252 -O -J"
+    scan_devices_command: str = "sudo smartctl --scan-open -j"
+    scan_devices_alt_command: str = "sudo lsblk -d -b -e 1,7,11,252 -O -J"
 
     def __init__(
         self,
@@ -1370,9 +1370,9 @@ class NVMeProtocol:
             device.tebibytes = capacity_in_bytes / (1024 ** 4)
 
             # Sectors and Sector Sizes
-            device.sectors = int(smartctl_json.get('user_capacity', {}).get('blocks', 0))
-            device.logical_sector_size = int(smartctl_json.get('logical_block_size', 0))
-            device.physical_sector_size = int(smartctl_json.get('physical_block_size', 0))
+            device.sectors = int(smartctl.get('user_capacity', {}).get('blocks', 0))
+            device.logical_sector_size = int(smartctl.get('logical_block_size', 0))
+            device.physical_sector_size = int(smartctl.get('physical_block_size', 0))
 
         # Else
         else:
@@ -1409,7 +1409,7 @@ class NVMeProtocol:
             device.physical_sector_size = 0
 
         # Get All Namespace Capacities
-        device.nvme_namespaces = smartctl_json.get('nvme_namespaces', 0)
+        device.nvme_namespaces = smartctl.get('nvme_namespaces', 0)
 
         # If Namespaces are 0
         if device.nvme_namespaces == 0:

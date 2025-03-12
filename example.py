@@ -36,6 +36,7 @@ import csv
 import html
 import json
 import os
+import shutil
 import sys
 
 # XML
@@ -43,6 +44,49 @@ from xml.etree.ElementTree import Element, ElementTree, SubElement
 
 # Classes
 from cdi_health.classes.devices import Devices
+
+
+# Required Tools
+REQUIRED_TOOLS = [
+    "nvme",                 # NVMe CLI
+    "smartctl",             # Smartmontools
+    "openSeaChest_Basics",  # OpenSeaChest
+    "openSeaChest_SMART",   # OpenSeaChest
+    "sg_map26",             # SG3-utils
+    "sg_turs"               # SG3-utils
+]
+
+
+def check_prerequisites():
+    """
+    Check Prerequisites
+    """
+
+    # Reset
+    missing_tools = []
+
+    # Loop Tools
+    for tool in REQUIRED_TOOLS:
+        # If Not Found
+        if not shutil.which(tool):
+            # Append to Missing List
+            missing_tools.append(tool)
+
+    # If Missing Tools
+    if missing_tools:
+        # Print
+        print("\nERROR: The following required programs are missing:\n", file=sys.stderr)
+
+        # Loop Missing Tools
+        for tool in missing_tools:
+            # Print
+            print(f"  - {tool}", file=sys.stderr)
+
+        # Print
+        print("\nPlease install them before running this script.\n", file=sys.stderr)
+
+        # Exit
+        sys.exit(1)
 
 
 def create_logs(devices, output_types, log_for_each):
@@ -240,13 +284,8 @@ def main():
     Main
     """
 
-    # If no Root
-    if os.geteuid() != 0:
-        # Print
-        print("CDI Health - This script must be run with sudo or as root.", file=sys.stderr)
-
-        # Exit
-        sys.exit(1)
+    # Check Prerequisites
+    check_prerequisites()
 
     # Set Argument Parser
     parser = argparse.ArgumentParser(description="CDI Grading Tool")
@@ -287,7 +326,6 @@ def main():
         ignore_ata=args.ignore_ata,
         ignore_nvme=args.ignore_nvme,
         ignore_scsi=args.ignore_scsi,
-        ignore_removable=args.ignore_removable
     )
 
     # Get Devices as JSON

@@ -16,6 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
 """
 Circular Drive Initiative - Toolkit Classes
 
@@ -27,6 +28,7 @@ from __future__ import annotations
 
 # Modules
 import json
+import shutil
 import subprocess
 
 # Date and Time
@@ -216,29 +218,67 @@ class SeaTools:
     SeaTools Class
     """
 
-    # Get Commands
-    get_version_command = "/opt/openSeaChest/openSeaChest_Basics --version"
-    get_devices_command = "/opt/openSeaChest/openSeaChest_Basics --scan"
-    get_device_information_command = "/opt/openSeaChest/openSeaChest_Basics --deviceInfo --device"
-
-    # Self Test Commands
-    abort_self_test_command = "/opt/openSeaChest/openSeaChest_SMART --abortDST --device"
-    execute_self_test_short_command = "/opt/openSeaChest/openSeaChest_SMART --shortDST --device"
-    execute_self_test_long_command = "/opt/openSeaChest/openSeaChest_SMART --longDST --device"
-    execute_self_test_conveyance_command = "/opt/openSeaChest/openSeaChest_SMART --conveyanceDST --device"
-
     def __init__(self, device_id: str = None):
         """
-        Smartctl
+        SeaTools
         :param device_id:
         """
+
+        # Get the full paths for SeaChest binaries
+        self.seachest_basics_path = self.get_seachest_path("openSeaChest_Basics")
+        self.seachest_smart_path = self.get_seachest_path("openSeaChest_SMART")
 
         # Device ID
         self.dut = device_id
 
-    """
-    Device Information Commands
-    """
+        # Initialize commands with proper paths
+        self.init_commands()
+
+    def get_seachest_path(self, tool_name: str) -> str:
+        """
+        Get the full path of SeaChest tools using shutil.which or whereis
+        :param tool_name: Name of the tool (e.g., "openSeaChest_Basics", "openSeaChest_SMART")
+        :return: Full path of the tool or default to its name
+        """
+        try:
+            # Locate SeaTools
+            path = shutil.which(tool_name)
+
+            # If OK
+            if path:
+                # Return Path
+                return path
+
+            # Run Whereis Command
+            result = subprocess.run(["whereis", tool_name], capture_output=True, text=True)
+
+            # Split Output
+            paths = result.stdout.strip().split()
+
+            # Extract First Value
+            for path in paths[1:]:
+                # Check not Man File
+                if path.startswith("/") and "man" not in path:
+                    # Return Path
+                    return path
+
+        # Exceptions
+        except Exception as exception:
+            # Print
+            print(f"Error finding {tool_name} path: {exception}")
+
+        # Return
+        return tool_name
+
+    def init_commands(self):
+        """
+        Initialize all commands with dynamically found paths.
+        """
+
+        # Helper Commands
+        self.get_version_command = f"sudo {self.seachest_basics_path} --version"
+        self.get_devices_command = f"{self.seachest_basics_path} --scan"
+        self.get_device_information_command = f"{self.seachest_basics_path} --deviceInfo --device"
 
     def get_all_as_text(self):
         """
@@ -255,100 +295,13 @@ class SeaTools:
         # Run Command
         command.run()
 
-        # If Return Code is not Zero
+        # If Error
         if command.get_return_code() != 0:
             # Return False
             return False
 
-        # Return Smartctl Output as Text
+        # Return
         return command.get_output().strip().decode("utf-8")
-
-    """
-    Self-test Commands
-    """
-
-    def abort_self_test(self):
-        """
-        Execute Abort Self-test
-        :return: Command
-        """
-
-        # Prepare Command String
-        short_self_test = f"{self.abort_self_test_command} {self.dut}"
-
-        # Prepare Command
-        command = Command(short_self_test)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    def execute_self_test_short(self, captive: bool = False, force: bool = False) -> Command:
-        """
-        Execute Short Self-test
-        :param force: force the execution of a new test, aborting the current test (if any)
-        :param captive: run the short test in captive mode (defaults to background mode)
-        :return: Command
-        """
-
-        # Prepare Command String
-        short_self_test = (
-            f"{self.execute_self_test_short_command} {'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
-        )
-
-        # Prepare Command
-        command = Command(short_self_test)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    def execute_self_test_long(self, captive: bool = False, force: bool = False) -> Command:
-        """
-        Execute Extended Self-test
-        WARNING - This test will take a long time to complete as it processes the entire device
-        :param force: force the execution of a new test, aborting the current test (if any)
-        :param captive: run the extended test in captive mode (defaults to background mode)
-        :return: Command
-        """
-
-        # Prepare Command String
-        extended_self_test_command = (
-            f"{self.execute_self_test_long_command} {'force' if force else ''} {'-C' if captive else ''} {self.dut}"
-        )
-
-        # Prepare Command
-        command = Command(extended_self_test_command)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    def execute_self_test_conveyance(self, captive: bool = False, force: bool = False) -> Command:
-        """
-        Execute Conveyance Self-test
-        :param force: force the execution of a new test, aborting the current test (if any)
-        :param captive: run the conveyance test in captive mode (defaults to background mode)
-        :return: Command
-        """
-
-        # Prepare Command String
-        conveyance_self_test_command = f"{self.execute_self_test_conveyance_command} {'force' if force else ''} {'-C' if captive else ''} {self.dut}"
-
-        # Prepare Command
-        command = Command(conveyance_self_test_command)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
 
 
 class SG3Utils:
@@ -361,8 +314,50 @@ class SG3Utils:
         Constructor
         """
 
+        # Get the full paths for sg3_utils binaries
+        self.sg_map26_path = self.get_sg3utils_path("sg_map26")
+        self.sg_turs_path = self.get_sg3utils_path("sg_turs")
+
         # Properties
         self.dut = device_id
+
+    def get_sg3utils_path(self, tool_name: str) -> str:
+        """
+        Get the full path of sg3_utils tools using shutil.which or whereis
+        :param tool_name: Name of the tool (e.g., "sg_map26", "sg_turs")
+        :return: Full path of the tool or default to its name
+        """
+
+        # Try
+        try:
+            # Get Path
+            path = shutil.which(tool_name)
+
+            # If OK
+            if path:
+                # Return
+                return path
+
+            # Run Command
+            result = subprocess.run(["whereis", tool_name], capture_output=True, text=True)
+
+            # Split Output
+            paths = result.stdout.strip().split()
+
+            # Loop Paths
+            for path in paths[1:]:
+                # If not Manual
+                if path.startswith("/") and "man" not in path:
+                    # Return
+                    return path
+
+        # Exception
+        except Exception as exception:
+            # Print
+            print(f"Error finding {tool_name} path: {exception}")
+
+        # Return
+        return tool_name
 
     def sg_map26(self) -> str | bool:
         """
@@ -371,58 +366,58 @@ class SG3Utils:
         :return str SCSI Generic ID | bool False for Failure:
         """
 
-        # If is NVMe
+        # If it's an NVMe device, return as is
         if "/dev/nvme" in self.dut:
-            # Return DUT
             return self.dut
 
         # Try
         try:
             # Set Command
-            command = Command(f"sg_map26 {self.dut}")
+            command = Command(f"sudo {self.sg_map26_path} {self.dut}")
 
             # Run Command
             command.run()
 
-            # If Return Code is not Zero
+            # If Error
             if command.get_return_code() != 0:
-                # Return False
+                # Return
                 return False
 
-            # Return SCSI Generic DUT
+            # Return
             return command.get_output().strip().decode("utf-8")
 
         # If Command Exception
         except CommandException:
-            # Return False
+            # Return
             return False
 
     def test_unit_ready(self):
-        # If is NVMe
-        if "/dev/nvme" in self.dut:
-            # Return DUT
-            return self.dut
+        """
+        Test Unit Ready
+        :return:
+        """
 
         # Try
         try:
             # Set Command
-            command = Command(f"sg_turs -vvvv {self.dut}")
+            command = Command(f"sudo {self.sg_turs_path} -vvvv {self.dut}")
 
             # Run Command
             command.run()
 
-            # If Return Code is not Zero
+            # If Error
             if command.get_return_code() != 0:
-                # Return False
+                # Return
                 return "Not Ready"
 
-            # Return Ready
+            # Return
             return "Ready"
 
-        # If Command Exception
+        # Command Exception
         except CommandException:
             # Return False
             return False
+
 
 
 class Smartctl:
@@ -430,53 +425,20 @@ class Smartctl:
     Smartctl Class
     """
 
-    # Get Commands
-    get_version_command = "smartctl --version"
-    get_devices_command = "smartctl --scan"
-    get_devices_open_command = "smartctl --scan-open"
-    get_identify_command = "smartctl --identify"
-    get_identity_command = "smartctl --info"
-    get_health_command = "smartctl --health"
-    get_device_information_command = "smartctl --all"
-    get_all_device_information_command = "smartctl --xall"
-
-    # S.M.A.R.T Commands
-    set_enable_smart_command = "smartctl --smart=on"
-    set_disable_smart_command = "smartctl --smart=off"
-    set_enable_smart_automatic_offline_testing_command = "smartctl --offlineauto=on"
-    set_disable_smart_automatic_offline_testing_command = "smartctl --offlineauto=off"
-    set_enable_smart_automatic_attribute_autosave_command = "smartctl --saveauto=on"
-    set_disable_smart_automatic_attribute_autosave_command = "smartctl --saveauto=off"
-    set_enable_smart_all_options = "smartctl --smart=off --offlineauto=off --saveauto=off"
-    set_disable_smart_all_options = "smartctl --smart=off --offlineauto=off --saveauto=off"
-
-    # Self Test Commands
-    abort_self_test_command = "smartctl --abort --json=ov"
-    execute_self_test_offline_command = "smartctl --test=offline --json=ov"
-    execute_self_test_short_command = "smartctl --test=short --json=ov"
-    execute_self_test_long_command = "smartctl --test=long --json=ov"
-    execute_self_test_conveyance_command = "smartctl --test=conveyance --json=ov"
-    execute_self_test_selective_command = "smartctl --test=select"
-    execute_self_test_vendor_specific_command = "smartctl --test=vendor"
-
     def __init__(self, device_id: str = None):
         """
         Smartctl
         :param device_id:
         """
 
+        # Get the full path of smartctl
+        self.smartctl_path = self.get_smartctl_path()
+
         # Set Device ID
         self.dut = device_id
 
         # Set Acceptable Return Codes
-        self.acceptable_return_codes = [
-            0,
-            4,
-            64,
-            192,
-            196,
-            216,
-        ]
+        self.acceptable_return_codes = [0, 4, 64, 192, 196, 216]
 
         # Set Bit Mask Codes
         self.bitmask_codes = {
@@ -489,6 +451,69 @@ class Smartctl:
             6: "S.M.A.R.T Error Log contains 1 or more record of errors",
             7: "S.M.A.R.T Self-test Log contains 1 or more record of failed self-tests",
         }
+
+        # Initialize Commands with smartctl path
+        self.init_commands()
+
+    def get_smartctl_path(self) -> str:
+        """
+        Get the full path of smartctl using whereis or shutil.which
+        :return: Full path of smartctl
+        """
+        try:
+            # Try to locate smartctl using shutil.which (more reliable)
+            path = shutil.which("smartctl")
+            if path:
+                return path
+
+            # Fallback to using whereis
+            result = subprocess.run(["whereis", "smartctl"], capture_output=True, text=True)
+            paths = result.stdout.strip().split()
+
+            # Extract the first valid executable path (excluding man pages)
+            for path in paths[1:]:  # Skip 'smartctl:' prefix
+                if path.startswith("/") and "man" not in path:
+                    return path
+        except Exception as e:
+            print(f"Error finding smartctl path: {e}")
+
+        # Default to 'smartctl' if no valid path is found
+        return "smartctl"
+
+    def init_commands(self):
+        """
+        Initialize all commands with the correct smartctl path
+        """
+
+        # Helper Commands
+        self.get_version_command = f"sudo {self.smartctl_path} --version"
+        self.get_devices_command = f"sudo {self.smartctl_path} --scan"
+        self.get_devices_open_command = f"sudo {self.smartctl_path} --scan-open"
+        self.get_identify_command = f"sudo {self.smartctl_path} --identify"
+        self.get_identity_command = f"sudo {self.smartctl_path} --info"
+        self.get_health_command = f"sudo {self.smartctl_path} --health"
+        self.get_device_information_command = f"sudo {self.smartctl_path} --all"
+        self.get_all_device_information_command = f"sudo {self.smartctl_path} --xall"
+
+        # S.M.A.R.T Commands
+        self.set_enable_smart_command = f"sudo {self.smartctl_path} --smart=on"
+        self.set_disable_smart_command = f"sudo {self.smartctl_path} --smart=off"
+        self.set_enable_smart_automatic_offline_testing_command = f"sudo {self.smartctl_path} --offlineauto=on"
+        self.set_disable_smart_automatic_offline_testing_command = f"sudo {self.smartctl_path} --offlineauto=off"
+        self.set_enable_smart_automatic_attribute_autosave_command = f"sudo {self.smartctl_path} --saveauto=on"
+        self.set_disable_smart_automatic_attribute_autosave_command = f"sudo {self.smartctl_path} --saveauto=off"
+        self.set_enable_smart_all_options = f"sudo {self.smartctl_path} --smart=off --offlineauto=off --saveauto=off"
+        self.set_disable_smart_all_options = f"sudo {self.smartctl_path} --smart=off --offlineauto=off --saveauto=off"
+
+        # Self Test Commands
+        self.abort_self_test_command = f"sudo {self.smartctl_path} --abort --json=ov"
+        self.execute_self_test_offline_command = f"sudo {self.smartctl_path} --test=offline --json=ov"
+        self.execute_self_test_short_command = f"sudo {self.smartctl_path} --test=short --json=ov"
+        self.execute_self_test_long_command = f"sudo {self.smartctl_path} --test=long --json=ov"
+        self.execute_self_test_conveyance_command = f"sudo {self.smartctl_path} --test=conveyance --json=ov"
+        self.execute_self_test_selective_command = f"sudo {self.smartctl_path} --test=select"
+        self.execute_self_test_vendor_specific_command = f"sudo {self.smartctl_path} --test=vendor"
+
 
     """
     Helpers
