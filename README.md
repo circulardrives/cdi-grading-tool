@@ -34,7 +34,7 @@ cd openSeaChest-develop
 meson --buildtype=release builddir
 ninja -C builddir
 cd builddir
-cp openSeaChest_* !(*.p) /opt/openSeaChest/
+cp openSeaChest_* !(*.p) /usr/bin/openSeaChest/
 
 # smartmontools - https://www.smartmontools.org/
 wget https://downloads.sourceforge.net/project/smartmontools/smartmontools/7.4/smartmontools-7.4.tar.gz && \
@@ -66,12 +66,15 @@ pip install -e .
 # Create Logs Folder
 mkdir logs
 
-# Launch the CDI Grading Tool
-python3 main.py
+# Launch Example - super user permissions required
+python3 example.py
 ```
 
 ## Roadmap
 - [ ] Add full change logs.
+
+## Change Logs
+* TODO ...
 
 ## License
 * TODO ...
