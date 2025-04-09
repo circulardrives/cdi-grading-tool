@@ -224,7 +224,7 @@ class DeviceManager:
                         if smart_log.returncode == 0 and smart_log.stdout.strip():
                             health_data = json.loads(smart_log.stdout)
                             logger.debug(f"NVMe health data: {health_data}")
-                            nvme_data["health_log"] = health_data
+                            nvme_data["nvme_smart_health_information_log"] = health_data
                         else:
                             logger.warning(f"nvme smart-log failed: {smart_log.stderr}")
 
@@ -240,7 +240,7 @@ class DeviceManager:
                                 alt_data = json.loads(alt_smart.stdout)
                                 if "nvme_smart_health_information_log" in alt_data:
                                     logger.debug("Found nvme_smart_health_information_log in smartctl output")
-                                    nvme_data["health_log"] = alt_data["nvme_smart_health_information_log"]
+                                    nvme_data["nvme_smart_health_information_log"] = alt_data["nvme_smart_health_information_log"]
                                 else:
                                     logger.warning("smartctl doesn't contain nvme_smart_health_information_log")
                             else:
@@ -255,15 +255,15 @@ class DeviceManager:
                                         text=True,
                                     )
                                     if sg_logs.returncode == 0:
-                                        nvme_data["health_log"] = json.loads(sg_logs.stdout)
+                                        nvme_data["nvme_smart_health_information_log"] = json.loads(sg_logs.stdout)
                                     else:
                                         logger.warning(f"sg_logs also failed: {sg_logs.stderr}")
 
                         # Try to construct a basic health log if we still don't have one
-                        if "health_log" not in nvme_data or not nvme_data["health_log"]:
+                        if "nvme_smart_health_information_log" not in nvme_data or not nvme_data["nvme_smart_health_information_log"]:
                             logger.debug("Constructing basic health log from available data")
                             # Create a minimal health log with at least empty fields
-                            nvme_data["health_log"] = {
+                            nvme_data["nvme_smart_health_information_log"] = {
                                 "critical_warning": 0,
                                 "temperature": 0,
                                 "available_spare": 100,
