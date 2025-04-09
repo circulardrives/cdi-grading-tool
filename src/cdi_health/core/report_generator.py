@@ -78,72 +78,58 @@ class ReportGenerator:
             writer.writeheader()
 
             for graded in graded_devices:
-                row = {key: "N/A" for key in fieldnames} # Initialize row with N/A
+                row = {key: "" for key in fieldnames} # Initialize row with empty strings
 
-                if graded.device: # Basic info if device exists
-                    row["SerialNumber"] = graded.device.serial
-                    row["Model"] = graded.device.model
-                    row["Firmware"] = graded.device.firmware
-                    row["Capacity(GB)"] = str(graded.device.capacity_bytes // (1024**3))
-                    row["Protocol"] = graded.device.protocol.value
+                device = graded.device # Get device, could be None if initial scan failed
+
+                if device: # Basic info if device exists
+                    row["SerialNumber"] = device.serial
+                    row["Model"] = device.model
+                    row["Firmware"] = device.firmware
+                    row["Capacity(GB)"] = str(device.capacity_bytes // (1024**3))
+                    row["Protocol"] = device.protocol.value
                 else:
                     row["SerialNumber"] = "Unknown"
                     row["Model"] = "Unknown"
-                    # Keep others as N/A
+                    row["Protocol"] = "Unknown"
+                    # Populate Status and Reason even if device info is missing
+                    row["Status"] = graded.status.value
+                    row["FailureReason/Flag"] = self._format_failure_flag(graded)
+                    writer.writerow(row)
+                    continue # Skip rest if device object is missing
 
+                # Common fields for all protocols (if not error)
                 row["Status"] = graded.status.value
                 row["FailureReason/Flag"] = self._format_failure_flag(graded)
 
-                # If status is ERROR, we already filled with N/A or basic info, so skip further processing
-                if graded.status == DeviceStatus.ERROR:
-                    writer.writerow(row)
-                    continue
-
-                # Proceed for non-errored devices
-                device = graded.device
-
-                # Safely get and format values, defaulting to empty string if None/Error
                 poh_hours = self._get_poh_hours(device)
                 row["POH_Hours"] = str(poh_hours) if poh_hours is not None else ""
                 row["POH_Readable"] = self._format_poh_readable(poh_hours)
-                row["ReallocatedSectors (HDD)"] = self._get_sata_sas_attribute(device, 5, "Reallocated_Sector_Ct", default_val="")
-                row["PendingSectors (HDD)"] = self._get_sata_sas_attribute(device, 197, "Current_Pending_Sector", default_val="")
-                row["PercentUsed (SSD)"] = self._get_percent_used(device)
-                row["AvailableSpare% (SSD)"] = self._get_available_spare(device)
 
-                # NVMe Specific - Access nested health log
-                media_errors_nvme = ""
-                warning_temp_nvme = ""
-                critical_temp_nvme = ""
-                if device.nvme_data:
-                    logger.debug(f"Device {device.serial}: Trying NVMe CSV fields. nvme_data available: True")
-                    health_log = device.nvme_data.get("nvme_smart_health_information_log")
-                    if isinstance(health_log, dict):
-                        logger.debug(f"Device {device.serial}: Found health_log dict for CSV fields.")
-                        media_errors_nvme = str(health_log.get("media_errors", ""))
-                        warning_temp_nvme = str(health_log.get("warning_temp_time", ""))
-                        critical_temp_nvme = str(health_log.get("critical_comp_time", ""))
-                        logger.debug(f"Device {device.serial}: MediaErr={media_errors_nvme}, WarnT={warning_temp_nvme}, CritT={critical_temp_nvme}")
-                    else:
-                        logger.warning(f"Device {device.serial}: health_log is not a dict or missing for CSV fields. Type: {type(health_log)}")
-                else:
-                    logger.debug(f"Device {device.serial}: Trying NVMe CSV fields. nvme_data available: False")
+                host_reads_gb = self._get_host_reads_gb(device) # Use the correct helper
+                row["HostReads(GB)"] = f"{host_reads_gb:.2f}" if host_reads_gb is not None else ""
+                host_writes_gb = self._get_host_writes_gb(device) # Use the correct helper
+                row["HostWrites(GB)"] = f"{host_writes_gb:.2f}" if host_writes_gb is not None else ""
+                row["MaxTemp"] = str(self._get_max_temp(device)) if self._get_max_temp(device) is not None else "" # Handle None
+                row["AvgTemp"] = str(self._get_avg_temp(device)) if self._get_avg_temp(device) is not None else "" # Handle None
 
-                row["MediaErrors (NVMe)"] = media_errors_nvme
-                row["WarningTempTime(min)"] = warning_temp_nvme
-                row["CriticalTempTime(min)"] = critical_temp_nvme
 
-                # Host Reads/Writes
-                row["HostReads(GB)"] = self._format_bytes_gb(self._get_host_reads(device))
-                row["HostWrites(GB)"] = self._format_bytes_gb(self._get_host_writes(device))
+                # Protocol-specific fields
+                if device.protocol in (TransportProtocol.SATA, TransportProtocol.SAS):
+                    row["ReallocatedSectors (HDD)"] = self._get_sata_sas_attribute(device, 5, "Reallocated_Sector_Ct", default_val="")
+                    row["PendingSectors (HDD)"] = self._get_sata_sas_attribute(device, 197, "Current_Pending_Sector", default_val="")
+                    row["PercentUsed (SSD)"] = str(self._get_sata_sas_percent_used(device)) if self._get_sata_sas_percent_used(device) is not None else ""
+                    row["AvailableSpare% (SSD)"] = str(self._get_sata_sas_available_spare(device)) if self._get_sata_sas_available_spare(device) is not None else ""
 
-                # Temperatures
-                row["MaxTemp"] = self._get_max_temp(device)
-                row["AvgTemp"] = self._get_avg_temp(device)
+                elif device.protocol == TransportProtocol.NVME:
+                    row["PercentUsed (SSD)"] = str(self._get_nvme_percent_used(device)) if self._get_nvme_percent_used(device) is not None else ""
+                    row["AvailableSpare% (SSD)"] = str(self._get_nvme_available_spare(device)) if self._get_nvme_available_spare(device) is not None else ""
+                    row["MediaErrors (NVMe)"] = str(self._get_nvme_media_errors(device)) if self._get_nvme_media_errors(device) is not None else ""
+                    row["WarningTempTime(min)"] = str(self._get_nvme_warning_temp_time(device)) if self._get_nvme_warning_temp_time(device) is not None else ""
+                    row["CriticalTempTime(min)"] = str(self._get_nvme_critical_temp_time(device)) if self._get_nvme_critical_temp_time(device) is not None else ""
+                    # Max/Avg Temp for NVMe is implicitly handled by _get_max/avg_temp helpers if current temp is available
 
-                # Final check
-                final_row = {k: str(v) if v is not None else "" for k, v in row.items()}
-                writer.writerow(final_row)
+                writer.writerow(row)
 
     def _generate_json_report(
         self,
@@ -236,43 +222,26 @@ class ReportGenerator:
         return " ".join(parts) if parts else ("0h" if hours == 0 else "N/A")
 
     def _get_poh_hours(self, device: StorageDevice) -> Optional[int]:
-        """Get power-on hours from device data safely."""
-        poh = None
-        # Try SATA/SAS first
+        """Get Power On Hours."""
+        poh_hours = None
         if device.smart_data:
-            # Check top-level power_on_time object first
-            power_on_time_data = device.smart_data.get("power_on_time")
-            if isinstance(power_on_time_data, dict):
-                poh = power_on_time_data.get("hours")
-            # Fallback: Check SMART attributes table for ID 9
-            if poh is None:
-                 poh_attr = self._get_sata_sas_helper(device.smart_data, 9, "Power_On_Hours")
-                 raw_val = poh_attr.get("raw", {}).get("value") if poh_attr else None
-                 if raw_val is not None:
-                     try: poh = int(raw_val)
-                     except (ValueError, TypeError): pass
+            poh_hours = device.smart_data.get("power_on_time", {}).get("hours")
 
-        # Try NVMe if SATA/SAS not found or not applicable
-        if poh is None and device.nvme_data:
-            logger.debug(f"Device {device.serial}: Trying NVMe POH. nvme_data available: True")
-            # Access nested health information log from smartctl output
+        if device.protocol == TransportProtocol.NVME and device.nvme_data:
             health_log = device.nvme_data.get("nvme_smart_health_information_log")
             if isinstance(health_log, dict):
-                logger.debug(f"Device {device.serial}: Found health_log dict.")
-                poh = health_log.get("power_on_hours")
-                logger.debug(f"Device {device.serial}: POH from health_log: {poh}")
+                nvme_poh = health_log.get("power_on_hours")
+                if nvme_poh is not None:
+                    poh_hours = nvme_poh # Prefer NVMe value if available
             else:
-                logger.warning(f"Device {device.serial}: health_log is not a dict or missing. Type: {type(health_log)}")
-        elif poh is None:
-            logger.debug(f"Device {device.serial}: Trying NVMe POH. nvme_data available: False")
+                 logger.warning(f"Device {device.serial}: NVMe health log is not a dict or missing for POH. Type: {type(health_log)}")
 
-        # Final conversion check
-        if poh is not None:
+        if poh_hours is not None:
             try:
-                return int(poh)
+                return int(poh_hours)
             except (ValueError, TypeError):
-                logger.warning(f"Could not convert POH value '{poh}' to int for device {device.serial}")
-                pass
+                logger.warning(f"Device {device.serial}: Invalid POH value '{poh_hours}' encountered.")
+                return None
         return None
 
     def _get_sata_sas_helper(self, smart_data: Optional[dict], attr_id: int, attr_name: str) -> Optional[dict]:
@@ -504,3 +473,142 @@ class ReportGenerator:
         if bytes_val is None or bytes_val < 0:
             return ""
         return f"{bytes_val / (1024**3):.2f}"
+
+    def _get_nvme_percent_used(self, device: StorageDevice) -> Optional[int]:
+        """Get NVMe Percentage Used."""
+        if device.protocol == TransportProtocol.NVME and device.nvme_data:
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                percent_used = health_log.get("percentage_used")
+                if percent_used is not None:
+                     try:
+                         return int(percent_used)
+                     except (ValueError, TypeError):
+                        logger.warning(f"Device {device.serial}: Invalid PercentUsed value '{percent_used}'.")
+                        return None
+                logger.debug(f"Device {device.serial}: PercentUsed from health_log: {percent_used}")
+            else:
+                 logger.warning(f"Device {device.serial}: health_log is not a dict or missing for PercentUsed. Type: {type(health_log)}")
+        return None
+
+    def _get_nvme_available_spare(self, device: StorageDevice) -> Optional[int]:
+        """Get NVMe Available Spare Percentage."""
+        if device.protocol == TransportProtocol.NVME and device.nvme_data:
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                # Try both keys observed
+                available_spare = health_log.get("available_spare", health_log.get("avail_spare"))
+                if available_spare is not None:
+                     try:
+                         return int(available_spare)
+                     except (ValueError, TypeError):
+                        logger.warning(f"Device {device.serial}: Invalid AvailableSpare value '{available_spare}'.")
+                        return None
+                logger.debug(f"Device {device.serial}: AvailableSpare from health_log: {available_spare}")
+            else:
+                logger.warning(f"Device {device.serial}: health_log is not a dict or missing for AvailableSpare. Type: {type(health_log)}")
+        return None
+
+    def _get_nvme_host_reads_gb(self, device: StorageDevice) -> Optional[float]:
+        """Get NVMe Host Reads in GB."""
+        if device.protocol == TransportProtocol.NVME and device.nvme_data:
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                units = health_log.get("data_units_read")
+                if units is not None:
+                    try:
+                        units_int = int(units)
+                        # Convert (512 * 1000 byte units) to GB
+                        return (units_int * 512 * 1000) / (1024**3)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Device {device.serial}: Invalid DataUnitsRead value '{units}'.")
+                        return None
+                logger.debug(f"Device {device.serial}: DataUnitsRead from health_log: {units}")
+            else:
+                 logger.warning(f"Device {device.serial}: health_log is not a dict or missing for HostReads. Type: {type(health_log)}")
+        return None
+
+    def _get_nvme_host_writes_gb(self, device: StorageDevice) -> Optional[float]:
+        """Get NVMe Host Writes in GB."""
+        if device.protocol == TransportProtocol.NVME and device.nvme_data:
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                units = health_log.get("data_units_written")
+                if units is not None:
+                    try:
+                        units_int = int(units)
+                        # Convert (512 * 1000 byte units) to GB
+                        return (units_int * 512 * 1000) / (1024**3)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Device {device.serial}: Invalid DataUnitsWritten value '{units}'.")
+                        return None
+                logger.debug(f"Device {device.serial}: DataUnitsWritten from health_log: {units}")
+            else:
+                logger.warning(f"Device {device.serial}: health_log is not a dict or missing for HostWrites. Type: {type(health_log)}")
+        return None
+
+    def _get_nvme_current_temp(self, device: StorageDevice) -> Optional[int]:
+        """Get NVMe Current Temperature in Celsius."""
+        if device.protocol == TransportProtocol.NVME and device.nvme_data:
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                current_temp_kelvin = health_log.get("temperature")
+                if current_temp_kelvin is not None:
+                    try:
+                        # Convert Kelvin to Celsius
+                        return int(current_temp_kelvin) - 273
+                    except (ValueError, TypeError):
+                        logger.warning(f"Device {device.serial}: Invalid Temperature value '{current_temp_kelvin}'.")
+                        return None
+                logger.debug(f"Device {device.serial}: Temp from health_log: {current_temp_kelvin}")
+            else:
+                logger.warning(f"Device {device.serial}: health_log is not a dict or missing for CurrentTemp. Type: {type(health_log)}")
+        return None
+
+    def _get_nvme_media_errors(self, device: StorageDevice) -> Optional[int]:
+        """Get NVMe Media and Data Integrity Errors."""
+        if device.protocol == TransportProtocol.NVME and device.nvme_data:
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                media_errors = health_log.get("media_errors")
+                if media_errors is not None:
+                    try:
+                        return int(media_errors)
+                    except (ValueError, TypeError):
+                         logger.warning(f"Device {device.serial}: Invalid MediaErrors value '{media_errors}'.")
+                         return None
+            else:
+                 logger.warning(f"Device {device.serial}: health_log is not a dict or missing for MediaErrors. Type: {type(health_log)}")
+        return None
+
+    def _get_nvme_warning_temp_time(self, device: StorageDevice) -> Optional[int]:
+        """Get NVMe Warning Composite Temperature Time (minutes)."""
+        if device.protocol == TransportProtocol.NVME and device.nvme_data:
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                warning_time = health_log.get("warning_temp_time")
+                if warning_time is not None:
+                    try:
+                        return int(warning_time)
+                    except (ValueError, TypeError):
+                         logger.warning(f"Device {device.serial}: Invalid WarningTempTime value '{warning_time}'.")
+                         return None
+            else:
+                 logger.warning(f"Device {device.serial}: health_log is not a dict or missing for WarningTempTime. Type: {type(health_log)}")
+        return None
+
+    def _get_nvme_critical_temp_time(self, device: StorageDevice) -> Optional[int]:
+        """Get NVMe Critical Composite Temperature Time (minutes)."""
+        if device.protocol == TransportProtocol.NVME and device.nvme_data:
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                critical_time = health_log.get("critical_comp_time")
+                if critical_time is not None:
+                     try:
+                         return int(critical_time)
+                     except (ValueError, TypeError):
+                         logger.warning(f"Device {device.serial}: Invalid CriticalTempTime value '{critical_time}'.")
+                         return None
+            else:
+                 logger.warning(f"Device {device.serial}: health_log is not a dict or missing for CriticalTempTime. Type: {type(health_log)}")
+        return None

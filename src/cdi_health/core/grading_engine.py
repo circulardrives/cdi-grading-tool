@@ -108,8 +108,14 @@ class GradingEngine:
                 failure_reason=FailureReason.DATA_READ_ERROR,
             )
 
+        # Get the health log dictionary
+        health_log = device.nvme_data.get("nvme_smart_health_information_log")
+        if not isinstance(health_log, dict):
+            logger.warning(f"NVMe health log is not a dictionary for device {device.serial}. Grading checks may fail.")
+            health_log = {} # Use empty dict to avoid errors, grading might result in PASS incorrectly
+
         # Check percentage used
-        if device.nvme_data.get("percentage_used", 0) > self.PERCENT_USED_THRESHOLD:
+        if health_log.get("percentage_used", 0) > self.PERCENT_USED_THRESHOLD:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
@@ -117,7 +123,8 @@ class GradingEngine:
             )
 
         # Check available spare
-        if device.nvme_data.get("available_spare", 100) <= self.AVAILABLE_SPARE_THRESHOLD:
+        if health_log.get("available_spare", health_log.get("avail_spare", 100)) <= self.AVAILABLE_SPARE_THRESHOLD:
+            # Note: Added fallback key "avail_spare" seen in debug log
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
@@ -125,7 +132,7 @@ class GradingEngine:
             )
 
         # Check media errors
-        if device.nvme_data.get("media_errors", 0) > self.MEDIA_ERRORS_THRESHOLD:
+        if health_log.get("media_errors", 0) > self.MEDIA_ERRORS_THRESHOLD:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
@@ -133,7 +140,8 @@ class GradingEngine:
             )
 
         # Check critical temperature time
-        if device.nvme_data.get("critical_temp_time", 0) > self.CRITICAL_TEMP_TIME_THRESHOLD:
+        if health_log.get("critical_comp_time", 0) > self.CRITICAL_TEMP_TIME_THRESHOLD:
+            # Note: Changed key to "critical_comp_time" seen in debug log
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
@@ -141,19 +149,19 @@ class GradingEngine:
             )
 
         # Check warning temperature time
-        if device.nvme_data.get("warning_temp_time", 0) > self.WARNING_TEMP_TIME_THRESHOLD:
+        if health_log.get("warning_temp_time", 0) > self.WARNING_TEMP_TIME_THRESHOLD:
             return GradedDevice(
                 device=device,
-                status=DeviceStatus.PASS,
+                status=DeviceStatus.PASS, # Pass but flagged
                 flag_reason=FlagReason.TEMP_WARNING,
             )
 
-        # Check workload
-        workload = self._calculate_workload(device)
-        if workload > self.WORKLOAD_THRESHOLD_TB_PER_YEAR:
+        # Check workload (uses _calculate_workload which is also fixed below)
+        workload, poh = self._calculate_workload(device)
+        if workload is not None and workload > self.WORKLOAD_THRESHOLD_TB_PER_YEAR:
             return GradedDevice(
                 device=device,
-                status=DeviceStatus.PASS,
+                status=DeviceStatus.PASS, # Pass but flagged
                 flag_reason=FlagReason.HEAVY_USE,
                 workload_tb_per_year=workload,
             )
@@ -274,38 +282,56 @@ class GradingEngine:
         # TODO: Implement self-test history checking
         return False
 
-    def _calculate_workload(self, device: StorageDevice) -> float:
-        """Calculate workload in TB/year."""
-        host_reads = 0
-        host_writes = 0
-        poh_hours = 0
+    def _calculate_workload(self, device: StorageDevice) -> tuple[Optional[float], Optional[int]]:
+        """Calculate workload in TB/year. Returns (workload, poh_hours)."""
+        host_reads_bytes = 0
+        host_writes_bytes = 0
+        poh_hours = None
 
-        # Safely get data from smart_data if available
+        # Safely get data from smart_data if available (SATA/SAS)
         if device.smart_data:
-            # Example: Assuming smartctl JSON output has these keys
-            # Adjust keys based on actual smartctl JSON structure
-            # These might be nested within ata_smart_data or similar
-            host_reads = device.smart_data.get("power_on_time", {}).get("host_reads_mib", 0) * 1024 * 1024 # Example structure
-            host_writes = device.smart_data.get("power_on_time", {}).get("host_writes_mib", 0) * 1024 * 1024 # Example structure
-            poh_hours = device.smart_data.get("power_on_time", {}).get("hours", 0)
+            # Example: Assuming smartctl JSON output has these keys (might need adjustment)
+            host_reads_mib = device.smart_data.get("ata_smart_data", {}).get("host_reads_mib", 0)
+            host_writes_mib = device.smart_data.get("ata_smart_data", {}).get("host_writes_mib", 0)
+            host_reads_bytes = host_reads_mib * 1024 * 1024
+            host_writes_bytes = host_writes_mib * 1024 * 1024
+            poh_hours = device.smart_data.get("power_on_time", {}).get("hours")
 
-        # Safely get data from nvme_data if available (and potentially overwrite/add)
+        # Safely get data from nvme_data if available
         if device.nvme_data:
-            host_reads = device.nvme_data.get("data_units_read", 0) * 512 * 1000 # Units are 512-byte blocks * 1000
-            host_writes = device.nvme_data.get("data_units_written", 0) * 512 * 1000 # Units are 512-byte blocks * 1000
-            poh_hours = device.nvme_data.get("power_on_hours", poh_hours) # Use NVMe if available, else keep SATA/SAS value
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                 # NVMe units are 512 bytes * 1000
+                data_units_read = health_log.get("data_units_read", 0)
+                data_units_written = health_log.get("data_units_written", 0)
+                host_reads_bytes = data_units_read * 512 * 1000
+                host_writes_bytes = data_units_written * 512 * 1000
+                # Use NVMe POH if available, otherwise keep SATA/SAS value
+                nvme_poh = health_log.get("power_on_hours")
+                if nvme_poh is not None:
+                    poh_hours = nvme_poh
+            else:
+                 logger.warning(f"Could not get NVMe health log dict for workload calc on {device.serial}")
 
-        total_bytes = host_reads + host_writes
-        if not poh_hours:
+
+        total_bytes = host_reads_bytes + host_writes_bytes
+        if poh_hours is None:
             logger.warning(f"Power-on hours not available for device {device.serial}. Cannot calculate workload.")
-            return 0.0
+            return None, None
+
+        # Ensure poh_hours is an int
+        try:
+            poh_hours_int = int(poh_hours)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid POH value '{poh_hours}' for device {device.serial}. Cannot calculate workload.")
+            return None, None
+
+        if poh_hours_int <= 0:
+             logger.warning(f"Non-positive power-on hours ({poh_hours_int}) for device {device.serial}. Cannot calculate workload.")
+             return None, poh_hours_int
 
         # Convert to TB/year
-        poh_years = poh_hours / (24 * 365.25) # Use 365.25 for leap years
-        if poh_years <= 0:
-             logger.warning(f"Invalid power-on hours ({poh_hours}) for device {device.serial}. Cannot calculate workload.")
-             return 0.0
-
+        poh_years = poh_hours_int / (24 * 365.25) # Use 365.25 for leap years
         workload_tb_per_year = (total_bytes / (1024**4)) / poh_years
-        logger.debug(f"Device {device.serial}: Total Bytes={total_bytes}, POH={poh_hours}, Workload={workload_tb_per_year:.2f} TB/year")
-        return workload_tb_per_year
+        logger.debug(f"Device {device.serial}: Total Bytes={total_bytes}, POH={poh_hours_int}, Workload={workload_tb_per_year:.2f} TB/year")
+        return workload_tb_per_year, poh_hours_int
