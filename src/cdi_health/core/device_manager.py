@@ -135,49 +135,57 @@ class DeviceManager:
         return TransportProtocol.UNKNOWN
 
     def _collect_sata_sas_data(self, path: Path, protocol: TransportProtocol) -> Optional[StorageDevice]:
-        """Collect data from a SATA or SAS device."""
+        """Collect data from a SATA or SAS device using JSON output."""
         try:
-            # Get basic info
+            # Get device info and SMART data in JSON format
             result = subprocess.run(
-                ["smartctl", "-i", str(path)],
+                ["smartctl", "-i", "-A", "-j", str(path)], # Combine -i and -A with -j
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30 # Add a timeout
             )
-            info = self._parse_smartctl_info(result.stdout)
+            smart_data = json.loads(result.stdout)
 
-            # Get SMART data
-            result = subprocess.run(
-                ["smartctl", "-A", str(path)],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            smart_data = self._parse_smartctl_attributes(result.stdout)
+            # Extract basic info from JSON
+            vendor = smart_data.get("model_family", smart_data.get("vendor", "Unknown"))
+            model = smart_data.get("model_name", "Unknown")
+            serial = smart_data.get("serial_number", "Unknown")
+            firmware = smart_data.get("firmware_version", "Unknown")
+            capacity_bytes = smart_data.get("user_capacity", {}).get("bytes", 0)
 
-            # Get SAS specific data if needed
-            sas_data = None
-            if protocol == TransportProtocol.SAS:
-                sas_data = self._collect_sas_data(path)
+            # SAS specific data might be within the main JSON or require separate commands (TBD)
+            sas_data = smart_data.get("sas_specific_data", None) # Placeholder key
 
             return StorageDevice(
                 path=path,
                 protocol=protocol,
-                vendor=info["vendor"],
-                model=info["model"],
-                serial=info["serial"],
-                firmware=info["firmware"],
-                capacity_bytes=info["capacity_bytes"],
-                smart_data=smart_data,
+                vendor=vendor,
+                model=model,
+                serial=serial,
+                firmware=firmware,
+                capacity_bytes=capacity_bytes,
+                smart_data=smart_data, # Store the full JSON dict
                 sas_data=sas_data,
             )
         except subprocess.CalledProcessError as e:
-            logger.warning(f"Error collecting data from {path}: {e}")
+            logger.warning(f"smartctl command failed for {path}: {e}")
+            return None
+        except subprocess.TimeoutExpired:
+            logger.warning(f"smartctl command timed out for {path}")
+            return None
+        except json.JSONDecodeError as e:
+             logger.warning(f"Failed to parse smartctl JSON for {path}: {e}")
+             return None
+        except Exception as e:
+            logger.error(f"Unexpected error collecting data from {path}: {e}", exc_info=True)
             return None
 
     def _collect_sas_data(self, path: Path) -> dict:
-        """Collect SAS-specific data."""
-        # TODO: Implement SAS-specific data collection
+        """Collect SAS-specific data (Placeholder - currently relies on smartctl JSON)."""
+        # If smartctl -j includes enough SAS data, this might not be needed.
+        # Otherwise, run SAS-specific commands here (e.g., sg_logs)
+        logger.debug(f"SAS specific data collection for {path} not fully implemented.")
         return {}
 
     def _parse_nvme_list(self, output: str) -> List[StorageDevice]:
@@ -216,79 +224,3 @@ class DeviceManager:
             logger.warning(f"Failed to parse NVMe list output: {e}")
 
         return devices
-
-    def _parse_smartctl_info(self, output: str) -> dict:
-        """Parse smartctl info output."""
-        info = {
-            "vendor": "Unknown",
-            "model": "Unknown",
-            "serial": "Unknown",
-            "firmware": "Unknown",
-            "capacity_bytes": 0
-        }
-
-        for line in output.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-
-            if "Vendor:" in line:
-                info["vendor"] = line.split("Vendor:", 1)[1].strip()
-            elif "Product:" in line:
-                info["model"] = line.split("Product:", 1)[1].strip()
-            elif "Serial Number:" in line:
-                info["serial"] = line.split("Serial Number:", 1)[1].strip()
-            elif "Firmware Version:" in line:
-                info["firmware"] = line.split("Firmware Version:", 1)[1].strip()
-            elif "User Capacity:" in line:
-                # Extract bytes from line like: "User Capacity:    500,107,862,016 bytes [500 GB]"
-                try:
-                    capacity_str = line.split("[")[0].split("bytes")[0].strip().replace(",", "")
-                    info["capacity_bytes"] = int(capacity_str)
-                except (ValueError, IndexError):
-                    pass
-
-        return info
-
-    def _parse_smartctl_attributes(self, output: str) -> dict:
-        """Parse smartctl attributes output."""
-        attributes = {}
-
-        # Find the start of the attributes table
-        lines = output.splitlines()
-        start_idx = -1
-        for i, line in enumerate(lines):
-            if "ID#" in line and "ATTRIBUTE_NAME" in line:
-                start_idx = i + 1
-                break
-
-        if start_idx == -1:
-            return attributes
-
-        # Parse the attributes table
-        for line in lines[start_idx:]:
-            if not line.strip():
-                continue
-
-            try:
-                # Split the line into columns
-                parts = line.split()
-                if len(parts) >= 10:
-                    id_num = parts[0]
-                    name = " ".join(parts[1:-8])
-                    value = parts[-8]
-                    worst = parts[-7]
-                    threshold = parts[-6]
-                    raw_value = " ".join(parts[-5:])
-
-                    attributes[name] = {
-                        "id": id_num,
-                        "value": value,
-                        "worst": worst,
-                        "threshold": threshold,
-                        "raw_value": raw_value
-                    }
-            except (ValueError, IndexError):
-                continue
-
-        return attributes

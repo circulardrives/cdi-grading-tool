@@ -13,7 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from cdi_health.core.grading_engine import GradedDevice
+from cdi_health.core.grading_engine import GradedDevice, DeviceStatus
 
 logger = logging.getLogger(__name__)
 
