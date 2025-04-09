@@ -119,16 +119,18 @@ class ReportGenerator:
                 if device.protocol in (TransportProtocol.SATA, TransportProtocol.SAS):
                     row["ReallocatedSectors (HDD)"] = self._get_sata_sas_attribute(device, 5, "Reallocated_Sector_Ct", default_val="")
                     row["PendingSectors (HDD)"] = self._get_sata_sas_attribute(device, 197, "Current_Pending_Sector", default_val="")
-                    row["PercentUsed (SSD)"] = str(self._get_sata_sas_percent_used(device)) if self._get_sata_sas_percent_used(device) is not None else ""
-                    row["AvailableSpare% (SSD)"] = str(self._get_sata_sas_available_spare(device)) if self._get_sata_sas_available_spare(device) is not None else ""
+                    row["PercentUsed (SSD)"] = str(self._get_percent_used(device))
+                    row["AvailableSpare% (SSD)"] = str(self._get_available_spare(device))
 
                 elif device.protocol == TransportProtocol.NVME:
-                    row["PercentUsed (SSD)"] = str(self._get_nvme_percent_used(device)) if self._get_nvme_percent_used(device) is not None else ""
-                    row["AvailableSpare% (SSD)"] = str(self._get_nvme_available_spare(device)) if self._get_nvme_available_spare(device) is not None else ""
+                    # Use the generic helpers here too for consistency
+                    row["PercentUsed (SSD)"] = str(self._get_percent_used(device)) # Use generic helper
+                    row["AvailableSpare% (SSD)"] = str(self._get_available_spare(device)) # Use generic helper
+                    # Keep the NVMe-only fields using their specific helpers
                     row["MediaErrors (NVMe)"] = str(self._get_nvme_media_errors(device)) if self._get_nvme_media_errors(device) is not None else ""
                     row["WarningTempTime(min)"] = str(self._get_nvme_warning_temp_time(device)) if self._get_nvme_warning_temp_time(device) is not None else ""
                     row["CriticalTempTime(min)"] = str(self._get_nvme_critical_temp_time(device)) if self._get_nvme_critical_temp_time(device) is not None else ""
-                    # Max/Avg Temp for NVMe is implicitly handled by _get_max/avg_temp helpers if current temp is available
+                    # Max/Avg Temp for NVMe is implicitly handled by _get_max/avg_temp helpers
 
                 writer.writerow(row)
 
