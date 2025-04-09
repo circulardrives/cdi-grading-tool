@@ -18,3 +18,11 @@
 #
 
 from __future__ import annotations
+
+"""
+CDI Health - Storage Device Grading Tool
+
+This package provides tools for grading the health of storage devices.
+"""
+
+__version__ = "1.0.0"
