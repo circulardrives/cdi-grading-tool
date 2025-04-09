@@ -989,8 +989,12 @@ class ATAProtocol:
 
         # If Vendor is None
         if device.vendor == none:
-            # Determine Vendor by Starting Characters of the Model Number
-            device.vendor: str = self.helper.clean_string(device.determine_brand_by_model_number_starts_with(model_name).upper())
+            # Determine Vendor
+            brand = device.determine_brand_by_model_number_starts_with(model_name)
+            if brand is not None:
+                device.vendor = self.helper.clean_string(brand.upper())
+            else:
+                device.vendor = "UNKNOWN"  # or set to some default value
 
         # Identifiers
         device.model_number: str = self.helper.clean_string(device.determine_model_by_model_number(model_name).upper())
@@ -1320,7 +1324,11 @@ class NVMeProtocol:
         # If Vendor is None
         if device.vendor == none:
             # Determine Vendor
-            device.vendor = self.helper.clean_string(device.determine_brand_by_model_number_starts_with(model_name).upper())
+            brand = device.determine_brand_by_model_number_starts_with(model_name)
+            if brand is not None:
+                device.vendor = self.helper.clean_string(brand.upper())
+            else:
+                device.vendor = "UNKNOWN"  # or set to some default value
 
         # Model Number
         device.model_number = self.helper.clean_string(device.determine_model_by_model_number(model_name).upper())
