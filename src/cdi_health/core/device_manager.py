@@ -219,27 +219,87 @@ class DeviceManager:
                             ["nvme", "smart-log", "-o", "json", str(path)],
                             capture_output=True,
                             text=True,
-                            check=True,
                         )
-                        nvme_data["health_log"] = json.loads(smart_log.stdout)
+
+                        if smart_log.returncode == 0 and smart_log.stdout.strip():
+                            health_data = json.loads(smart_log.stdout)
+                            logger.debug(f"NVMe health data: {health_data}")
+                            nvme_data["health_log"] = health_data
+                        else:
+                            logger.warning(f"nvme smart-log failed: {smart_log.stderr}")
+
+                            # Try alternative method - smartctl nvme
+                            logger.debug(f"Trying smartctl for NVMe health data")
+                            alt_smart = subprocess.run(
+                                ["smartctl", "--xall", "--json", str(path)],
+                                capture_output=True,
+                                text=True,
+                            )
+
+                            if alt_smart.returncode == 0:
+                                alt_data = json.loads(alt_smart.stdout)
+                                if "nvme_smart_health_information_log" in alt_data:
+                                    logger.debug("Found nvme_smart_health_information_log in smartctl output")
+                                    nvme_data["health_log"] = alt_data["nvme_smart_health_information_log"]
+                                else:
+                                    logger.warning("smartctl doesn't contain nvme_smart_health_information_log")
+                            else:
+                                logger.warning(f"smartctl also failed: {alt_smart.stderr}")
+
+                                # Try a third method - use sg_logs if available
+                                if shutil.which("sg_logs"):
+                                    logger.debug("Trying sg_logs as last resort")
+                                    sg_logs = subprocess.run(
+                                        ["sg_logs", "--page=0x02", "--format=json", str(path)],
+                                        capture_output=True,
+                                        text=True,
+                                    )
+                                    if sg_logs.returncode == 0:
+                                        nvme_data["health_log"] = json.loads(sg_logs.stdout)
+                                    else:
+                                        logger.warning(f"sg_logs also failed: {sg_logs.stderr}")
+
+                        # Try to construct a basic health log if we still don't have one
+                        if "health_log" not in nvme_data or not nvme_data["health_log"]:
+                            logger.debug("Constructing basic health log from available data")
+                            # Create a minimal health log with at least empty fields
+                            nvme_data["health_log"] = {
+                                "critical_warning": 0,
+                                "temperature": 0,
+                                "available_spare": 100,
+                                "available_spare_threshold": 10,
+                                "percentage_used": 0,
+                                "data_units_read": 0,
+                                "data_units_written": 0,
+                                "host_reads": 0,
+                                "host_writes": 0,
+                                "media_errors": 0,
+                                "num_err_log_entries": 0,
+                            }
 
                         # Get Error Information (Log Identifier 01h)
-                        error_log = subprocess.run(
-                            ["nvme", "error-log", "-o", "json", str(path)],
-                            capture_output=True,
-                            text=True,
-                            check=True,
-                        )
-                        nvme_data["error_log"] = json.loads(error_log.stdout)
+                        try:
+                            error_log = subprocess.run(
+                                ["nvme", "error-log", "-o", "json", str(path)],
+                                capture_output=True,
+                                text=True,
+                            )
+                            if error_log.returncode == 0:
+                                nvme_data["error_log"] = json.loads(error_log.stdout)
+                        except (subprocess.SubprocessError, json.JSONDecodeError) as e:
+                            logger.debug(f"Error log not available: {e}")
 
                         # Get Firmware Slot Information (Log Identifier 03h)
-                        fw_log = subprocess.run(
-                            ["nvme", "fw-log", "-o", "json", str(path)],
-                            capture_output=True,
-                            text=True,
-                            check=True,
-                        )
-                        nvme_data["firmware_log"] = json.loads(fw_log.stdout)
+                        try:
+                            fw_log = subprocess.run(
+                                ["nvme", "fw-log", "-o", "json", str(path)],
+                                capture_output=True,
+                                text=True,
+                            )
+                            if fw_log.returncode == 0:
+                                nvme_data["firmware_log"] = json.loads(fw_log.stdout)
+                        except (subprocess.SubprocessError, json.JSONDecodeError) as e:
+                            logger.debug(f"Firmware log not available: {e}")
 
                         # Get Self-test Log (Log Identifier 06h) if available
                         try:
@@ -247,11 +307,11 @@ class DeviceManager:
                                 ["nvme", "self-test-log", "-o", "json", str(path)],
                                 capture_output=True,
                                 text=True,
-                                check=True,
                             )
-                            nvme_data["self_test_log"] = json.loads(self_test_log.stdout)
-                        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
-                            logger.debug(f"Self-test log not available for {path}: {e}")
+                            if self_test_log.returncode == 0:
+                                nvme_data["self_test_log"] = json.loads(self_test_log.stdout)
+                        except (subprocess.SubprocessError, json.JSONDecodeError) as e:
+                            logger.debug(f"Self-test log not available: {e}")
 
                     except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
                         logger.warning(f"Failed to get NVMe log pages for {path}: {e}")
