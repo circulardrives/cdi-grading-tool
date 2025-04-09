@@ -110,15 +110,34 @@ class ReportGenerator:
                 row["PendingSectors (HDD)"] = self._get_sata_sas_attribute(device, 197, "Current_Pending_Sector", default_val="")
                 row["PercentUsed (SSD)"] = self._get_percent_used(device)
                 row["AvailableSpare% (SSD)"] = self._get_available_spare(device)
-                row["MediaErrors (NVMe)"] = str(device.nvme_data.get("media_errors", "")) if device.nvme_data else ""
-                row["WarningTempTime(min)"] = str(device.nvme_data.get("warning_temp_time", "")) if device.nvme_data else ""
-                row["CriticalTempTime(min)"] = str(device.nvme_data.get("critical_temp_time", "")) if device.nvme_data else ""
+
+                # NVMe Specific - Access nested health log
+                media_errors_nvme = ""
+                warning_temp_nvme = ""
+                critical_temp_nvme = ""
+                if device.nvme_data:
+                    health_log = device.nvme_data.get("nvme_smart_health_information_log")
+                    if isinstance(health_log, dict):
+                        media_errors_nvme = str(health_log.get("media_errors", ""))
+                        warning_temp_nvme = str(health_log.get("warning_temp_time", ""))
+                        # Key from smartctl JSON is critical_comp_time, not critical_temp_time
+                        critical_temp_nvme = str(health_log.get("critical_comp_time", ""))
+
+                row["MediaErrors (NVMe)"] = media_errors_nvme
+                row["WarningTempTime(min)"] = warning_temp_nvme
+                row["CriticalTempTime(min)"] = critical_temp_nvme
+
+                # Host Reads/Writes
                 row["HostReads(GB)"] = self._format_bytes_gb(self._get_host_reads(device))
                 row["HostWrites(GB)"] = self._format_bytes_gb(self._get_host_writes(device))
+
+                # Temperatures
                 row["MaxTemp"] = self._get_max_temp(device)
                 row["AvgTemp"] = self._get_avg_temp(device)
 
-                writer.writerow(row)
+                # Final check
+                final_row = {k: str(v) if v is not None else "" for k, v in row.items()}
+                writer.writerow(final_row)
 
     def _generate_json_report(
         self,
@@ -229,12 +248,10 @@ class ReportGenerator:
 
         # Try NVMe if SATA/SAS not found or not applicable
         if poh is None and device.nvme_data:
-            poh = device.nvme_data.get("power_on_hours")
-            # Fallback for NVMe: check power_on_time structure
-            if poh is None:
-                power_on_time_data_nvme = device.nvme_data.get("power_on_time")
-                if isinstance(power_on_time_data_nvme, dict):
-                     poh = power_on_time_data_nvme.get("hours")
+            # Access nested health information log from smartctl output
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                poh = health_log.get("power_on_hours")
 
         # Final conversion check
         if poh is not None:
@@ -278,10 +295,10 @@ class ReportGenerator:
         """Get percentage used from device data safely, returns string."""
         percent_used = None
         if device.nvme_data:
-             # Try standard key first, then alternate casing
-             percent_used = device.nvme_data.get("percentage_used")
-             if percent_used is None:
-                  percent_used = device.nvme_data.get("Percentage Used")
+            # Access nested health information log
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                percent_used = health_log.get("percentage_used")
 
         # Try SATA/SAS SSD if NVMe not applicable/found
         if percent_used is None and device.smart_data:
@@ -308,10 +325,10 @@ class ReportGenerator:
         """Get available spare percentage from device data safely, returns string."""
         available_spare = None
         if device.nvme_data:
-            # Try standard key first, then alternate casing
-            available_spare = device.nvme_data.get("available_spare")
-            if available_spare is None:
-                 available_spare = device.nvme_data.get("Available Spare")
+            # Access nested health information log
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                available_spare = health_log.get("available_spare")
 
         # Try SATA/SAS SSD if NVMe not applicable/found
         if available_spare is None and device.smart_data:
@@ -326,14 +343,13 @@ class ReportGenerator:
         """Get host reads in bytes from device data safely."""
         reads_bytes = None
         if device.nvme_data:
-            # Try standard key first, then alternate casing
-            units = device.nvme_data.get("data_units_read")
-            if units is None:
-                 units = device.nvme_data.get("Data Units Read")
-
-            if units is not None:
-                 try: reads_bytes = int(units) * 512 * 1000
-                 except (ValueError, TypeError): pass
+            # Access nested health information log
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                units = health_log.get("data_units_read")
+                if units is not None:
+                     try: reads_bytes = int(units) * 512 * 1000
+                     except (ValueError, TypeError): pass
 
         # Try SATA/SAS if NVMe not applicable/found
         if reads_bytes is None and device.smart_data:
@@ -363,14 +379,13 @@ class ReportGenerator:
         """Get host writes in bytes from device data safely."""
         writes_bytes = None
         if device.nvme_data:
-            # Try standard key first, then alternate casing
-            units = device.nvme_data.get("data_units_written")
-            if units is None:
-                 units = device.nvme_data.get("Data Units Written")
-
-            if units is not None:
-                 try: writes_bytes = int(units) * 512 * 1000
-                 except (ValueError, TypeError): pass
+            # Access nested health information log
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                units = health_log.get("data_units_written")
+                if units is not None:
+                     try: writes_bytes = int(units) * 512 * 1000
+                     except (ValueError, TypeError): pass
 
         # Try SATA/SAS if NVMe not applicable/found
         if writes_bytes is None and device.smart_data:
@@ -397,62 +412,40 @@ class ReportGenerator:
 
     def _get_max_temp(self, device: StorageDevice) -> str:
         """Get maximum temperature from device data safely, returns string."""
-        max_temp = None
-        current_temp = self._get_current_temp(device) # Use helper for current temp
-
-        # Try NVMe specific max temp fields (less common)
-        if max_temp is None and device.nvme_data:
-             # Placeholder: check specific log pages if needed based on PRD
-             pass
-
-        # Try SATA/SAS attribute raw value parsing for max temp
-        if max_temp is None and device.smart_data:
-            # Check raw value of 194 first
-            temp_celsius_attr = self._get_sata_sas_helper(device.smart_data, 194, "Temperature_Celsius")
-            if temp_celsius_attr:
-                raw_val = temp_celsius_attr.get("raw", {}).get("value")
-                if raw_val is not None:
-                    raw_str = str(raw_val)
-                    try:
-                         if "Min/Max" in raw_str and len(raw_str.split("/")) > 2:
-                             max_temp = int(raw_str.split("/")[2].split(")")[0].strip())
-                         # Add checks for other formats if necessary
-                    except (ValueError, IndexError, TypeError): pass
-            # Check raw value of 190 as fallback
-            if max_temp is None:
-                 airflow_temp_attr = self._get_sata_sas_helper(device.smart_data, 190, "Airflow_Temperature_Cel")
-                 if airflow_temp_attr:
-                      raw_val = airflow_temp_attr.get("raw", {}).get("value")
-                      if raw_val is not None:
-                          try: max_temp = int(str(raw_val).split()[0]) # Assume first number is max
-                          except (ValueError, IndexError, TypeError): pass
-
-        # If still no max_temp found, use current_temp as proxy
-        final_temp = max_temp if max_temp is not None else current_temp
-        return str(final_temp) if final_temp is not None else ""
+        # For Max Temp, use current temp as a proxy as lifetime max is hard to parse reliably
+        current_temp = self._get_current_temp(device)
+        return str(current_temp) if current_temp is not None else ""
 
     def _get_current_temp(self, device: StorageDevice) -> Optional[int]:
         """Helper to get current temperature."""
         current_temp = None
         # Try NVMe first
         if device.nvme_data:
-            # Try standard key, composite key, then first sensor
-            current_temp = device.nvme_data.get("temperature")
+            # Check health log first, then top-level temp object
+            health_log = device.nvme_data.get("nvme_smart_health_information_log")
+            if isinstance(health_log, dict):
+                current_temp = health_log.get("temperature")
             if current_temp is None:
-                current_temp = device.nvme_data.get("Composite Temperature")
+                temp_obj = device.nvme_data.get("temperature")
+                if isinstance(temp_obj, dict):
+                    current_temp = temp_obj.get("current")
+            # Fallback for other possible NVMe keys (less standard)
             if current_temp is None:
-                 sensors = device.nvme_data.get("temperature_sensors", [])
-                 if sensors and isinstance(sensors, list) and len(sensors) > 0:
-                      current_temp = sensors[0].get("current")
+                current_temp = device.nvme_data.get("Composite Temperature") # From nvme-cli, maybe in smartctl?
+            if current_temp is None:
+                sensors = device.nvme_data.get("temperature_sensors", [])
+                if sensors and isinstance(sensors, list) and len(sensors) > 0:
+                    current_temp = sensors[0].get("current")
 
         # Try SATA/SAS if NVMe not found
         if current_temp is None and device.smart_data:
+            # Check raw value of 194 first
             temp_celsius_attr = self._get_sata_sas_helper(device.smart_data, 194, "Temperature_Celsius")
             if temp_celsius_attr:
-                 val = temp_celsius_attr.get("value") # Normalized value
-                 if val is not None:
-                     try: current_temp = int(val)
-                     except (ValueError, TypeError): pass
+                val = temp_celsius_attr.get("value") # Normalized value
+                if val is not None:
+                    try: current_temp = int(val)
+                    except (ValueError, TypeError): pass
 
         # Final conversion check
         if current_temp is not None:
