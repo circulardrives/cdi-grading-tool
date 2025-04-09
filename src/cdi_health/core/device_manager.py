@@ -221,7 +221,7 @@ class DeviceManager:
                             text=True,
                             check=True,
                         )
-                        nvme_data["smart_log"] = json.loads(smart_log.stdout)
+                        nvme_data["health_log"] = json.loads(smart_log.stdout)
 
                         # Get Error Information (Log Identifier 01h)
                         error_log = subprocess.run(
