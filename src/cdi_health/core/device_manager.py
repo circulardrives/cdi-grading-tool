@@ -208,15 +208,15 @@ class DeviceManager:
                     devices.append(StorageDevice(
                         path=path,
                         protocol=TransportProtocol.NVME,
-                        vendor=smart_data.get("model_family", "Unknown"),
+                        vendor=smart_data.get("model_family", smart_data.get("vendor", "Unknown")),
                         model=smart_data.get("model_name", "Unknown"),
                         serial=smart_data.get("serial_number", "Unknown"),
                         firmware=smart_data.get("firmware_version", "Unknown"),
                         capacity_bytes=int(smart_data.get("user_capacity", {}).get("bytes", 0)),
                         smart_data=smart_data,
-                        nvme_data=smart_data.get("nvme", {})
+                        nvme_data=smart_data  # Use full smartctl JSON output for nvme_data
                     ))
-                except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as e:
+                except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError, ValueError) as e:
                     logger.warning(f"Failed to parse NVMe device {device.get('DevicePath', 'unknown')}: {e}")
                     continue
 
