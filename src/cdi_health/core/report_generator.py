@@ -116,12 +116,18 @@ class ReportGenerator:
                 warning_temp_nvme = ""
                 critical_temp_nvme = ""
                 if device.nvme_data:
+                    logger.debug(f"Device {device.serial}: Trying NVMe CSV fields. nvme_data available: True")
                     health_log = device.nvme_data.get("nvme_smart_health_information_log")
                     if isinstance(health_log, dict):
+                        logger.debug(f"Device {device.serial}: Found health_log dict for CSV fields.")
                         media_errors_nvme = str(health_log.get("media_errors", ""))
                         warning_temp_nvme = str(health_log.get("warning_temp_time", ""))
-                        # Key from smartctl JSON is critical_comp_time, not critical_temp_time
                         critical_temp_nvme = str(health_log.get("critical_comp_time", ""))
+                        logger.debug(f"Device {device.serial}: MediaErr={media_errors_nvme}, WarnT={warning_temp_nvme}, CritT={critical_temp_nvme}")
+                    else:
+                        logger.warning(f"Device {device.serial}: health_log is not a dict or missing for CSV fields. Type: {type(health_log)}")
+                else:
+                    logger.debug(f"Device {device.serial}: Trying NVMe CSV fields. nvme_data available: False")
 
                 row["MediaErrors (NVMe)"] = media_errors_nvme
                 row["WarningTempTime(min)"] = warning_temp_nvme
@@ -248,10 +254,17 @@ class ReportGenerator:
 
         # Try NVMe if SATA/SAS not found or not applicable
         if poh is None and device.nvme_data:
+            logger.debug(f"Device {device.serial}: Trying NVMe POH. nvme_data available: True")
             # Access nested health information log from smartctl output
             health_log = device.nvme_data.get("nvme_smart_health_information_log")
             if isinstance(health_log, dict):
+                logger.debug(f"Device {device.serial}: Found health_log dict.")
                 poh = health_log.get("power_on_hours")
+                logger.debug(f"Device {device.serial}: POH from health_log: {poh}")
+            else:
+                logger.warning(f"Device {device.serial}: health_log is not a dict or missing. Type: {type(health_log)}")
+        elif poh is None:
+            logger.debug(f"Device {device.serial}: Trying NVMe POH. nvme_data available: False")
 
         # Final conversion check
         if poh is not None:
@@ -295,10 +308,16 @@ class ReportGenerator:
         """Get percentage used from device data safely, returns string."""
         percent_used = None
         if device.nvme_data:
-            # Access nested health information log
+            logger.debug(f"Device {device.serial}: Trying NVMe PercentUsed. nvme_data available: True")
             health_log = device.nvme_data.get("nvme_smart_health_information_log")
             if isinstance(health_log, dict):
+                logger.debug(f"Device {device.serial}: Found health_log dict.")
                 percent_used = health_log.get("percentage_used")
+                logger.debug(f"Device {device.serial}: PercentUsed from health_log: {percent_used}")
+            else:
+                logger.warning(f"Device {device.serial}: health_log is not a dict or missing for PercentUsed. Type: {type(health_log)}")
+        elif not device.smart_data: # Only log if not SATA/SAS either
+            logger.debug(f"Device {device.serial}: Trying NVMe PercentUsed. nvme_data available: False")
 
         # Try SATA/SAS SSD if NVMe not applicable/found
         if percent_used is None and device.smart_data:
@@ -325,10 +344,16 @@ class ReportGenerator:
         """Get available spare percentage from device data safely, returns string."""
         available_spare = None
         if device.nvme_data:
-            # Access nested health information log
+            logger.debug(f"Device {device.serial}: Trying NVMe AvailableSpare. nvme_data available: True")
             health_log = device.nvme_data.get("nvme_smart_health_information_log")
             if isinstance(health_log, dict):
+                logger.debug(f"Device {device.serial}: Found health_log dict.")
                 available_spare = health_log.get("available_spare")
+                logger.debug(f"Device {device.serial}: AvailableSpare from health_log: {available_spare}")
+            else:
+                logger.warning(f"Device {device.serial}: health_log is not a dict or missing for AvailableSpare. Type: {type(health_log)}")
+        elif not device.smart_data:
+            logger.debug(f"Device {device.serial}: Trying NVMe AvailableSpare. nvme_data available: False")
 
         # Try SATA/SAS SSD if NVMe not applicable/found
         if available_spare is None and device.smart_data:
@@ -343,13 +368,19 @@ class ReportGenerator:
         """Get host reads in bytes from device data safely."""
         reads_bytes = None
         if device.nvme_data:
-            # Access nested health information log
+            logger.debug(f"Device {device.serial}: Trying NVMe HostReads. nvme_data available: True")
             health_log = device.nvme_data.get("nvme_smart_health_information_log")
             if isinstance(health_log, dict):
+                logger.debug(f"Device {device.serial}: Found health_log dict.")
                 units = health_log.get("data_units_read")
+                logger.debug(f"Device {device.serial}: DataUnitsRead from health_log: {units}")
                 if units is not None:
                      try: reads_bytes = int(units) * 512 * 1000
                      except (ValueError, TypeError): pass
+            else:
+                logger.warning(f"Device {device.serial}: health_log is not a dict or missing for HostReads. Type: {type(health_log)}")
+        elif not device.smart_data:
+            logger.debug(f"Device {device.serial}: Trying NVMe HostReads. nvme_data available: False")
 
         # Try SATA/SAS if NVMe not applicable/found
         if reads_bytes is None and device.smart_data:
@@ -379,13 +410,19 @@ class ReportGenerator:
         """Get host writes in bytes from device data safely."""
         writes_bytes = None
         if device.nvme_data:
-            # Access nested health information log
+            logger.debug(f"Device {device.serial}: Trying NVMe HostWrites. nvme_data available: True")
             health_log = device.nvme_data.get("nvme_smart_health_information_log")
             if isinstance(health_log, dict):
+                logger.debug(f"Device {device.serial}: Found health_log dict.")
                 units = health_log.get("data_units_written")
+                logger.debug(f"Device {device.serial}: DataUnitsWritten from health_log: {units}")
                 if units is not None:
                      try: writes_bytes = int(units) * 512 * 1000
                      except (ValueError, TypeError): pass
+            else:
+                logger.warning(f"Device {device.serial}: health_log is not a dict or missing for HostWrites. Type: {type(health_log)}")
+        elif not device.smart_data:
+            logger.debug(f"Device {device.serial}: Trying NVMe HostWrites. nvme_data available: False")
 
         # Try SATA/SAS if NVMe not applicable/found
         if writes_bytes is None and device.smart_data:
@@ -421,10 +458,13 @@ class ReportGenerator:
         current_temp = None
         # Try NVMe first
         if device.nvme_data:
+            logger.debug(f"Device {device.serial}: Trying NVMe CurrentTemp. nvme_data available: True")
             # Check health log first, then top-level temp object
             health_log = device.nvme_data.get("nvme_smart_health_information_log")
             if isinstance(health_log, dict):
+                logger.debug(f"Device {device.serial}: Found health_log dict.")
                 current_temp = health_log.get("temperature")
+                logger.debug(f"Device {device.serial}: Temp from health_log: {current_temp}")
             if current_temp is None:
                 temp_obj = device.nvme_data.get("temperature")
                 if isinstance(temp_obj, dict):
@@ -455,6 +495,7 @@ class ReportGenerator:
 
     def _get_avg_temp(self, device: StorageDevice) -> str:
         """Get average temperature proxy (current temp) from device data safely, returns string."""
+        # This function now just calls _get_current_temp, logging is inside that helper
         current_temp = self._get_current_temp(device)
         return str(current_temp) if current_temp is not None else ""
 
