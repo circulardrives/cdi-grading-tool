@@ -161,7 +161,7 @@ class GradingEngine:
         if workload is not None and workload > self.WORKLOAD_THRESHOLD_TB_PER_YEAR:
             return GradedDevice(
                 device=device,
-                status=DeviceStatus.PASS, # Pass but flagged
+                status=DeviceStatus.PASS,
                 flag_reason=FlagReason.HEAVY_USE,
                 workload_tb_per_year=workload,
             )
@@ -266,8 +266,8 @@ class GradingEngine:
             )
 
         # Check workload
-        workload = self._calculate_workload(device)
-        if workload > self.WORKLOAD_THRESHOLD_TB_PER_YEAR:
+        workload, poh = self._calculate_workload(device)
+        if workload is not None and workload > self.WORKLOAD_THRESHOLD_TB_PER_YEAR:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.PASS,
