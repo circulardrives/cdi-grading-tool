@@ -99,6 +99,15 @@ class GradingEngine:
 
     def _grade_nvme_device(self, device: StorageDevice) -> GradedDevice:
         """Grade an NVMe device."""
+        # Check if NVMe data is available
+        if device.nvme_data is None:
+            logger.warning(f"Missing NVMe data for device {device.serial}. Marking as error.")
+            return GradedDevice(
+                device=device,
+                status=DeviceStatus.ERROR,
+                failure_reason=FailureReason.DATA_READ_ERROR,
+            )
+
         # Check percentage used
         if device.nvme_data.get("percentage_used", 0) > self.PERCENT_USED_THRESHOLD:
             return GradedDevice(
@@ -153,8 +162,18 @@ class GradingEngine:
 
     def _grade_sata_sas_device(self, device: StorageDevice) -> GradedDevice:
         """Grade a SATA or SAS device."""
+        # Check if SMART data is available
+        if device.smart_data is None:
+            logger.warning(f"Missing SMART data for device {device.serial}. Marking as error.")
+            return GradedDevice(
+                device=device,
+                status=DeviceStatus.ERROR,
+                failure_reason=FailureReason.DATA_READ_ERROR,
+            )
+
         # Check pending sectors
-        if device.smart_data.get("pending_sectors", 0) > self.PENDING_SECTORS_THRESHOLD:
+        # Use .get with default 0 in case the attribute is missing in the dict
+        if device.smart_data.get("ata_smart_attributes", {}).get("table", [])[4].get("raw", {}).get("value", 0) > self.PENDING_SECTORS_THRESHOLD:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
@@ -162,7 +181,8 @@ class GradingEngine:
             )
 
         # Check reallocated sectors
-        if device.smart_data.get("reallocated_sectors", 0) > self.REALLOCATED_SECTORS_THRESHOLD:
+        # Use .get with default 0
+        if device.smart_data.get("ata_smart_attributes", {}).get("table", [])[5].get("raw", {}).get("value", 0) > self.REALLOCATED_SECTORS_THRESHOLD:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
@@ -170,7 +190,13 @@ class GradingEngine:
             )
 
         # Check percentage used (for SSDs)
-        if device.smart_data.get("percentage_used", 0) > self.PERCENT_USED_THRESHOLD:
+        # Use .get with default 0
+        percentage_used = 0
+        for attr in device.smart_data.get("ata_smart_attributes", {}).get("table", []):
+            if attr.get("name") == "Percent_Lifetime_Used": # Common name, might need adjustment
+                percentage_used = attr.get("raw", {}).get("value", 0)
+                break
+        if percentage_used > self.PERCENT_USED_THRESHOLD:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
@@ -178,7 +204,13 @@ class GradingEngine:
             )
 
         # Check available spare (for SSDs)
-        if device.smart_data.get("available_spare", 100) <= self.AVAILABLE_SPARE_THRESHOLD:
+        # Use .get with default 100
+        available_spare = 100
+        for attr in device.smart_data.get("ata_smart_attributes", {}).get("table", []):
+             if attr.get("name") == "Available_Reservd_Space": # Common name, might need adjustment
+                available_spare = attr.get("value", 100)
+                break
+        if available_spare <= self.AVAILABLE_SPARE_THRESHOLD:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
@@ -204,19 +236,36 @@ class GradingEngine:
 
     def _calculate_workload(self, device: StorageDevice) -> float:
         """Calculate workload in TB/year."""
-        # Get host read/write data
-        host_reads = device.smart_data.get("host_reads_bytes", 0) or device.nvme_data.get("host_reads_bytes", 0)
-        host_writes = device.smart_data.get("host_writes_bytes", 0) or device.nvme_data.get("host_writes_bytes", 0)
-        total_bytes = host_reads + host_writes
+        host_reads = 0
+        host_writes = 0
+        poh_hours = 0
 
-        # Get power-on hours
-        poh_hours = device.smart_data.get("power_on_hours", 0) or device.nvme_data.get("power_on_hours", 0)
+        # Safely get data from smart_data if available
+        if device.smart_data:
+            # Example: Assuming smartctl JSON output has these keys
+            # Adjust keys based on actual smartctl JSON structure
+            # These might be nested within ata_smart_data or similar
+            host_reads = device.smart_data.get("power_on_time", {}).get("host_reads_mib", 0) * 1024 * 1024 # Example structure
+            host_writes = device.smart_data.get("power_on_time", {}).get("host_writes_mib", 0) * 1024 * 1024 # Example structure
+            poh_hours = device.smart_data.get("power_on_time", {}).get("hours", 0)
+
+        # Safely get data from nvme_data if available (and potentially overwrite/add)
+        if device.nvme_data:
+            host_reads = device.nvme_data.get("data_units_read", 0) * 512 * 1000 # Units are 512-byte blocks * 1000
+            host_writes = device.nvme_data.get("data_units_written", 0) * 512 * 1000 # Units are 512-byte blocks * 1000
+            poh_hours = device.nvme_data.get("power_on_hours", poh_hours) # Use NVMe if available, else keep SATA/SAS value
+
+        total_bytes = host_reads + host_writes
         if not poh_hours:
+            logger.warning(f"Power-on hours not available for device {device.serial}. Cannot calculate workload.")
             return 0.0
 
         # Convert to TB/year
-        poh_years = poh_hours / (24 * 365)
-        if not poh_years:
-            return 0.0
+        poh_years = poh_hours / (24 * 365.25) # Use 365.25 for leap years
+        if poh_years <= 0:
+             logger.warning(f"Invalid power-on hours ({poh_hours}) for device {device.serial}. Cannot calculate workload.")
+             return 0.0
 
-        return (total_bytes / (1024**4)) / poh_years  # Convert bytes to TB and divide by years
+        workload_tb_per_year = (total_bytes / (1024**4)) / poh_years
+        logger.debug(f"Device {device.serial}: Total Bytes={total_bytes}, POH={poh_hours}, Workload={workload_tb_per_year:.2f} TB/year")
+        return workload_tb_per_year
