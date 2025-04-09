@@ -213,23 +213,30 @@ class ReportGenerator:
     def _get_poh_hours(self, device: StorageDevice) -> Optional[int]:
         """Get power-on hours from device data safely."""
         poh = None
+        # Try SATA/SAS first (Attribute ID 9)
         if device.smart_data:
-            poh_attr = self._get_sata_sas_helper(device.smart_data, 9, "Power_On_Hours")
-            # Safely access raw value
-            raw_val = poh_attr.get("raw", {}).get("value") if poh_attr else None
-            if raw_val is not None:
-                try:
-                    poh = int(raw_val)
-                except (ValueError, TypeError): pass # Ignore if not an int
+            power_on_time_data = device.smart_data.get("power_on_time")
+            if isinstance(power_on_time_data, dict):
+                poh = power_on_time_data.get("hours")
+            # Fallback: Check SMART attributes table directly for ID 9
+            if poh is None:
+                 poh_attr = self._get_sata_sas_helper(device.smart_data, 9, "Power_On_Hours")
+                 raw_val = poh_attr.get("raw", {}).get("value") if poh_attr else None
+                 if raw_val is not None:
+                     try: poh = int(raw_val)
+                     except (ValueError, TypeError): pass
 
+        # Try NVMe if SATA/SAS not found or not applicable
         if poh is None and device.nvme_data:
-            poh = device.nvme_data.get("power_on_hours") # Already returns None if missing
-            if poh is not None:
-                 try:
-                      poh = int(poh)
-                 except (ValueError, TypeError): poh = None
+            poh = device.nvme_data.get("power_on_hours")
 
-        return poh
+        # Final conversion check
+        if poh is not None:
+            try:
+                return int(poh)
+            except (ValueError, TypeError):
+                pass
+        return None
 
     def _get_sata_sas_helper(self, smart_data: Optional[dict], attr_id: int, attr_name: str) -> Optional[dict]:
         """Helper to safely get SATA/SAS attribute dict."""
@@ -263,117 +270,183 @@ class ReportGenerator:
     def _get_percent_used(self, device: StorageDevice) -> str:
         """Get percentage used from device data safely, returns string."""
         percent_used = None
+        # Try NVMe first
         if device.nvme_data:
              percent_used = device.nvme_data.get("percentage_used")
 
+        # Try SATA/SAS SSD if NVMe not applicable
         if percent_used is None and device.smart_data:
-            # Try common SSD attributes for life used/left
+            # Check if it's likely an SSD (e.g., has wear level attribute)
+            wear_level_attr = self._get_sata_sas_helper(device.smart_data, 177, "Wear_Leveling_Count")
             life_left_attr = self._get_sata_sas_helper(device.smart_data, 231, "SSD_Life_Left")
+            lifetime_used_attr = self._get_sata_sas_helper(device.smart_data, 233, "Media_Wearout_Indicator") # Another common one
+
             if life_left_attr:
-                 life_left_val = life_left_attr.get("value") # Normalized value
+                 # Use 'SSD Life Left' (normalized value, 100=new, 0=used)
+                 life_left_val = life_left_attr.get("value")
                  if life_left_val is not None:
                      try: percent_used = 100 - int(life_left_val)
                      except (ValueError, TypeError): pass
-            else:
-                 lifetime_used_attr = self._get_sata_sas_helper(device.smart_data, -1, "Percent_Lifetime_Used")
-                 if lifetime_used_attr:
-                     raw_val = lifetime_used_attr.get("raw", {}).get("value") # Raw value
-                     if raw_val is not None:
-                         try: percent_used = int(raw_val)
-                         except (ValueError, TypeError): pass
+            elif lifetime_used_attr:
+                 # Use 'Media Wearout Indicator' (often raw value is percentage used)
+                 raw_val = lifetime_used_attr.get("raw", {}).get("value")
+                 if raw_val is not None:
+                     try: percent_used = int(raw_val)
+                     except (ValueError, TypeError): pass
+            elif wear_level_attr: # Fallback: infer from wear leveling? Less reliable
+                 pass # Logic too complex/unreliable for generic case
 
         return str(percent_used) if percent_used is not None else ""
 
     def _get_available_spare(self, device: StorageDevice) -> str:
         """Get available spare percentage from device data safely, returns string."""
         available_spare = None
+        # Try NVMe first
         if device.nvme_data:
             available_spare = device.nvme_data.get("available_spare")
+            # NVMe spec: value is percentage *remaining*. Convert if necessary based on PRD needs.
+            # Assuming the value is directly the percentage remaining (0-100)
 
+        # Try SATA/SAS SSD if NVMe not applicable
         if available_spare is None and device.smart_data:
+            # Common attribute ID 173 (Available Reserved Space) - normalized value
             spare_attr = self._get_sata_sas_helper(device.smart_data, 173, "Available_Reservd_Space")
             if spare_attr:
-                 available_spare = spare_attr.get("value") # Normalized value usually
+                 available_spare = spare_attr.get("value") # Normalized value usually (0-100)
 
         return str(available_spare) if available_spare is not None else ""
 
     def _get_host_reads(self, device: StorageDevice) -> Optional[int]:
         """Get host reads in bytes from device data safely."""
-        reads = None
-        if device.smart_data:
-            reads_mib_attr = self._get_sata_sas_helper(device.smart_data, -1, "Host_Reads_MiB")
-            if reads_mib_attr:
-                raw_val = reads_mib_attr.get("raw", {}).get("value")
-                if raw_val is not None:
-                    try: reads = int(raw_val) * 1024 * 1024
-                    except (ValueError, TypeError): pass
-
-        if reads is None and device.nvme_data:
+        reads_bytes = None
+        # Try NVMe first
+        if device.nvme_data:
             units = device.nvme_data.get("data_units_read")
             if units is not None:
-                 try: reads = int(units) * 512 * 1000
+                 try: reads_bytes = int(units) * 512 * 1000 # 512-byte units * 1000
                  except (ValueError, TypeError): pass
 
-        return reads
+        # Try SATA/SAS if NVMe not applicable
+        if reads_bytes is None and device.smart_data:
+            # Check for Total_LBAs_Read (ID 242)
+            lbas_read_attr = self._get_sata_sas_helper(device.smart_data, 242, "Total_LBAs_Read")
+            if lbas_read_attr:
+                raw_val = lbas_read_attr.get("raw", {}).get("value")
+                if raw_val is not None:
+                    try:
+                        # Determine block size (usually 512 for SATA)
+                        block_size = device.smart_data.get("logical_block_size", 512)
+                        reads_bytes = int(raw_val) * block_size
+                    except (ValueError, TypeError): pass
+            else:
+                # Fallback to vendor specific MiB/GiB attributes if LBA count absent
+                reads_mib_attr = self._get_sata_sas_helper(device.smart_data, -1, "Host_Reads_MiB")
+                if reads_mib_attr:
+                    raw_val = reads_mib_attr.get("raw", {}).get("value")
+                    if raw_val is not None:
+                        try: reads_bytes = int(raw_val) * 1024 * 1024
+                        except (ValueError, TypeError): pass
+                # Add more vendor specific checks if needed (e.g., Host_Reads_32MiB)
+
+        return reads_bytes
 
     def _get_host_writes(self, device: StorageDevice) -> Optional[int]:
         """Get host writes in bytes from device data safely."""
-        writes = None
-        if device.smart_data:
-            writes_mib_attr = self._get_sata_sas_helper(device.smart_data, -1, "Host_Writes_MiB")
-            if writes_mib_attr:
-                 raw_val = writes_mib_attr.get("raw", {}).get("value")
-                 if raw_val is not None:
-                     try: writes = int(raw_val) * 1024 * 1024
-                     except (ValueError, TypeError): pass
-
-        if writes is None and device.nvme_data:
+        writes_bytes = None
+        # Try NVMe first
+        if device.nvme_data:
             units = device.nvme_data.get("data_units_written")
             if units is not None:
-                 try: writes = int(units) * 512 * 1000
+                 try: writes_bytes = int(units) * 512 * 1000 # 512-byte units * 1000
                  except (ValueError, TypeError): pass
 
-        return writes
+        # Try SATA/SAS if NVMe not applicable
+        if writes_bytes is None and device.smart_data:
+            # Check for Total_LBAs_Written (ID 241)
+            lbas_written_attr = self._get_sata_sas_helper(device.smart_data, 241, "Total_LBAs_Written")
+            if lbas_written_attr:
+                raw_val = lbas_written_attr.get("raw", {}).get("value")
+                if raw_val is not None:
+                    try:
+                        block_size = device.smart_data.get("logical_block_size", 512)
+                        writes_bytes = int(raw_val) * block_size
+                    except (ValueError, TypeError): pass
+            else:
+                # Fallback to vendor specific MiB/GiB attributes
+                writes_mib_attr = self._get_sata_sas_helper(device.smart_data, -1, "Host_Writes_MiB")
+                if writes_mib_attr:
+                    raw_val = writes_mib_attr.get("raw", {}).get("value")
+                    if raw_val is not None:
+                        try: writes_bytes = int(raw_val) * 1024 * 1024
+                        except (ValueError, TypeError): pass
+                # Add more vendor specific checks
+
+        return writes_bytes
 
     def _get_max_temp(self, device: StorageDevice) -> str:
         """Get maximum temperature from device data safely, returns string."""
         max_temp = None
+        current_temp = None
+
+        # Try NVMe first
+        if device.nvme_data:
+            # NVMe reports current temp, may report max over lifetime separately
+            current_temp = device.nvme_data.get("temperature")
+            # Check for a dedicated max temp field if available in standard NVMe logs (less common)
+            # Example: max_temp = device.nvme_data.get("maximum_temperature_lifetime")
+
+        # Try SATA/SAS
         if device.smart_data:
-            temp_attr = self._get_sata_sas_helper(device.smart_data, 190, "Airflow_Temperature_Cel")
-            if temp_attr:
-                 raw_val = temp_attr.get("raw", {}).get("value")
-                 if raw_val is not None:
-                     raw_str = str(raw_val)
-                     try:
-                         if "Min/Max" in raw_str:
-                             max_temp = int(raw_str.split("/")[2].split(")")[0].strip())
-                         else:
-                              max_temp = int(raw_str.split()[0])
-                     except (ValueError, IndexError, TypeError): pass
-                 elif temp_attr.get("value") is not None: # Fallback to normalized value
-                     try: max_temp = int(temp_attr["value"])
+            # Attribute 194 usually has current temp in normalized 'value'
+            temp_celsius_attr = self._get_sata_sas_helper(device.smart_data, 194, "Temperature_Celsius")
+            if temp_celsius_attr:
+                 val = temp_celsius_attr.get("value")
+                 if val is not None:
+                     try: current_temp = int(val)
                      except (ValueError, TypeError): pass
+                 # The raw value of 194 sometimes contains max temp
+                 raw_val = temp_celsius_attr.get("raw", {}).get("value")
+                 if raw_val is not None:
+                      raw_str = str(raw_val)
+                      try:
+                           # Example: "30 (Min/Max 25/40)" or "30 C"
+                           if "Min/Max" in raw_str and len(raw_str.split("/")) > 2:
+                               max_temp = int(raw_str.split("/")[2].split(")")[0].strip())
+                           # Add other parsing logic if needed
+                      except (ValueError, IndexError, TypeError): pass
 
-        if max_temp is None and device.nvme_data:
-            max_temp = device.nvme_data.get("temperature") # Simple fallback
+            # Attribute 190 (Airflow_Temperature_Cel) sometimes used for max
+            if max_temp is None:
+                 airflow_temp_attr = self._get_sata_sas_helper(device.smart_data, 190, "Airflow_Temperature_Cel")
+                 if airflow_temp_attr:
+                      # Often raw value is max temp
+                      raw_val = airflow_temp_attr.get("raw", {}).get("value")
+                      if raw_val is not None:
+                          try: max_temp = int(str(raw_val).split()[0]) # Take first number
+                          except (ValueError, IndexError, TypeError): pass
 
-        return str(max_temp) if max_temp is not None else ""
+        # If max_temp couldn't be found, use current_temp as a fallback (less ideal)
+        final_temp = max_temp if max_temp is not None else current_temp
+        return str(final_temp) if final_temp is not None else ""
 
     def _get_avg_temp(self, device: StorageDevice) -> str:
-        """Get average temperature from device data safely, returns string."""
-        avg_temp = None
-        if device.smart_data:
-             temp_attr = self._get_sata_sas_helper(device.smart_data, 194, "Temperature_Celsius")
-             if temp_attr:
-                 val = temp_attr.get("value") # Use normalized value as proxy
+        """Get average temperature proxy (current temp) from device data safely, returns string."""
+        # SMART typically only reports current temp. Use that as proxy for average.
+        current_temp = None
+        # Try NVMe first
+        if device.nvme_data:
+            current_temp = device.nvme_data.get("temperature")
+
+        # Try SATA/SAS
+        if current_temp is None and device.smart_data:
+            temp_celsius_attr = self._get_sata_sas_helper(device.smart_data, 194, "Temperature_Celsius")
+            if temp_celsius_attr:
+                 val = temp_celsius_attr.get("value") # Normalized value often C
                  if val is not None:
-                     try: avg_temp = int(val)
+                     try: current_temp = int(val)
                      except (ValueError, TypeError): pass
 
-        if avg_temp is None and device.nvme_data:
-            avg_temp = device.nvme_data.get("temperature") # Use current as proxy
-
-        return str(avg_temp) if avg_temp is not None else ""
+        return str(current_temp) if current_temp is not None else ""
 
     def _format_bytes_gb(self, bytes_val: Optional[int]) -> str:
         """Format bytes to GB, handling None."""
