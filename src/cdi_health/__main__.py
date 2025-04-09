@@ -113,9 +113,6 @@ def main() -> int:
 
     try:
         if args.command == "scan":
-            # Check for root privileges
-            check_root()
-
             # Initialize components
             device_manager = DeviceManager()
             grading_engine = GradingEngine()

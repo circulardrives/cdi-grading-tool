@@ -182,15 +182,113 @@ class DeviceManager:
 
     def _parse_nvme_list(self, output: str) -> List[StorageDevice]:
         """Parse NVMe device list output."""
-        # TODO: Implement NVMe device list parsing
-        return []
+        devices = []
+
+        try:
+            data = json.loads(output)
+            for device in data.get("Devices", []):
+                try:
+                    path = Path(device["DevicePath"])
+                    result = subprocess.run(
+                        ["smartctl", "-i", "-j", str(path)],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    smart_data = json.loads(result.stdout)
+
+                    devices.append(StorageDevice(
+                        path=path,
+                        protocol=TransportProtocol.NVME,
+                        vendor=smart_data.get("model_family", "Unknown"),
+                        model=smart_data.get("model_name", "Unknown"),
+                        serial=smart_data.get("serial_number", "Unknown"),
+                        firmware=smart_data.get("firmware_version", "Unknown"),
+                        capacity_bytes=int(smart_data.get("user_capacity", {}).get("bytes", 0)),
+                        smart_data=smart_data,
+                        nvme_data=smart_data.get("nvme", {})
+                    ))
+                except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as e:
+                    logger.warning(f"Failed to parse NVMe device {device.get('DevicePath', 'unknown')}: {e}")
+                    continue
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse NVMe list output: {e}")
+
+        return devices
 
     def _parse_smartctl_info(self, output: str) -> dict:
         """Parse smartctl info output."""
-        # TODO: Implement smartctl info parsing
-        return {}
+        info = {
+            "vendor": "Unknown",
+            "model": "Unknown",
+            "serial": "Unknown",
+            "firmware": "Unknown",
+            "capacity_bytes": 0
+        }
+
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            if "Vendor:" in line:
+                info["vendor"] = line.split("Vendor:", 1)[1].strip()
+            elif "Product:" in line:
+                info["model"] = line.split("Product:", 1)[1].strip()
+            elif "Serial Number:" in line:
+                info["serial"] = line.split("Serial Number:", 1)[1].strip()
+            elif "Firmware Version:" in line:
+                info["firmware"] = line.split("Firmware Version:", 1)[1].strip()
+            elif "User Capacity:" in line:
+                # Extract bytes from line like: "User Capacity:    500,107,862,016 bytes [500 GB]"
+                try:
+                    capacity_str = line.split("[")[0].split("bytes")[0].strip().replace(",", "")
+                    info["capacity_bytes"] = int(capacity_str)
+                except (ValueError, IndexError):
+                    pass
+
+        return info
 
     def _parse_smartctl_attributes(self, output: str) -> dict:
         """Parse smartctl attributes output."""
-        # TODO: Implement smartctl attributes parsing
-        return {}
+        attributes = {}
+
+        # Find the start of the attributes table
+        lines = output.splitlines()
+        start_idx = -1
+        for i, line in enumerate(lines):
+            if "ID#" in line and "ATTRIBUTE_NAME" in line:
+                start_idx = i + 1
+                break
+
+        if start_idx == -1:
+            return attributes
+
+        # Parse the attributes table
+        for line in lines[start_idx:]:
+            if not line.strip():
+                continue
+
+            try:
+                # Split the line into columns
+                parts = line.split()
+                if len(parts) >= 10:
+                    id_num = parts[0]
+                    name = " ".join(parts[1:-8])
+                    value = parts[-8]
+                    worst = parts[-7]
+                    threshold = parts[-6]
+                    raw_value = " ".join(parts[-5:])
+
+                    attributes[name] = {
+                        "id": id_num,
+                        "value": value,
+                        "worst": worst,
+                        "threshold": threshold,
+                        "raw_value": raw_value
+                    }
+            except (ValueError, IndexError):
+                continue
+
+        return attributes
