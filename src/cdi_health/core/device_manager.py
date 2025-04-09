@@ -6,7 +6,9 @@ This module handles device detection and data collection for storage devices.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -50,6 +52,7 @@ class DeviceManager:
     def __init__(self):
         """Initialize the device manager."""
         self._check_prerequisites()
+        self._check_root()
 
     def _check_prerequisites(self) -> None:
         """Check if required tools are installed."""
@@ -62,6 +65,14 @@ class DeviceManager:
             raise RuntimeError(
                 f"Missing required tools: {', '.join(missing_tools)}. "
                 "Please install them before running this tool."
+            )
+
+    def _check_root(self) -> None:
+        """Check if running with root privileges."""
+        if os.geteuid() != 0:
+            raise RuntimeError(
+                "This tool requires root privileges to access storage devices. "
+                "Please run with sudo or as root."
             )
 
     def scan_devices(self) -> List[StorageDevice]:

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -35,6 +36,17 @@ from cdi_health.core.device_manager import DeviceManager
 from cdi_health.core.grading_engine import GradingEngine
 from cdi_health.core.report_generator import ReportGenerator
 from cdi_health.utils.logging import setup_logging
+
+def check_root() -> None:
+    """Check if the script is running with root privileges."""
+    if os.geteuid() != 0:
+        print(
+            "Error: This tool requires root privileges to access storage devices.\n"
+            "Please run with sudo:\n"
+            "  sudo cdi_health scan",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -101,6 +113,9 @@ def main() -> int:
 
     try:
         if args.command == "scan":
+            # Check for root privileges
+            check_root()
+
             # Initialize components
             device_manager = DeviceManager()
             grading_engine = GradingEngine()
