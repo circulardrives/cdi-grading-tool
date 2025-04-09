@@ -198,7 +198,7 @@ class DeviceManager:
                 try:
                     path = Path(device["DevicePath"])
                     result = subprocess.run(
-                        ["smartctl", "-i", "-j", str(path)],
+                        ["smartctl", "-x", "-j", str(path)],
                         capture_output=True,
                         text=True,
                         check=True,
