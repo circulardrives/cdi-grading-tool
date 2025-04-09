@@ -160,6 +160,40 @@ class GradingEngine:
 
         return GradedDevice(device=device, status=DeviceStatus.PASS)
 
+    def _get_smart_attribute(self, smart_data: dict, attr_id: int, attr_name: str | None = None) -> Optional[dict]:
+        """Safely retrieve a specific SMART attribute by ID or name."""
+        if not smart_data or "ata_smart_attributes" not in smart_data:
+            return None
+
+        attributes = smart_data["ata_smart_attributes"].get("table", [])
+        for attr in attributes:
+            if attr.get("id") == attr_id:
+                return attr
+            # Fallback to checking name if provided and ID doesn't match
+            if attr_name and attr.get("name") == attr_name:
+                 return attr
+        return None
+
+    def _get_attribute_raw_value(self, attribute: Optional[dict]) -> int:
+        """Safely get the raw value from a SMART attribute dictionary."""
+        if attribute and "raw" in attribute and "value" in attribute["raw"]:
+            try:
+                return int(attribute["raw"]["value"])
+            except (ValueError, TypeError):
+                return 0
+        return 0
+
+    def _get_attribute_value(self, attribute: Optional[dict]) -> int:
+        """Safely get the normalized value from a SMART attribute dictionary."""
+        if attribute and "value" in attribute:
+            try:
+                return int(attribute["value"])
+            except (ValueError, TypeError):
+                 # Default to 100 if conversion fails, common for 'normalized' values
+                 # where higher is better and max is often 100 or 200/253.
+                return 100
+        return 100 # Default if attribute is None or value missing
+
     def _grade_sata_sas_device(self, device: StorageDevice) -> GradedDevice:
         """Grade a SATA or SAS device."""
         # Check if SMART data is available
@@ -171,31 +205,40 @@ class GradingEngine:
                 failure_reason=FailureReason.DATA_READ_ERROR,
             )
 
-        # Check pending sectors
-        # Use .get with default 0 in case the attribute is missing in the dict
-        if device.smart_data.get("ata_smart_attributes", {}).get("table", [])[4].get("raw", {}).get("value", 0) > self.PENDING_SECTORS_THRESHOLD:
+        # Check pending sectors (ID 197)
+        pending_sectors_attr = self._get_smart_attribute(device.smart_data, 197, "Current_Pending_Sector")
+        pending_sectors_count = self._get_attribute_raw_value(pending_sectors_attr)
+        if pending_sectors_count > self.PENDING_SECTORS_THRESHOLD:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
                 failure_reason=FailureReason.PENDING_SECTORS,
             )
 
-        # Check reallocated sectors
-        # Use .get with default 0
-        if device.smart_data.get("ata_smart_attributes", {}).get("table", [])[5].get("raw", {}).get("value", 0) > self.REALLOCATED_SECTORS_THRESHOLD:
+        # Check reallocated sectors (ID 5)
+        reallocated_sectors_attr = self._get_smart_attribute(device.smart_data, 5, "Reallocated_Sector_Ct")
+        reallocated_sectors_count = self._get_attribute_raw_value(reallocated_sectors_attr)
+        if reallocated_sectors_count > self.REALLOCATED_SECTORS_THRESHOLD:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
                 failure_reason=FailureReason.REALLOCATED_SECTORS,
             )
 
-        # Check percentage used (for SSDs)
-        # Use .get with default 0
-        percentage_used = 0
-        for attr in device.smart_data.get("ata_smart_attributes", {}).get("table", []):
-            if attr.get("name") == "Percent_Lifetime_Used": # Common name, might need adjustment
-                percentage_used = attr.get("raw", {}).get("value", 0)
-                break
+        # Check percentage used (for SSDs, ID 231 or 233 - check PRD for exact ID/logic)
+        # Example using ID 233 (Media_Wearout_Indicator) raw value, assuming higher is worse
+        # OR ID 177 (Wear_Leveling_Count) normalized value, lower is worse? -> Consult PRD!
+        # For now, let's check ID 231 'SSD Life Left' or similar common names
+        percent_used_attr = self._get_smart_attribute(device.smart_data, 231, "SSD_Life_Left")
+        # Assuming normalized value where 100 is new, 0 is worn out.
+        life_left_value = self._get_attribute_value(percent_used_attr)
+        percentage_used = 100 - life_left_value # Estimate percentage used
+
+        # Fallback check using common name if ID 231 not found
+        if percent_used_attr is None:
+            percent_used_attr_alt = self._get_smart_attribute(device.smart_data, -1, "Percent_Lifetime_Used") # No standard ID, use name
+            percentage_used = self._get_attribute_raw_value(percent_used_attr_alt) # Raw value often used here
+
         if percentage_used > self.PERCENT_USED_THRESHOLD:
             return GradedDevice(
                 device=device,
@@ -203,14 +246,11 @@ class GradingEngine:
                 failure_reason=FailureReason.PERCENT_USED,
             )
 
-        # Check available spare (for SSDs)
-        # Use .get with default 100
-        available_spare = 100
-        for attr in device.smart_data.get("ata_smart_attributes", {}).get("table", []):
-             if attr.get("name") == "Available_Reservd_Space": # Common name, might need adjustment
-                available_spare = attr.get("value", 100)
-                break
-        if available_spare <= self.AVAILABLE_SPARE_THRESHOLD:
+        # Check available spare (for SSDs, ID 173 or similar - check PRD)
+        # Example using ID 173 'Erase_Fail_Count' or 'Available_Reservd_Space' normalized value
+        available_spare_attr = self._get_smart_attribute(device.smart_data, 173, "Available_Reservd_Space")
+        available_spare_value = self._get_attribute_value(available_spare_attr) # Normalized value, lower is worse
+        if available_spare_value <= self.AVAILABLE_SPARE_THRESHOLD:
             return GradedDevice(
                 device=device,
                 status=DeviceStatus.FAIL,
