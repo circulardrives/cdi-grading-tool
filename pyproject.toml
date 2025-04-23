@@ -5,15 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cdi_health"
 description = "Open Source Storage Device Grading Toolkit"
+
 # TODO: consider policies around contributing author acknowledgement since we're an open project
 authors = [
     {name = "Circular Drive Initiative"}
 ]
+
 maintainers = [
   {name = "Nick Hayhurst", email = "nick.hayhurst@interactdc.com"},
   {name = "Jonmichael Hands", email = "jmhands@chia.net"},
 ]
+
 license = {file = "LICENSE"}
+
 keywords = [
     "drive",
     "disk",
@@ -24,6 +28,7 @@ keywords = [
     "grading",
     "health",
 ]
+
 # https://pypi.org/classifiers/
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -53,8 +58,11 @@ classifiers = [
     # TODO: after adding type checking
     # "Typing :: Typed",
 ]
+
 requires-python = ">=3.9"
+
 dependencies = []
+
 # TODO: decide how versioning will be handled
 dynamic = ["version"]
 
