@@ -1,4 +1,4 @@
-name: 🧪 test
+name: ci
 
 on:
   push:
@@ -21,6 +21,7 @@ defaults:
 
 jobs:
   build:
+    name: 📦 Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -51,7 +52,7 @@ jobs:
           if-no-files-found: error
 
   test:
-    name: Test ${{ matrix.os.emoji }} Python ${{ matrix.python.major-dot-minor }}
+    name: 🧪 Test ${{ matrix.os.emoji }} Python ${{ matrix.python.major-dot-minor }}
     runs-on: ${{ matrix.os.runs-on }}
     needs: build
     strategy:
@@ -118,7 +119,7 @@ jobs:
           venv/bin/python -m cdi_health -h
 
   check:
-    name: Check ${{ matrix.task.name }} - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }}
+    name: 🚨 Check ${{ matrix.task.name }} - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }}
     runs-on: ${{ matrix.os.runs-on }}
     strategy:
       fail-fast: false
@@ -165,7 +166,7 @@ jobs:
         run: ${{ matrix.task.run }}
 
   pre-commit:
-    name: pre-commit ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }}
+    name: ⚠️ pre-commit ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }}
     runs-on: ${{ matrix.os.runs-on }}
     timeout-minutes: 5
     strategy:
