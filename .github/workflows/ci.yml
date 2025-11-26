@@ -64,7 +64,6 @@ jobs:
             name: Ubuntu
             runs-on: ubuntu-latest
         python:
-          - major-dot-minor: "3.9"
           - major-dot-minor: "3.10"
           - major-dot-minor: "3.11"
           - major-dot-minor: "3.12"
@@ -138,7 +137,6 @@ jobs:
 #          - name: Windows
 #            runs-on: windows-latest
         python:
-          - major-dot-minor: "3.9"
           - major-dot-minor: "3.10"
           - major-dot-minor: "3.11"
           - major-dot-minor: "3.12"
@@ -180,7 +178,6 @@ jobs:
 #          - name: Windows
 #            runs-on: windows-latest
         python:
-          - major-dot-minor: "3.9"
           - major-dot-minor: "3.10"
           - major-dot-minor: "3.11"
           - major-dot-minor: "3.12"
