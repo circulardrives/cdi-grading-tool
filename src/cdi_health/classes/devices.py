@@ -1004,7 +1004,9 @@ class ATAProtocol:
         device.transport_version: str = smartctl.get("sata_version", dict()).get("string", "Not Reported")
         device.rotation_rate: str = smartctl.get("rotation_rate", "Not Reported")
         device.form_factor: str = smartctl.get("form_factor", dict()).get("name", "Not Reported")
-        device.power_on_hours: str = (smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0")
+        device.power_on_hours: str = (
+            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0"
+        )
 
         # Capacity
         capacity_info = smartctl.get("user_capacity", dict())
@@ -1352,7 +1354,9 @@ class NVMeProtocol:
         device.form_factor = smartctl.get("form_factor", dict()).get("name", "Not Reported")
 
         # Power On Hours
-        device.power_on_hours = (smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0")
+        device.power_on_hours = (
+            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0"
+        )
 
         # Get Capacity Information
         capacity_info = smartctl.get("user_capacity", dict())
@@ -1367,31 +1371,31 @@ class NVMeProtocol:
 
             # Capacity in Kilobytes, Megabytes, Gigabytes, and Terabytes
             device.kilobytes = capacity_in_bytes / 1000
-            device.megabytes = capacity_in_bytes / (1000 ** 2)
-            device.gigabytes = capacity_in_bytes / (1000 ** 3)
-            device.terabytes = capacity_in_bytes / (1000 ** 4)
+            device.megabytes = capacity_in_bytes / (1000**2)
+            device.gigabytes = capacity_in_bytes / (1000**3)
+            device.terabytes = capacity_in_bytes / (1000**4)
 
             # Capacity in Kibibytes, Mebibytes, Gibibytes, and Tebibytes
             device.kibibytes = capacity_in_bytes / 1024
-            device.mebibytes = capacity_in_bytes / (1024 ** 2)
-            device.gibibytes = capacity_in_bytes / (1024 ** 3)
-            device.tebibytes = capacity_in_bytes / (1024 ** 4)
+            device.mebibytes = capacity_in_bytes / (1024**2)
+            device.gibibytes = capacity_in_bytes / (1024**3)
+            device.tebibytes = capacity_in_bytes / (1024**4)
 
             # Sectors and Sector Sizes
-            device.sectors = int(smartctl.get('user_capacity', {}).get('blocks', 0))
-            device.logical_sector_size = int(smartctl.get('logical_block_size', 0))
-            device.physical_sector_size = int(smartctl.get('physical_block_size', 0))
+            device.sectors = int(smartctl.get("user_capacity", {}).get("blocks", 0))
+            device.logical_sector_size = int(smartctl.get("logical_block_size", 0))
+            device.physical_sector_size = int(smartctl.get("physical_block_size", 0))
 
         # Else
         else:
             # Prepare Command
-            nvme_list = Command(f'sudo /usr/bin/nvme list -o json {device.dut}')
+            nvme_list = Command(f"sudo /usr/bin/nvme list -o json {device.dut}")
             output, errors, return_code = nvme_list.execute()
 
             output = json.loads(output)
 
             # Get Capacities
-            capacity_in_bytes = output['Devices'][0].get('PhysicalSize', 0)
+            capacity_in_bytes = output["Devices"][0].get("PhysicalSize", 0)
 
             # Capacity in Bytes
             device.bytes = capacity_in_bytes
@@ -1401,28 +1405,28 @@ class NVMeProtocol:
 
             # Capacity in Kilobytes, Megabytes, Gigabytes, and Terabytes
             device.kilobytes = capacity_in_bytes / 1000
-            device.megabytes = capacity_in_bytes / (1000 ** 2)
-            device.gigabytes = capacity_in_bytes / (1000 ** 3)
-            device.terabytes = capacity_in_bytes / (1000 ** 4)
+            device.megabytes = capacity_in_bytes / (1000**2)
+            device.gigabytes = capacity_in_bytes / (1000**3)
+            device.terabytes = capacity_in_bytes / (1000**4)
 
             # Capacity in Kibibytes, Mebibytes, Gibibytes, and Tebibytes
             device.kibibytes = capacity_in_bytes / 1024
-            device.mebibytes = capacity_in_bytes / (1024 ** 2)
-            device.gibibytes = capacity_in_bytes / (1024 ** 3)
-            device.tebibytes = capacity_in_bytes / (1024 ** 4)
+            device.mebibytes = capacity_in_bytes / (1024**2)
+            device.gibibytes = capacity_in_bytes / (1024**3)
+            device.tebibytes = capacity_in_bytes / (1024**4)
 
             # Sectors and Sector Sizes
-            device.sectors = int(output['Devices'][0].get('MaximumLBA', 0))
-            device.logical_sector_size = int(output['Devices'][0].get('SectorSize', 0))
+            device.sectors = int(output["Devices"][0].get("MaximumLBA", 0))
+            device.logical_sector_size = int(output["Devices"][0].get("SectorSize", 0))
             device.physical_sector_size = 0
 
         # Get All Namespace Capacities
-        device.nvme_namespaces = smartctl.get('nvme_namespaces', 0)
+        device.nvme_namespaces = smartctl.get("nvme_namespaces", 0)
 
         # If Namespaces are 0
         if device.nvme_namespaces == 0:
             # Get Namespaces
-            get_namespaces = Command(f'sudo /usr/bin/smartctl -x -j {device.dut}n1')
+            get_namespaces = Command(f"sudo /usr/bin/smartctl -x -j {device.dut}n1")
 
             # Execute
             output, errors, return_code = get_namespaces.execute()
@@ -1431,9 +1435,9 @@ class NVMeProtocol:
             output = json.loads(output)
 
             # If Namespaces
-            if 'nvme_namespaces' in output:
+            if "nvme_namespaces" in output:
                 # Get All Namespace Capacities
-                device.nvme_namespaces = output.get('nvme_namespaces', 0)
+                device.nvme_namespaces = output.get("nvme_namespaces", 0)
 
             else:
                 # Get All Namespace Capacities
@@ -1493,7 +1497,9 @@ class SCSIProtocol:
 
         # Identifiers
         device.vendor: str = smartctl.get("scsi_vendor", "Not Reported")
-        device.model_number: str = str(device.determine_model_by_model_number(smartctl.get("scsi_model_name", "Not Reported"))).upper()
+        device.model_number: str = str(
+            device.determine_model_by_model_number(smartctl.get("scsi_model_name", "Not Reported"))
+        ).upper()
         device.serial_number: str = smartctl.get("serial_number", "Not Reported")
         device.firmware_revision: str = smartctl.get("scsi_revision", "Not Reported")
         device.transport_revision: str = smartctl.get("scsi_version", "Not Reported")
@@ -1565,50 +1571,50 @@ class SCSIProtocol:
             # If Read Errors in Log
             if "read" in smartctl["scsi_error_counter_log"]:
                 # Set Read Errors
-                read_errors: int  = smartctl["scsi_error_counter_log"]["read"]["total_uncorrected_errors"]
+                read_errors: int = smartctl["scsi_error_counter_log"]["read"]["total_uncorrected_errors"]
 
             # Else
             else:
                 # Set Read Errors to Zero
-                read_errors: int  = 0
+                read_errors: int = 0
 
             # If Write Errors in Log
             if "write" in smartctl["scsi_error_counter_log"]:
                 # Set Write Errors
-                write_errors: int  = smartctl["scsi_error_counter_log"]["write"]["total_uncorrected_errors"]
+                write_errors: int = smartctl["scsi_error_counter_log"]["write"]["total_uncorrected_errors"]
 
             # Else
             else:
                 # Set Write Errors to Zero
-                write_errors: int  = 0
+                write_errors: int = 0
 
             # If Verify Errors in Log
             if "verify" in smartctl["scsi_error_counter_log"]:
                 # Set Verify Errors
-                verify_errors: int  = smartctl["scsi_error_counter_log"]["verify"]["total_uncorrected_errors"]
+                verify_errors: int = smartctl["scsi_error_counter_log"]["verify"]["total_uncorrected_errors"]
 
             # Else
             else:
                 # Set Verify Errors to Zero
-                verify_errors: int  = 0
+                verify_errors: int = 0
 
             # If Verify Errors
             if verify_errors:
                 # Count Total including Verify Errors
-                uncorrectable_errors: int  = int(read_errors) + int(write_errors) + int(verify_errors)
+                uncorrectable_errors: int = int(read_errors) + int(write_errors) + int(verify_errors)
 
             # Else
             else:
                 # Count Total excluding Verify Errors
-                uncorrectable_errors: int  = int(read_errors) + int(write_errors)
+                uncorrectable_errors: int = int(read_errors) + int(write_errors)
 
         # Else
         else:
             # Set Uncorrectable Errors
-            uncorrectable_errors: int  = -1
+            uncorrectable_errors: int = -1
 
         # Convert Uncorrectable Errors
-        device.offline_uncorrectable_sectors: int  = int(uncorrectable_errors)
+        device.offline_uncorrectable_sectors: int = int(uncorrectable_errors)
 
         # Set A Grade Default
         device.cdi_grade: str = "A"

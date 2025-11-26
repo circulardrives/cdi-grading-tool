@@ -45,15 +45,14 @@ from xml.etree.ElementTree import Element, ElementTree, SubElement
 # Classes
 from cdi_health.classes.devices import Devices
 
-
 # Required Tools
 REQUIRED_TOOLS = [
-    "nvme",                 # NVMe CLI
-    "smartctl",             # Smartmontools
+    "nvme",  # NVMe CLI
+    "smartctl",  # Smartmontools
     "openSeaChest_Basics",  # OpenSeaChest
-    "openSeaChest_SMART",   # OpenSeaChest
-    "sg_map26",             # SG3-utils
-    "sg_turs"               # SG3-utils
+    "openSeaChest_SMART",  # OpenSeaChest
+    "sg_map26",  # SG3-utils
+    "sg_turs",  # SG3-utils
 ]
 
 
@@ -120,7 +119,11 @@ def device_logs(device, output_type_list):
     # CSV
     if "csv" in output_type_list:
         # Open CSV File
-        with open(f'logs/{device["transport_protocol"]}-{device["model_number"]}-{device["serial_number"]}.csv', "w", newline="") as csvfile:
+        with open(
+            f"logs/{device['transport_protocol']}-{device['model_number']}-{device['serial_number']}.csv",
+            "w",
+            newline="",
+        ) as csvfile:
             # Write CSV File
             writer = csv.writer(csvfile)
 
@@ -133,14 +136,18 @@ def device_logs(device, output_type_list):
     # JSON
     if "json" in output_type_list:
         # Open JSON File
-        with open(f'logs/{device["transport_protocol"]}-{device["model_number"]}-{device["serial_number"]}.json', "w") as jsonfile:
+        with open(
+            f"logs/{device['transport_protocol']}-{device['model_number']}-{device['serial_number']}.json", "w"
+        ) as jsonfile:
             # Write JSON
             json.dump(device, jsonfile, indent=4)
 
     # HTML
     if "html" in output_type_list:
         # Open HTML File
-        with open(f'logs/{device["transport_protocol"]}-{device["model_number"]}-{device["serial_number"]}.html', "w") as htmlfile:
+        with open(
+            f"logs/{device['transport_protocol']}-{device['model_number']}-{device['serial_number']}.html", "w"
+        ) as htmlfile:
             # Write HTML
             htmlfile.write("<html><body><table border='1'>")
 
@@ -155,7 +162,9 @@ def device_logs(device, output_type_list):
     # TXT
     if "text" in output_type_list:
         # Open TXT File
-        with open(f'logs/{device["transport_protocol"]}-{device["model_number"]}-{device["serial_number"]}.txt', "w") as txtfile:
+        with open(
+            f"logs/{device['transport_protocol']}-{device['model_number']}-{device['serial_number']}.txt", "w"
+        ) as txtfile:
             # Loop Items
             for key, value in device.items():
                 # Write Item
@@ -178,7 +187,7 @@ def device_logs(device, output_type_list):
         tree = ElementTree(root)
 
         # Write XML Tree
-        tree.write(f'logs/{device["transport_protocol"]}-{device["model_number"]}-{device["serial_number"]}.xml')
+        tree.write(f"logs/{device['transport_protocol']}-{device['model_number']}-{device['serial_number']}.xml")
 
 
 def all_devices_logs(devices, output_types):
@@ -294,7 +303,9 @@ def main():
     parser.add_argument("--ignore-ata", action="store_true", help="Ignore ATA devices when scanning")
     parser.add_argument("--ignore-nvme", action="store_true", help="Ignore NVMe devices when scanning")
     parser.add_argument("--ignore-scsi", action="store_true", help="Ignore SCSI devices when scanning")
-    parser.add_argument("--ignore-removable", action="store_true", help="Ignore USB/SD/MSD/MMC/eMMC devices when scanning")
+    parser.add_argument(
+        "--ignore-removable", action="store_true", help="Ignore USB/SD/MSD/MMC/eMMC devices when scanning"
+    )
 
     # Output Format Arguments
     output_formats = ["csv", "html", "json", "text", "xml"]
@@ -342,7 +353,7 @@ def main():
     # Create Logs
     create_logs(device_scanner.devices, selected_outputs, args.log_for_each)
 
+
 if __name__ == "__main__":
     # Run
     main()
-

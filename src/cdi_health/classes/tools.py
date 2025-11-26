@@ -419,7 +419,6 @@ class SG3Utils:
             return False
 
 
-
 class Smartctl:
     """
     Smartctl Class
@@ -513,7 +512,6 @@ class Smartctl:
         self.execute_self_test_conveyance_command = f"sudo {self.smartctl_path} --test=conveyance --json=ov"
         self.execute_self_test_selective_command = f"sudo {self.smartctl_path} --test=select"
         self.execute_self_test_vendor_specific_command = f"sudo {self.smartctl_path} --test=vendor"
-
 
     """
     Helpers
