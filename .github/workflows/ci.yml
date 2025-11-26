@@ -113,7 +113,7 @@ jobs:
           ./configure
           make
           sudo make install
-          smartctl
+          smartctl -h
 
       - name: test
         # TODO: tests should not be defined here
