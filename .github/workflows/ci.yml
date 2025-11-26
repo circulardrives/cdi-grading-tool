@@ -90,7 +90,7 @@ jobs:
 
       - name: apt install dependencies
         run: |
-          sudo apt install --yes wget gcc meson smartctl nvme-cli sg3-utils
+          sudo apt-get install --yes wget gcc meson smartctl nvme-cli sg3-utils
 
       - name: build openSeaChest
         run: |
