@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
-# See https://github.com/circulardrives/cdi-grading-tool-alpha/ for further info.
+# See https://github.com/circulardrives/cdi-grading-tool/ for further info.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
