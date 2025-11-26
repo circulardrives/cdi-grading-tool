@@ -112,7 +112,7 @@ jobs:
           cd smartmontools-7.4
           ./configure
           make
-          make install
+          sudo make install
           smartctl
 
       - name: test
