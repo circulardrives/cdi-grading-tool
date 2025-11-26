@@ -100,7 +100,8 @@ jobs:
           meson --buildtype=release builddir
           ninja -C builddir
           cd builddir
-          (shopt -s extglob; cp openSeaChest_* !(*.p) /usr/bin/openSeaChest/)
+          find openSeaChest_* -name '*.p' -exec rm -rf '{}' \;
+          cp openSeaChest_* !(*.p) /usr/bin/openSeaChest/
 
       - name: build smartmontools
         run: |
