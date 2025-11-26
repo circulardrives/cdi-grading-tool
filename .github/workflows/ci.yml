@@ -88,6 +88,29 @@ jobs:
         run: |
           venv/bin/python -m pip install dist/*.whl
 
+      - name: apt install dependencies
+        run: |
+          sudo apt-get install --yes wget gcc meson nvme-cli sg3-utils
+
+      - name: build openSeaChest
+        run: |
+          # duplicated from readme
+          git clone --recurse-submodules --branch develop https://github.com/Seagate/openSeaChest.git openSeaChest-develop
+          cd openSeaChest-develop
+          meson --buildtype=release builddir
+          sudo ninja -C builddir install
+
+      - name: build smartmontools
+        run: |
+          # duplicated from readme
+          wget https://downloads.sourceforge.net/project/smartmontools/smartmontools/7.4/smartmontools-7.4.tar.gz
+          tar zxvf smartmontools-7.4.tar.gz
+          cd smartmontools-7.4
+          ./configure
+          make
+          sudo make install
+          smartctl -h
+
       - name: test
         # TODO: tests should not be defined here
         run: |
