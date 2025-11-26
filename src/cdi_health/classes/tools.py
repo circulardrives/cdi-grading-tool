@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
-# See https://github.com/circulardrives/cdi-grading-tool-alpha/ for further info.
+# See https://github.com/circulardrives/cdi-grading-tool/ for further info.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -419,7 +419,6 @@ class SG3Utils:
             return False
 
 
-
 class Smartctl:
     """
     Smartctl Class
@@ -513,7 +512,6 @@ class Smartctl:
         self.execute_self_test_conveyance_command = f"sudo {self.smartctl_path} --test=conveyance --json=ov"
         self.execute_self_test_selective_command = f"sudo {self.smartctl_path} --test=select"
         self.execute_self_test_vendor_specific_command = f"sudo {self.smartctl_path} --test=vendor"
-
 
     """
     Helpers
