@@ -19,6 +19,6 @@
 
 from __future__ import annotations
 
-from cdi_health.main import main
+from cdi_health.examples.example import main
 
 main()
