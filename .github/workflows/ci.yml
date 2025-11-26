@@ -98,11 +98,7 @@ jobs:
           git clone --recurse-submodules --branch develop https://github.com/Seagate/openSeaChest.git openSeaChest-develop
           cd openSeaChest-develop
           meson --buildtype=release builddir
-          ninja -C builddir
-          cd builddir
-          rm -rf *.p
-          sudo mkdir -p /usr/bin/openSeaChest/
-          sudo cp openSeaChest_* /usr/bin/openSeaChest/
+          sudo ninja -C builddir install
 
       - name: build smartmontools
         run: |
