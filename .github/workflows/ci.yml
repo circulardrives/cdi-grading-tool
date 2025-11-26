@@ -193,3 +193,18 @@ jobs:
           python-version: ${{ matrix.python.major-dot-minor }}
 
       - uses: pre-commit/action@v3.0.1
+
+  required:
+    if: always()
+    name: 🏁 Required
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - test
+      - check
+      - pre-commit
+    steps:
+      - uses: re-actors/alls-green@release/v1.2
+        id: alls-green
+        with:
+          jobs: ${{ toJSON(needs) }}
