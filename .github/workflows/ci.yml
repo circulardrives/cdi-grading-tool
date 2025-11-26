@@ -101,8 +101,8 @@ jobs:
           ninja -C builddir
           cd builddir
           rm -rf *.p
-          mkdir -p /usr/bin/openSeaChest/
-          cp openSeaChest_* /usr/bin/openSeaChest/
+          sudo mkdir -p /usr/bin/openSeaChest/
+          sudo cp openSeaChest_* /usr/bin/openSeaChest/
 
       - name: build smartmontools
         run: |
