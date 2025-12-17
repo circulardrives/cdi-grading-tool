@@ -73,7 +73,7 @@ jobs:
 
     steps:
       - name: workflow download built packages
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: packages
           path: dist/
