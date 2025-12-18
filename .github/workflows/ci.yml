@@ -45,7 +45,7 @@ jobs:
           python -m build
 
       - name: workflow upload built packages
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: packages
           path: dist/*
