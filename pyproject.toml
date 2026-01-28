@@ -60,7 +60,9 @@ classifiers = [
 
 requires-python = ">=3.10"
 
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0",
+]
 
 # TODO: decide how versioning will be handled
 dynamic = ["version"]
@@ -84,3 +86,7 @@ cdi_health = "cdi_health.__main__:main"
 
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.package-data]
+"cdi_health.mock_data" = ["**/*.json"]
+"cdi_health.config" = ["*.yaml"]

@@ -50,6 +50,9 @@ from cdi_health.constants import (
     none,
 )
 
+# Configuration
+from cdi_health.classes.config import get_config
+
 
 class Device:
     """
@@ -103,16 +106,33 @@ class Device:
         },
     }
 
-    def __init__(self, device_id: str = None):
+    def __init__(
+        self,
+        device_id: str = None,
+        smartctl_provider=None,
+        sg3utils_provider=None,
+    ):
         """
         Constructor
         :param device_id: Device ID ("/dev/sda")
+        :param smartctl_provider: Optional Smartctl instance (for testing/mocking)
+        :param sg3utils_provider: Optional SG3Utils instance (for testing/mocking)
         """
 
         # Properties
         self.dut: str = device_id
-        self.dut_sg: str = SG3Utils(self.dut).sg_map26()
-        self.state: str = SG3Utils(self.dut_sg).test_unit_ready()
+
+        # Use provided SG3Utils or create new one
+        if sg3utils_provider:
+            self.dut_sg: str = sg3utils_provider.sg_map26()
+            self.state: str = sg3utils_provider.test_unit_ready()
+        else:
+            self.dut_sg: str = SG3Utils(self.dut).sg_map26()
+            self.state: str = SG3Utils(self.dut_sg).test_unit_ready()
+
+        # Store providers for later use
+        self._smartctl_provider = smartctl_provider
+        self._sg3utils_provider = sg3utils_provider
         self.wwn: str = "Not Reported"
         self.vendor: str = "Not Reported"
         self.model_number: str = "Not Reported"
@@ -238,9 +258,12 @@ class Device:
         # Flags
         self.flags = list()
 
-        # Tools
+        # Tools - use provided providers or create new instances
         self.seatools = SeaTools(device_id=self.dut_sg)
-        self.smartctl = Smartctl(device_id=self.dut_sg)
+        if self._smartctl_provider:
+            self.smartctl = self._smartctl_provider
+        else:
+            self.smartctl = Smartctl(device_id=self.dut_sg)
 
         # Outputs
         self.smartctl_json = None
@@ -1194,6 +1217,9 @@ class ATAProtocol:
                         # Get Current Temperature
                         device.lowest_average_long_temperature = temperature.get("value", "Not Reported")
 
+        # Get configuration for thresholds
+        config = get_config()
+
         # Set A Grade Default
         device.cdi_grade = "A"
         device.cdi_eligible = True
@@ -1207,7 +1233,7 @@ class ATAProtocol:
             device.cdi_certified = False
 
         # If Maximum Reallocated Sectors exceeded
-        if device.reallocated_sectors >= CDI_MAXIMUM_REALLOCATED_SECTORS:
+        if device.reallocated_sectors >= config.maximum_reallocated_sectors:
             # Set State to Failed
             device.state = f"Fail"
 
@@ -1217,7 +1243,7 @@ class ATAProtocol:
             device.cdi_certified = False
 
         # If Maximum Pending Sectors exceeded
-        if device.pending_reallocated_sectors >= CDI_MAXIMUM_PENDING_SECTORS:
+        if device.pending_reallocated_sectors >= config.maximum_pending_sectors:
             # Set State to Failed
             device.state = f"Fail"
 
@@ -1226,8 +1252,8 @@ class ATAProtocol:
             device.cdi_eligible = False
             device.cdi_certified = False
 
-        # If Maximum Reallocated Sectors exceeded
-        if device.offline_uncorrectable_sectors >= CDI_MAXIMUM_UNCORRECTABLE_ERRORS:
+        # If Maximum Uncorrectable Errors exceeded
+        if device.offline_uncorrectable_sectors >= config.maximum_uncorrectable_errors:
             # Set State to Failed
             device.state = f"Fail"
 
@@ -1616,6 +1642,9 @@ class SCSIProtocol:
         # Convert Uncorrectable Errors
         device.offline_uncorrectable_sectors: int = int(uncorrectable_errors)
 
+        # Get configuration for thresholds
+        config = get_config()
+
         # Set A Grade Default
         device.cdi_grade: str = "A"
         device.cdi_eligible: bool = True
@@ -1631,8 +1660,8 @@ class SCSIProtocol:
             device.cdi_eligible: bool = False
             device.cdi_certified: bool = False
 
-        # If Maximum Reallocated Sectors exceeded
-        if device.reallocated_sectors >= CDI_MAXIMUM_REALLOCATED_SECTORS:
+        # If Maximum Grown Defects exceeded
+        if device.reallocated_sectors >= config.maximum_grown_defects:
             # Set State to Failed
             device.state: str = f"Fail"
 
@@ -1641,8 +1670,8 @@ class SCSIProtocol:
             device.cdi_eligible: bool = False
             device.cdi_certified: bool = False
 
-        # If Maximum Reallocated Sectors exceeded
-        if device.offline_uncorrectable_sectors >= CDI_MAXIMUM_UNCORRECTABLE_ERRORS:
+        # If Maximum Uncorrected Errors exceeded
+        if device.offline_uncorrectable_sectors >= config.maximum_scsi_uncorrected_errors:
             # Set State to Failed
             device.state: str = f"Fail"
 
