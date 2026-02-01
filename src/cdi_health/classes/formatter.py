@@ -52,8 +52,8 @@ class BaseFormatter(ABC):
 class TableFormatter(BaseFormatter):
     """ASCII table output with colors and alerts."""
 
-    # Column definitions: (key, header, width, align)
-    COLUMNS = [
+    # Basic column definitions: (key, header, width, align)
+    BASIC_COLUMNS = [
         ("dut", "Device", 10, "left"),
         ("model_number", "Model", 22, "left"),
         ("serial_number", "Serial", 14, "left"),
@@ -63,16 +63,35 @@ class TableFormatter(BaseFormatter):
         ("health_status", "Status", 12, "left"),
     ]
 
-    def __init__(self, show_alerts: bool = True, show_header: bool = True):
+    # Detailed column definitions with critical stats
+    DETAILED_COLUMNS = [
+        ("dut", "Device", 10, "left"),
+        ("model_number", "Model", 20, "left"),
+        ("serial_number", "Serial", 16, "left"),
+        ("firmware_revision", "Firmware", 10, "left"),
+        ("capacity", "Size", 10, "right"),
+        ("power_on_hours", "POH", 8, "right"),
+        ("errors_summary", "Errors", 12, "right"),
+        ("percentage_used", "Used%", 7, "right"),
+        ("health_score", "Score", 5, "center"),
+        ("health_grade", "Grade", 5, "center"),
+        ("health_status", "Status", 12, "left"),
+    ]
+
+    def __init__(self, show_alerts: bool = True, show_header: bool = True, detailed: bool = False):
         """
         Initialize table formatter.
 
         :param show_alerts: Show alerts section
         :param show_header: Show header banner
+        :param detailed: Show detailed table with critical stats
         """
         self.show_alerts = show_alerts
         self.show_header = show_header
+        self.detailed = detailed
         self.calculator = HealthScoreCalculator()
+        # Set columns based on mode
+        self.COLUMNS = self.DETAILED_COLUMNS if detailed else self.BASIC_COLUMNS
 
     def format(self, devices: list[dict]) -> str:
         """Format devices as ASCII table."""
@@ -196,7 +215,16 @@ class TableFormatter(BaseFormatter):
         value = device.get(key)
 
         if key == "capacity":
+            # Try bytes field if capacity is not available
+            if value is None:
+                value = device.get("bytes")
             return self._format_capacity(value)
+        elif key == "power_on_hours":
+            return self._format_power_on_hours(value)
+        elif key == "errors_summary":
+            return self._format_errors_summary(device)
+        elif key == "percentage_used":
+            return self._format_percentage_used(device)
         elif key == "health_status":
             score = device.get("health_score", 0)
             is_healthy = score >= 75
@@ -308,6 +336,77 @@ class TableFormatter(BaseFormatter):
             lines.append(line)
 
         return lines
+
+    def _format_power_on_hours(self, hours) -> str:
+        """Format power on hours."""
+        if hours is None or hours == "Not Reported":
+            return "-"
+        try:
+            hours = int(hours)
+            if hours < 24:
+                return f"{hours}h"
+            elif hours < 8760:  # Less than a year
+                days = hours // 24
+                return f"{days}d"
+            else:
+                years = hours / 8760
+                if years < 10:
+                    return f"{years:.1f}y"
+                else:
+                    return f"{int(years)}y"
+        except (ValueError, TypeError):
+            return "-"
+
+    def _format_errors_summary(self, device: dict) -> str:
+        """Format error summary: reallocated/pending/uncorrectable/media errors."""
+        errors = []
+        
+        # ATA errors
+        reallocated = device.get("reallocated_sectors") or 0
+        pending = device.get("pending_sectors") or device.get("pending_reallocated_sectors") or 0
+        uncorrectable = device.get("uncorrectable_errors") or device.get("offline_uncorrectable_sectors") or 0
+        
+        # NVMe errors
+        media_errors = device.get("media_errors") or 0
+        critical_warning = device.get("critical_warning") or 0
+        
+        # Build summary
+        if reallocated > 0:
+            errors.append(f"R:{reallocated}")
+        if pending > 0:
+            errors.append(f"P:{pending}")
+        if uncorrectable > 0:
+            errors.append(f"U:{uncorrectable}")
+        if media_errors > 0:
+            errors.append(f"M:{media_errors}")
+        if critical_warning > 0:
+            errors.append(f"CW:{critical_warning}")
+        
+        if errors:
+            return ",".join(errors)
+        return "0"
+
+    def _format_percentage_used(self, device: dict) -> str:
+        """Format percentage used (for NVMe and SATA SSDs)."""
+        # Try NVMe percentage_used first
+        pct = device.get("percentage_used")
+        if pct is not None and pct != "Not Reported":
+            try:
+                return f"{int(pct)}%"
+            except (ValueError, TypeError):
+                pass
+        
+        # Try SSD percentage used endurance (SATA SSDs - vendor-specific)
+        pct = device.get("ssd_percentage_used_endurance")
+        if pct is not None and pct != "Not Reported" and pct != 0:
+            try:
+                pct_int = int(pct)
+                if 0 <= pct_int <= 100:
+                    return f"{pct_int}%"
+            except (ValueError, TypeError):
+                pass
+        
+        return "-"
 
     def _format_legend(self) -> str:
         """Format legend line."""
@@ -451,7 +550,7 @@ def get_formatter(format_type: str, **kwargs) -> BaseFormatter:
     Get formatter by type name.
 
     :param format_type: Format type (table, json, csv, yaml)
-    :param kwargs: Additional formatter arguments
+    :param kwargs: Additional formatter arguments (e.g., detailed=True for table)
     :return: Formatter instance
     """
     formatters = {

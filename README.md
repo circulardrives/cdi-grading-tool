@@ -10,77 +10,325 @@ Circular Drive Initiative - Open Source Storage Device Grading Toolkit.
 
 [![python](https://img.shields.io/badge/Python-3.12-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
 
-### Getting Started
+## Getting Started
 
 This software requires the following to launch:
 
 * Linux GNU x86/x64
-* Python 3.12
+* Python 3.10+
 
-#### Required 3rd Party Software
+### Required 3rd Party Software
+
+**Minimum Required (for basic scanning):**
 ```sh
-# Install Pre-Requisites
-apt install wget gcc meson
+# nvme-cli - Required for NVMe device support
+sudo apt install nvme-cli
 
-# nvme-cli - https://github.com/linux-nvme/nvme-cli
-apt install nvme-cli
-
-# sg3-utils - https://sg.danny.cz/sg/sg3_utils.html
-apt install sg3-utils
-
-# openseachest - https://github.com/Seagate/openSeaChest
-git clone --recurse-submodules --branch develop https://github.com/Seagate/openSeaChest.git openSeaChest-develop
-cd openSeaChest-develop
-meson --buildtype=release builddir
-ninja -C builddir
-cd builddir
-cp openSeaChest_* !(*.p) /usr/bin/openSeaChest/
-
-# smartmontools - https://www.smartmontools.org/
-wget https://downloads.sourceforge.net/project/smartmontools/smartmontools/7.4/smartmontools-7.4.tar.gz && \
-  tar zxvf smartmontools-7.4.tar.gz && \
-  cd smartmontools-7.4 && \
-  ./configure && \
-  make && \
-  make install && \
-  smartctl;
+# smartmontools - Required for SMART data collection
+sudo apt install smartmontools
 ```
 
-### Execution
+**Optional (for enhanced ATA/SCSI support):**
+```sh
+# sg3-utils - Optional, for SCSI device support
+sudo apt install sg3-utils
+
+# openseachest - Optional, for enhanced ATA device support
+# See https://github.com/Seagate/openSeaChest for installation instructions
+```
+
+### Installation
+
+**From PyPI (recommended for end users):**
 ```shell
-# Go to CDI Grading Tool Directory
-cd cdi-grading-tool-alpha
+pip install cdi-health
+```
 
-# Create a Virtual Environment
+**From source (for development):**
+```shell
+# Clone the repository
+git clone https://github.com/circulardrives/cdi-grading-tool-alpha.git
+cd cdi-grading-tool
+
+# Create a Virtual Environment (recommended)
 python3 -m venv .venv
-
-# Activate the Virtual Environment
 source .venv/bin/activate
 
-# Upgrade Pip
-pip install --upgrade pip
-
-# Install CDI Grading Tool
+# Install CDI Grading Tool in editable mode
 pip install -e .
 
-# Create Logs Folder
-mkdir logs
-
-# Launch Example - super user permissions required
-python3 example.py
+# Or install with development dependencies
+pip install -e .[dev]
 ```
 
-## Roadmap
-- [ ] Add full change logs.
+### Quick Start
 
-## Change Logs
-* TODO ...
+```shell
+# Scan all drives (default: detailed table output)
+cdi-health scan
+
+# Scan with verbose output
+cdi-health scan -v
+
+# Scan only NVMe devices
+cdi-health scan --ignore-ata --ignore-scsi
+
+# Output as JSON
+cdi-health scan -o json
+
+# Output as CSV
+cdi-health scan -o csv
+```
+
+## CLI Usage
+
+### Scan Command
+
+The `scan` command scans storage devices and displays health information in a detailed table format.
+
+**Default Output Format:**
+```
+╔════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                                                         CDI Health Scanner                                                         ║
+╠════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║                                      Scanned: 5 devices | Healthy: 5 | Warning: 0 | Failed: 0                                      ║
+╚════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+
+┌────────────┬──────────────────────┬────────────────────┬────────────┬──────────┬──────────────┬─────────┬───────┬───────┬──────────────┐
+│ Device     │ Model                │ Serial             │       Size │      POH │       Errors │   Used% │ Score │ Grade │ Status       │
+├────────────┼──────────────────────┼────────────────────┼────────────┼──────────┼──────────────┼─────────┼───────┼───────┼──────────────┤
+│ /dev/sda   │ MK000960GWSSD        │ S4DHNE0M203447     │     960 GB │     1.2y │            0 │       - │  100  │   A   │ ✓ Excellent  │
+│ /dev/nvme0 │ SSDPEK1A118GA        │ PHOC150200JY118B   │     118 GB │     2.8y │            0 │      0% │  100  │   A   │ ✓ Excellent  │
+└────────────┴──────────────────────┴────────────────────┴────────────┴──────────┴──────────────┴─────────┴───────┴───────┴──────────────┘
+
+Legend: ✓ Healthy  ⚠ Warning  ✗ Failed
+```
+
+**Table Columns:**
+- **Device**: Device path (e.g., `/dev/sda`, `/dev/nvme0`)
+- **Model**: Drive model number
+- **Serial**: Drive serial number
+- **Size**: Drive capacity (formatted as GB/TB)
+- **POH**: Power On Hours (formatted as years/days, e.g., "2.8y", "356d")
+- **Errors**: Error summary (R:reallocated, P:pending, U:uncorrectable, M:media errors, CW:critical warning)
+- **Used%**: Percentage used (NVMe SSDs only, shows wear level)
+- **Score**: Health score (0-100)
+- **Grade**: Health grade (A-F)
+- **Status**: Health status with visual indicator
+
+**Command Options:**
+```shell
+cdi-health scan [OPTIONS]
+
+Options:
+  -h, --help              Show help message
+  -v, --verbose           Show detailed information during scan
+  --no-color              Disable colored output
+  --config FILE           Path to YAML config file for custom thresholds
+  --mock-data PATH        Use mock data directory instead of real devices
+  --mock-file FILE        Use specific mock JSON file for single device
+  --ignore-ata            Ignore ATA/SATA devices
+  --ignore-nvme           Ignore NVMe devices
+  --ignore-scsi           Ignore SCSI devices
+  -o, --output FORMAT     Output format: table (default), json, csv, yaml
+  --all                   Show all device attributes (not just summary)
+  --details               Show detailed table with critical stats (default)
+  --device PATH           Scan specific device only
+```
+
+**Examples:**
+```shell
+# Basic scan of all devices
+cdi-health scan
+
+# Scan with JSON output for scripting
+cdi-health scan -o json
+
+# Scan only NVMe drives
+cdi-health scan --ignore-ata --ignore-scsi
+
+# Scan specific device
+cdi-health scan --device /dev/nvme0
+
+# Export to CSV for analysis
+cdi-health scan -o csv > drive_health.csv
+```
+
+### Report Command
+
+Generate detailed HTML or PDF health reports.
+
+```shell
+# Generate HTML report
+cdi-health report --format html
+
+# Generate PDF report
+cdi-health report --format pdf
+
+# Custom output filename
+cdi-health report --format html --output-file my_report.html
+```
+
+### Watch Command
+
+Continuously monitor device health and report changes.
+
+```shell
+# Monitor every 60 seconds (default)
+cdi-health watch
+
+# Monitor every 30 seconds
+cdi-health watch --interval 30
+```
+
+### Self-Test Command
+
+Run NVMe device self-tests to verify drive integrity. By default, finds all NVMe devices that support self-test and runs short tests.
+
+```shell
+# Run short self-tests on all supported NVMe devices (default)
+cdi-health selftest
+
+# Run extended self-tests
+cdi-health selftest --type extended
+
+# Run test on specific device
+cdi-health selftest --device /dev/nvme0
+
+# Check status of a specific device
+cdi-health selftest --device /dev/nvme0 --status
+
+# Wait for tests to complete
+cdi-health selftest --wait
+
+# Abort running test
+cdi-health selftest --device /dev/nvme0 --abort
+```
+
+**Self-Test Features:**
+- Automatically detects NVMe devices that support self-test (via `nvme id-ctrl`)
+- Runs short self-tests by default (completes in ~2 minutes)
+- Extended self-tests available (may take several hours)
+- Displays results in a formatted table similar to scan output
+- Shows test status, results, and completion dates
+- On subsequent runs, displays existing test results instead of starting new tests
+
+## Output Formats
+
+### Table Format (Default)
+The default table format provides a comprehensive view of all drives with critical health metrics:
+- Device identification (path, model, serial)
+- Capacity and size
+- Power-on hours (formatted for readability)
+- Error counts (reallocated, pending, uncorrectable, media errors)
+- Percentage used (for NVMe SSDs)
+- Health score and grade
+- Status indicators
+
+### JSON Format
+Structured JSON output for programmatic access:
+```shell
+cdi-health scan -o json
+```
+
+### CSV Format
+Comma-separated values for spreadsheet analysis:
+```shell
+cdi-health scan -o csv > drives.csv
+```
+
+### YAML Format
+YAML output for configuration tools:
+```shell
+cdi-health scan -o yaml
+```
+
+## Health Scoring
+
+The tool calculates a health score (0-100) and assigns a grade (A-F) based on:
+
+- **SMART Status**: Pass/Fail (critical failure if failed)
+- **Reallocated Sectors**: Count of reallocated sectors
+- **Pending Sectors**: Count of pending reallocation sectors
+- **Uncorrectable Errors**: Count of uncorrectable errors
+- **Temperature**: Operating temperature vs. maximum
+- **Percentage Used**: Wear level for NVMe SSDs
+- **Critical Warnings**: NVMe critical warning flags
+- **Media Errors**: NVMe media error count
+- **Self-Test Results**: Failed NVMe self-tests result in automatic Grade F (critical failure)
+
+**Grade Scale:**
+- **A (90-100)**: Excellent - Drive is healthy and suitable for reuse
+- **B (75-89)**: Good - Minor issues detected
+- **C (60-74)**: Fair - Some degradation present
+- **D (40-59)**: Poor - Significant issues detected
+- **F (0-39)**: Failed - Drive should not be reused
+
+**Critical Failures (Automatic Grade F):**
+- Failed SMART status
+- Failed NVMe self-test (short or extended)
+- Critical hardware failures detected
+
+## Documentation
+
+### CDI Health Specification
+
+For detailed information about how health assessment works across different protocols (ATA/SATA, NVMe, SCSI/SAS), see:
+
+**[CDI Health Specification](docs/CDI_HEALTH_SPEC.md)**
+
+This document covers:
+- Health scoring methodology
+- Protocol-specific implementation details
+- SMART attribute interpretation
+- Vendor-specific percentage used extraction
+- Device statistics log usage
+- Thresholds and certification criteria
+
+### Development Documentation
+
+- **[Development Guide](DEVELOPMENT.md)** - Code quality standards, testing, and development workflow
+- **[Testing Guide](README_TESTING.md)** - Comprehensive testing documentation
+- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute to the project
+
+## Features
+
+### Current Features
+- ✅ Multi-protocol support (ATA/SATA, NVMe, SCSI/SAS)
+- ✅ Comprehensive health scoring (0-100 scale with A-F grades)
+- ✅ NVMe self-test execution and monitoring
+- ✅ Multiple output formats (table, JSON, CSV, YAML)
+- ✅ HTML and PDF report generation
+- ✅ Continuous monitoring/watch mode
+- ✅ Mock data support for testing
+- ✅ Configurable thresholds via YAML
+- ✅ Responsive terminal output (adapts to console width)
+- ✅ Failed self-test detection (automatic Grade F)
+
+### Roadmap
+- [x] Add change logs (see [CHANGELOG.md](CHANGELOG.md))
+- [x] NVMe self-test support
+- [ ] Enhanced reporting features
+- [ ] Historical tracking
+- [ ] Web interface
+- [ ] ATA/SCSI self-test support
+- [ ] Enhanced temperature grading
+- [ ] Rate of change detection
+- [ ] Performance optimizations
+
+## Change Log
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history and changes.
 
 ## License
-* TODO ...
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full license text.
 
 ## Acknowledgments
-* TODO...
+
+- Circular Drive Initiative for the vision and support
+- All contributors who have helped improve this tool
+- The open source community for the tools and libraries that make this possible
 
 ## Contact
 * Jonmichael Hands - CDI/Chia - jmhands@chia.net

@@ -1,0 +1,207 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      4
+    ],
+    "pre_release": false,
+    "svn_revision": "5530",
+    "platform_info": "x86_64-linux-6.17.0-8-generic",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--xall",
+      "--json=ov",
+      "/dev/nvme1"
+    ],
+    "output": [
+      "smartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.17.0-8-generic] (local build)",
+      "Copyright (C) 2002-23, Bruce Allen, Christian Franke, www.smartmontools.org",
+      "",
+      "=== START OF INFORMATION SECTION ===",
+      "Model Number:                       INTEL SSDPE2KE032T8",
+      "Serial Number:                      PHLN0501023C3P2BGN",
+      "Firmware Version:                   VDV10194",
+      "PCI Vendor/Subsystem ID:            0x8086",
+      "IEEE OUI Identifier:                0x5cd2e4",
+      "Total NVM Capacity:                 3,200,631,791,616 [3.20 TB]",
+      "Unallocated NVM Capacity:           0",
+      "Controller ID:                      0",
+      "NVMe Version:                       1.2",
+      "Number of Namespaces:               128",
+      "Local Time is:                      Sun Feb  1 00:57:47 2026 UTC",
+      "Firmware Updates (0x18):            4 Slots, no Reset required",
+      "Optional Admin Commands (0x000e):   Format Frmw_DL NS_Mngmt",
+      "Optional NVM Commands (0x0006):     Wr_Unc DS_Mngmt",
+      "Log Page Attributes (0x0e):         Cmd_Eff_Lg Ext_Get_Lg Telmtry_Lg",
+      "Maximum Data Transfer Size:         32 Pages",
+      "Warning  Comp. Temp. Threshold:     70 Celsius",
+      "Critical Comp. Temp. Threshold:     80 Celsius",
+      "",
+      "Supported Power States",
+      "St Op     Max   Active     Idle   RL RT WL WT  Ent_Lat  Ex_Lat",
+      " 0 +    16.00W       -        -    0  0  0  0        0       0",
+      "",
+      "=== START OF SMART DATA SECTION ===",
+      "SMART overall-health self-assessment test result: PASSED",
+      "",
+      "SMART/Health Information (NVMe Log 0x02)",
+      "Critical Warning:                   0x00",
+      "Temperature:                        28 Celsius",
+      "Available Spare:                    100%",
+      "Available Spare Threshold:          10%",
+      "Percentage Used:                    4%",
+      "Data Units Read:                    2,416,307,408 [1.23 PB]",
+      "Data Units Written:                 3,452,648,505 [1.76 PB]",
+      "Host Read Commands:                 35,750,667,952",
+      "Host Write Commands:                15,453,498,243",
+      "Controller Busy Time:               15,215",
+      "Power Cycles:                       108",
+      "Power On Hours:                     8,556",
+      "Unsafe Shutdowns:                   77",
+      "Media and Data Integrity Errors:    0",
+      "Error Information Log Entries:      0",
+      "Warning  Comp. Temperature Time:    0",
+      "Critical Comp. Temperature Time:    0",
+      "",
+      "Error Information (NVMe Log 0x01, 16 of 64 entries)",
+      "No Errors Logged",
+      "",
+      "Self-tests not supported",
+      ""
+    ],
+    "uint128_precision_bits": 128,
+    "exit_status": 0
+  },
+  "local_time": {
+    "time_t": 1769907467,
+    "asctime": "Sun Feb  1 00:57:47 2026 UTC"
+  },
+  "device": {
+    "name": "/dev/nvme1",
+    "info_name": "/dev/nvme1",
+    "type": "nvme",
+    "protocol": "NVMe"
+  },
+  "model_name": "INTEL SSDPE2KE032T8",
+  "serial_number": "PHL000003",
+  "firmware_version": "VDV10194",
+  "nvme_pci_vendor": {
+    "id": 32902,
+    "subsystem_id": 32902
+  },
+  "nvme_ieee_oui_identifier": 6083300,
+  "nvme_total_capacity": 3200631791616,
+  "nvme_total_capacity_s": "3200631791616",
+  "nvme_total_capacity_le": [
+    0,
+    96,
+    133,
+    52,
+    233,
+    2
+  ],
+  "nvme_unallocated_capacity": 0,
+  "nvme_unallocated_capacity_s": "0",
+  "nvme_controller_id": 0,
+  "nvme_version": {
+    "string": "1.2",
+    "value": 66048
+  },
+  "nvme_number_of_namespaces": 128,
+  "smart_support": {
+    "available": true,
+    "enabled": true
+  },
+  "smart_status": {
+    "passed": true,
+    "nvme": {
+      "value": 0
+    }
+  },
+  "nvme_smart_health_information_log": {
+    "critical_warning": 0,
+    "temperature": 28,
+    "available_spare": 100,
+    "available_spare_threshold": 10,
+    "percentage_used": 4,
+    "data_units_read": 2416307408,
+    "data_units_read_s": "2416307408",
+    "data_units_read_le": [
+      208,
+      236,
+      5,
+      144
+    ],
+    "data_units_written": 3452648505,
+    "data_units_written_s": "3452648505",
+    "data_units_written_le": [
+      57,
+      60,
+      203,
+      205
+    ],
+    "host_reads": 35750667952,
+    "host_reads_s": "35750667952",
+    "host_reads_le": [
+      176,
+      230,
+      231,
+      82,
+      8
+    ],
+    "host_writes": 15453498243,
+    "host_writes_s": "15453498243",
+    "host_writes_le": [
+      131,
+      171,
+      25,
+      153,
+      3
+    ],
+    "controller_busy_time": 15215,
+    "controller_busy_time_s": "15215",
+    "controller_busy_time_le": [
+      111,
+      59
+    ],
+    "power_cycles": 108,
+    "power_cycles_s": "108",
+    "power_cycles_le": [
+      108
+    ],
+    "power_on_hours": 8556,
+    "power_on_hours_s": "8556",
+    "power_on_hours_le": [
+      108,
+      33
+    ],
+    "unsafe_shutdowns": 77,
+    "unsafe_shutdowns_s": "77",
+    "unsafe_shutdowns_le": [
+      77
+    ],
+    "media_errors": 0,
+    "media_errors_s": "0",
+    "num_err_log_entries": 0,
+    "num_err_log_entries_s": "0",
+    "warning_temp_time": 0,
+    "critical_comp_time": 0
+  },
+  "temperature": {
+    "current": 28
+  },
+  "power_cycle_count": 108,
+  "power_on_time": {
+    "hours": 8556
+  },
+  "nvme_error_information_log": {
+    "size": 64,
+    "read": 16,
+    "unread": 0
+  }
+}

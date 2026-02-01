@@ -162,6 +162,32 @@ class Command:
 
         return self.errors
 
+    def execute(self):
+        """
+        Execute command and return (output, errors, return_code) tuple.
+        Convenience method that runs the command and returns decoded output.
+        :return: tuple of (output, errors, return_code)
+        """
+        # Run the command
+        self.run()
+        
+        # Get output and decode if bytes
+        output = self.get_output()
+        if isinstance(output, bytes):
+            output = output.decode("utf-8")
+        output = output.strip()
+        
+        # Get errors and decode if bytes
+        errors = self.get_errors()
+        if isinstance(errors, bytes):
+            errors = errors.decode("utf-8")
+        errors = errors.strip() if errors else ""
+        
+        # Get return code
+        return_code = self.get_return_code()
+        
+        return output, errors, return_code
+
     def get_duration(self):
         """
         Duration Property
@@ -236,38 +262,69 @@ class SeaTools:
 
     def get_seachest_path(self, tool_name: str) -> str:
         """
-        Get the full path of SeaChest tools using shutil.which or whereis
-        :param tool_name: Name of the tool (e.g., "openSeaChest_Basics", "openSeaChest_SMART")
-        :return: Full path of the tool or default to its name
+        Get the full path of SeaChest tools.
+        
+        Searches in the following order:
+        1. PATH (via shutil.which) - works for deb-installed packages in /usr/local/bin
+        2. Standard installation paths (/usr/local/bin, /usr/bin)
+        3. whereis command
+        4. Returns tool name as fallback (will use from PATH at runtime)
+        
+        Args:
+            tool_name: Name of the tool (e.g., "openSeaChest_Basics", "openSeaChest_SMART")
+            
+        Returns:
+            Full path of the tool or tool name if not found
         """
+        import os
+        from cdi_health.logger import get_logger
+        
+        logger = get_logger(__name__)
+        
+        # Standard installation paths (deb packages install to /usr/local/bin)
+        standard_paths = [
+            "/usr/local/bin",  # Default deb installation path
+            "/usr/bin",        # Alternative installation path
+            "/opt/seagate/openSeaChest/bin",  # Custom installation path
+        ]
+        
         try:
-            # Locate SeaTools
+            # Method 1: Check PATH using shutil.which (works for deb-installed packages)
             path = shutil.which(tool_name)
-
-            # If OK
             if path:
-                # Return Path
+                logger.debug("Found %s via PATH: %s", tool_name, path)
                 return path
+            
+            # Method 2: Check standard installation paths
+            for base_path in standard_paths:
+                full_path = os.path.join(base_path, tool_name)
+                if os.path.exists(full_path) and os.access(full_path, os.X_OK):
+                    logger.debug("Found %s in standard path: %s", tool_name, full_path)
+                    return full_path
+            
+            # Method 3: Try whereis command as fallback
+            result = subprocess.run(
+                ["whereis", tool_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            
+            if result.returncode == 0:
+                paths = result.stdout.strip().split()
+                for path in paths[1:]:  # Skip tool name, check paths
+                    if path.startswith("/") and "man" not in path.lower():
+                        if os.path.exists(path) and os.access(path, os.X_OK):
+                            logger.debug("Found %s via whereis: %s", tool_name, path)
+                            return path
 
-            # Run Whereis Command
-            result = subprocess.run(["whereis", tool_name], capture_output=True, text=True)
-
-            # Split Output
-            paths = result.stdout.strip().split()
-
-            # Extract First Value
-            for path in paths[1:]:
-                # Check not Man File
-                if path.startswith("/") and "man" not in path:
-                    # Return Path
-                    return path
-
-        # Exceptions
+        except subprocess.TimeoutExpired:
+            logger.warning("whereis command timed out while searching for %s", tool_name)
         except Exception as exception:
-            # Print
-            print(f"Error finding {tool_name} path: {exception}")
+            logger.debug("Error finding %s path: %s", tool_name, exception)
 
-        # Return
+        # Fallback: return tool name (will be used from PATH at runtime if available)
+        logger.debug("Could not find full path for %s, using name (will search PATH at runtime)", tool_name)
         return tool_name
 
     def init_commands(self):
@@ -323,40 +380,68 @@ class SG3Utils:
 
     def get_sg3utils_path(self, tool_name: str) -> str:
         """
-        Get the full path of sg3_utils tools using shutil.which or whereis
-        :param tool_name: Name of the tool (e.g., "sg_map26", "sg_turs")
-        :return: Full path of the tool or default to its name
+        Get the full path of sg3_utils tools.
+        
+        Searches in the following order:
+        1. PATH (via shutil.which) - works for package-installed tools
+        2. Standard installation paths (/usr/bin, /usr/sbin)
+        3. whereis command
+        4. Returns tool name as fallback (will use from PATH at runtime)
+        
+        Args:
+            tool_name: Name of the tool (e.g., "sg_map26", "sg_turs")
+            
+        Returns:
+            Full path of the tool or tool name if not found
         """
-
-        # Try
+        import os
+        from cdi_health.logger import get_logger
+        
+        logger = get_logger(__name__)
+        
+        # Standard installation paths for sg3-utils
+        standard_paths = [
+            "/usr/bin",   # Standard deb installation path
+            "/usr/sbin",  # Alternative installation path
+        ]
+        
         try:
-            # Get Path
+            # Method 1: Check PATH using shutil.which
             path = shutil.which(tool_name)
-
-            # If OK
             if path:
-                # Return
+                logger.debug("Found %s via PATH: %s", tool_name, path)
                 return path
+            
+            # Method 2: Check standard installation paths
+            for base_path in standard_paths:
+                full_path = os.path.join(base_path, tool_name)
+                if os.path.exists(full_path) and os.access(full_path, os.X_OK):
+                    logger.debug("Found %s in standard path: %s", tool_name, full_path)
+                    return full_path
+            
+            # Method 3: Try whereis command as fallback
+            result = subprocess.run(
+                ["whereis", tool_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            
+            if result.returncode == 0:
+                paths = result.stdout.strip().split()
+                for path in paths[1:]:  # Skip tool name, check paths
+                    if path.startswith("/") and "man" not in path.lower():
+                        if os.path.exists(path) and os.access(path, os.X_OK):
+                            logger.debug("Found %s via whereis: %s", tool_name, path)
+                            return path
 
-            # Run Command
-            result = subprocess.run(["whereis", tool_name], capture_output=True, text=True)
-
-            # Split Output
-            paths = result.stdout.strip().split()
-
-            # Loop Paths
-            for path in paths[1:]:
-                # If not Manual
-                if path.startswith("/") and "man" not in path:
-                    # Return
-                    return path
-
-        # Exception
+        except subprocess.TimeoutExpired:
+            logger.warning("whereis command timed out while searching for %s", tool_name)
         except Exception as exception:
-            # Print
-            print(f"Error finding {tool_name} path: {exception}")
+            logger.debug("Error finding %s path: %s", tool_name, exception)
 
-        # Return
+        # Fallback: return tool name (will be used from PATH at runtime if available)
+        logger.debug("Could not find full path for %s, using name (will search PATH at runtime)", tool_name)
         return tool_name
 
     def sg_map26(self) -> str | bool:

@@ -147,6 +147,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Auto-generated version file (setuptools-scm)
+src/cdi_health/_version.py
+
 # pytype static type analyzer
 .pytype/
 

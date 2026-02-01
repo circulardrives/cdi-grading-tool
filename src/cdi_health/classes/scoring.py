@@ -85,7 +85,8 @@ class HealthScoreCalculator:
 
     Scoring Formula (CDI-Spec Aligned):
     - Base Score: 100
-    - SMART Status Failed: -50 points
+    - SMART Status Failed: -50 points (results in Grade F)
+    - Failed Self-Test: -50 points (results in Grade F - drive is bad)
     - Per Reallocated Sector: -5 points (up to threshold)
     - Per Pending Sector: -5 points (up to threshold)
     - Per Uncorrectable Error: -5 points (up to threshold)
@@ -154,13 +155,28 @@ class HealthScoreCalculator:
         # Clamp score to 0-100
         score = max(0, min(100, score))
 
+        # Check for failed self-test - this is a hard failure, drive is bad
+        has_failed_selftest = any(
+            "failed" in d.reason.lower() and "self-test" in d.reason.lower()
+            for d in deductions
+        )
+
         # Determine grade and status
-        grade = self.get_grade(score)
-        status = self.get_status_text(score)
+        # If self-test failed, Grade F regardless of score
+        if has_failed_selftest:
+            grade = "F"
+            status = "Failed"
+            score = 0  # Set score to 0 to reflect complete failure
+        else:
+            grade = self.get_grade(score)
+            status = self.get_status_text(score)
 
         # Determine certification (Grade A or B)
-        is_certified = grade in ("A", "B") and not any(
-            d.severity == "critical" for d in deductions
+        # Failed self-test = automatic failure, cannot be certified
+        is_certified = (
+            grade in ("A", "B")
+            and not any(d.severity == "critical" for d in deductions)
+            and not has_failed_selftest
         )
 
         return HealthScore(
@@ -303,6 +319,43 @@ class HealthScoreCalculator:
                 )
             )
 
+        # SSD Percentage Used Endurance (for ATA SSDs)
+        # Check both ssd_percentage_used_endurance and percentage_used fields
+        pct_used = device.get("ssd_percentage_used_endurance") or device.get("percentage_used")
+        if pct_used is not None and pct_used >= 0:
+            threshold = self.config.maximum_ssd_percentage_used
+            if pct_used > threshold:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="SSD percentage used exceeds threshold",
+                        points=self.THRESHOLD_EXCEEDED_DEDUCTION,
+                        severity="critical",
+                        field="ssd_percentage_used_endurance",
+                        value=pct_used,
+                        threshold=threshold,
+                    )
+                )
+            elif pct_used > 90:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="High SSD percentage used",
+                        points=10,
+                        severity="warning",
+                        field="ssd_percentage_used_endurance",
+                        value=pct_used,
+                    )
+                )
+            elif pct_used > 80:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="Moderate SSD percentage used",
+                        points=5,
+                        severity="info",
+                        field="ssd_percentage_used_endurance",
+                        value=pct_used,
+                    )
+                )
+
         return deductions
 
     def _check_nvme_metrics(self, device: dict) -> list[ScoreDeduction]:
@@ -376,6 +429,90 @@ class HealthScoreCalculator:
                     value=media_errors,
                 )
             )
+
+        # Self-test results
+        self_test_deductions = self._check_nvme_selftest(device)
+        deductions.extend(self_test_deductions)
+
+        return deductions
+
+    def _check_nvme_selftest(self, device: dict) -> list[ScoreDeduction]:
+        """Check NVMe self-test results."""
+        deductions = []
+
+        # Check for self-test log data
+        self_test_log = device.get("nvme_self_test_log")
+        if not self_test_log:
+            # No self-test data available - minor warning if device is older
+            poh = device.get("power_on_hours", 0) or 0
+            if poh > 8760:  # More than 1 year
+                deductions.append(
+                    ScoreDeduction(
+                        reason="No self-test history available",
+                        points=2,
+                        severity="info",
+                        field="nvme_self_test_log",
+                        value=None,
+                    )
+                )
+            return deductions
+
+        # Check current operation
+        current_op = self_test_log.get("current_self_test_operation", {})
+        op_value = current_op.get("value", 0)
+        
+        # Check for failed tests in history
+        entries = self_test_log.get("entries", [])
+        if entries:
+            # Check most recent entries for failures
+            recent_failures = []
+            for entry in entries[:5]:  # Check last 5 tests
+                result = entry.get("result", 0)
+                if result == 1:  # Failed
+                    recent_failures.append(entry)
+            
+            if recent_failures:
+                # FAILED SELF-TEST = CRITICAL FAILURE
+                # This should result in Grade F, similar to SMART failure
+                # Use maximum deduction to ensure Grade F
+                for failure in recent_failures:
+                    test_type = failure.get("type", 0)
+                    if test_type == 2:  # Extended test failure
+                        deductions.append(
+                            ScoreDeduction(
+                                reason="Failed extended self-test - Drive is failing",
+                                points=self.SMART_FAILURE_DEDUCTION,  # -50 points (same as SMART failure)
+                                severity="critical",
+                                field="nvme_self_test",
+                                value="Failed",
+                            )
+                        )
+                    else:  # Short test failure
+                        # Short test failure is also critical - if short test fails, drive is bad
+                        deductions.append(
+                            ScoreDeduction(
+                                reason="Failed short self-test - Drive is failing",
+                                points=self.SMART_FAILURE_DEDUCTION,  # -50 points (same as SMART failure)
+                                severity="critical",
+                                field="nvme_self_test",
+                                value="Failed",
+                            )
+                        )
+
+        # Check if no recent self-test (warn if device has been used)
+        # This would require timestamp parsing, simplified here
+        if not entries:
+            poh = device.get("power_on_hours", 0) or 0
+            if poh > 720:  # More than 30 days
+                deductions.append(
+                    ScoreDeduction(
+                        reason="No self-test run in last 30 days",
+                        points=5,
+                        severity="warning",
+                        field="nvme_self_test",
+                        value="No tests logged",
+                    )
+                )
 
         return deductions
 
