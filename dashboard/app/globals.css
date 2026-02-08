@@ -4,11 +4,11 @@
 
 :root {
   /* CDI Brand Palette */
-  --cdi-simply-green: 165 78% 34%;  /* #139C7A */
-  --cdi-foliage-green: 144 32% 34%; /* #3B7351 */
-  --cdi-green-spruce: 152 23% 47%;  /* #5C9279 */
-  --cdi-lilac-gray: 222 10% 61%;    /* #9298A6 */
-  --cdi-real-teal: 200 29% 34%;     /* #3E6071 */
+  --cdi-simply-green: 165 78% 34%;
+  --cdi-foliage-green: 144 32% 34%;
+  --cdi-green-spruce: 152 23% 47%;
+  --cdi-lilac-gray: 222 10% 61%;
+  --cdi-real-teal: 200 29% 34%;
 
   --background: 160 30% 97%;
   --foreground: 200 29% 22%;
@@ -41,22 +41,7 @@
 body {
   @apply bg-background text-foreground antialiased;
   background-image:
-    radial-gradient(circle at 5% 15%, rgba(19, 156, 122, 0.18), transparent 24%),
-    radial-gradient(circle at 95% 0%, rgba(62, 96, 113, 0.14), transparent 26%),
-    linear-gradient(140deg, #f3faf7 0%, #f6f8fb 56%, #eef6f1 100%);
-}
-
-.cdi-shell {
-  position: relative;
-}
-
-.cdi-shell::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(19, 156, 122, 0.09), transparent 30%),
-    linear-gradient(270deg, rgba(92, 146, 121, 0.08), transparent 28%);
-  mask-image: radial-gradient(circle at center, black 30%, transparent 100%);
+    radial-gradient(circle at 8% 15%, rgba(19, 156, 122, 0.2), transparent 24%),
+    radial-gradient(circle at 95% 5%, rgba(62, 96, 113, 0.18), transparent 30%),
+    linear-gradient(145deg, #f4faf7 0%, #f5f8fb 52%, #edf5f1 100%);
 }
