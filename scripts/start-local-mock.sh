@@ -17,6 +17,24 @@ MOCK_DATA_PATH="${MOCK_DATA_PATH:-src/cdi_health/mock_data}"
 API_PID=""
 DASHBOARD_PID=""
 
+usage() {
+  cat <<USAGE
+Usage: ./scripts/start-local-mock.sh [options]
+
+Options:
+  --mock-data             Run dashboard/API in mock-data mode (default)
+  --real-data             Run dashboard/API against real device scan
+  --mock-path PATH        Mock data directory (default: src/cdi_health/mock_data)
+  --skip-install          Skip pip/npm installs
+  --kill-existing         Kill existing listeners on API/dashboard ports
+  -h, --help              Show this help
+
+Environment overrides still supported:
+  RUN_MOCK_DATA, MOCK_DATA_PATH, SKIP_INSTALL, KILL_EXISTING_ON_PORT,
+  API_HOST, API_PORT, DASHBOARD_HOST, DASHBOARD_PORT, API_TOKEN
+USAGE
+}
+
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
@@ -112,6 +130,48 @@ cleanup() {
 }
 
 trap cleanup EXIT INT TERM
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mock-data)
+      RUN_MOCK_DATA=1
+      shift
+      ;;
+    --real-data)
+      RUN_MOCK_DATA=0
+      shift
+      ;;
+    --mock-path)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --mock-path" >&2
+        exit 1
+      fi
+      MOCK_DATA_PATH="$2"
+      shift 2
+      ;;
+    --mock-path=*)
+      MOCK_DATA_PATH="${1#*=}"
+      shift
+      ;;
+    --skip-install)
+      SKIP_INSTALL=1
+      shift
+      ;;
+    --kill-existing)
+      KILL_EXISTING_ON_PORT=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
 
 require_cmd python3
 require_cmd npm
