@@ -24,6 +24,8 @@ require_cmd() {
 wait_for_http() {
   local url="$1"
   local name="$2"
+  local pid="${3:-}"
+  local log_file="${4:-}"
   local attempts=120
 
   if ! command -v curl >/dev/null 2>&1; then
@@ -32,6 +34,16 @@ wait_for_http() {
   fi
 
   for _ in $(seq 1 "$attempts"); do
+    if [[ -n "$pid" ]] && ! kill -0 "$pid" >/dev/null 2>&1; then
+      echo "$name process exited before readiness check completed." >&2
+      if [[ -n "$log_file" ]] && [[ -f "$log_file" ]]; then
+        echo "--- Last 120 lines of $log_file ---" >&2
+        tail -n 120 "$log_file" >&2 || true
+        echo "--- End of $log_file ---" >&2
+      fi
+      return 1
+    fi
+
     if curl -fsS "$url" >/dev/null 2>&1; then
       echo "$name is ready: $url"
       return 0
@@ -102,8 +114,17 @@ echo "Starting dashboard..."
 ) >"$LOG_DIR/cdi-dashboard.log" 2>&1 &
 DASHBOARD_PID=$!
 
-wait_for_http "http://${API_HOST}:${API_PORT}/api/v1/health" "CDI API"
-wait_for_http "http://${DASHBOARD_HOST}:${DASHBOARD_PORT}/api/cdi/api/v1/health" "Dashboard proxy"
+wait_for_http \
+  "http://${API_HOST}:${API_PORT}/api/v1/health" \
+  "CDI API" \
+  "$API_PID" \
+  "$LOG_DIR/cdi-api.log"
+
+wait_for_http \
+  "http://${DASHBOARD_HOST}:${DASHBOARD_PORT}/api/cdi/api/v1/health" \
+  "Dashboard proxy" \
+  "$DASHBOARD_PID" \
+  "$LOG_DIR/cdi-dashboard.log"
 
 if command -v curl >/dev/null 2>&1; then
   echo "Running mock scan smoke checks..."
