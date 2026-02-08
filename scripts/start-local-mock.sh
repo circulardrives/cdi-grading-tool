@@ -11,6 +11,8 @@ DASHBOARD_PORT="${DASHBOARD_PORT:-3000}"
 API_TOKEN="${API_TOKEN:-localdevtoken}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
 KILL_EXISTING_ON_PORT="${KILL_EXISTING_ON_PORT:-0}"
+RUN_MOCK_DATA="${RUN_MOCK_DATA:-1}"
+MOCK_DATA_PATH="${MOCK_DATA_PATH:-src/cdi_health/mock_data}"
 
 API_PID=""
 DASHBOARD_PID=""
@@ -140,6 +142,8 @@ fi
 cat > "$ROOT_DIR/dashboard/.env.local" <<ENV
 CDI_API_BASE_URL=http://${API_HOST}:${API_PORT}
 CDI_API_TOKEN=${API_TOKEN}
+NEXT_PUBLIC_CDI_USE_MOCK_DATA=${RUN_MOCK_DATA}
+NEXT_PUBLIC_CDI_MOCK_DATA_PATH=${MOCK_DATA_PATH}
 ENV
 
 echo "Starting CDI API backend..."
@@ -174,18 +178,28 @@ wait_for_http \
   "$LOG_DIR/cdi-dashboard.log"
 
 if command -v curl >/dev/null 2>&1; then
-  echo "Running mock scan smoke checks..."
+  if [[ "$RUN_MOCK_DATA" == "1" ]]; then
+    echo "Running mock scan smoke checks..."
+    API_SCAN_PAYLOAD="{\"mock_data\":\"${MOCK_DATA_PATH}\"}"
+  else
+    echo "Running real-device scan smoke checks..."
+    API_SCAN_PAYLOAD="{}"
+  fi
 
   curl -fsS -X POST "http://${API_HOST}:${API_PORT}/api/v1/scan" \
     -H "Content-Type: application/json" \
     -H "X-API-Token: ${API_TOKEN}" \
-    -d '{"mock_data":"src/cdi_health/mock_data"}' >/dev/null
+    -d "$API_SCAN_PAYLOAD" >/dev/null
 
   curl -fsS -X POST "http://${DASHBOARD_HOST}:${DASHBOARD_PORT}/api/cdi/api/v1/scan" \
     -H "Content-Type: application/json" \
-    -d '{"mock_data":"src/cdi_health/mock_data"}' >/dev/null
+    -d "$API_SCAN_PAYLOAD" >/dev/null
 
-  echo "Mock scan smoke checks passed."
+  if [[ "$RUN_MOCK_DATA" == "1" ]]; then
+    echo "Mock scan smoke checks passed."
+  else
+    echo "Real-device scan smoke checks passed."
+  fi
 fi
 
 echo
@@ -193,6 +207,11 @@ echo
 echo "Services are running:"
 echo "  API:       http://${API_HOST}:${API_PORT}"
 echo "  Dashboard: http://${DASHBOARD_HOST}:${DASHBOARD_PORT}"
+if [[ "$RUN_MOCK_DATA" == "1" ]]; then
+  echo "  Data mode: mock (${MOCK_DATA_PATH})"
+else
+  echo "  Data mode: real device scan"
+fi
 echo "  Logs:      $LOG_DIR/cdi-api.log, $LOG_DIR/cdi-dashboard.log"
 echo
 echo "Press Ctrl+C to stop both services."
