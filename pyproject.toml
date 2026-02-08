@@ -53,6 +53,10 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
+api = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
+]
 dev = [
     "licenseheaders",
     "pre-commit",
@@ -71,6 +75,7 @@ Issues = "https://github.com/circulardrives/cdi-grading-tool-alpha/issues"
 
 [project.scripts]
 "cdi-health" = "cdi_health.__main__:main"
+"cdi-health-api" = "cdi_health.api.server:main"
 
 [tool.setuptools]
 include-package-data = true

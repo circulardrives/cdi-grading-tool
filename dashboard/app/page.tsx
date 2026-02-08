@@ -1,5 +1,5 @@
-import { DashboardPage } from "@/components/dashboard-page";
+import { redirect } from "next/navigation";
 
-export default function Page(): JSX.Element {
-  return <DashboardPage />;
+export default function Page(): never {
+  redirect("/summary");
 }

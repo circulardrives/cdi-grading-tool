@@ -28,6 +28,8 @@ from __future__ import annotations
 
 # Modules
 import json
+import os
+import shlex
 import shutil
 import subprocess
 
@@ -72,9 +74,21 @@ class Command:
             # Start Time
             start_time = datetime.now()
 
+            # Build argv safely (supports quoted args)
+            argv = shlex.split(self.command)
+            if not argv:
+                raise CommandException("Empty command")
+
+            # If already running as root, drop leading sudo to avoid unnecessary
+            # dependency on sudo binary and nested privilege escalation.
+            if os.path.basename(argv[0]) == "sudo" and hasattr(os, "geteuid") and os.geteuid() == 0:
+                argv = argv[1:]
+                if not argv:
+                    raise CommandException("Invalid command: sudo without target command")
+
             # Launch Process
             self.process = subprocess.Popen(
-                self.command.split(),
+                argv,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

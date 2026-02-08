@@ -80,6 +80,63 @@ cdi-health scan -o json
 cdi-health scan -o csv
 ```
 
+## Local Dashboard Backend API
+
+The project now includes a local FastAPI backend for technician dashboards (for example, a Shadcn UI).
+
+### Install API Dependencies
+
+```shell
+pip install -e .[api]
+```
+
+### Run API (Root Required)
+
+Real device commands require privileged access to block devices. Run as root:
+
+```shell
+sudo cdi-health-api --host 127.0.0.1 --port 8844
+```
+
+Optional token auth for dashboard-to-backend traffic:
+
+```shell
+sudo cdi-health-api --api-token "replace-me"
+```
+
+Then send `X-API-Token: replace-me` from the dashboard client.
+
+### API Endpoints
+
+- `GET /api/v1/health` - Backend health and privilege/tool status
+- `POST /api/v1/scan` - Run scan and return device metrics/grades
+- `GET /api/v1/devices` - Return cached scan (or refresh with `?refresh=true`)
+- `POST /api/v1/selftests` - Start asynchronous NVMe self-test job
+- `GET /api/v1/selftests/status` - Get current self-test status
+- `POST /api/v1/selftests/abort` - Abort running self-test on a device
+- `GET /api/v1/jobs` - List async jobs
+- `GET /api/v1/jobs/{job_id}` - Read single async job result/status
+- `POST /api/v1/reports` - Generate HTML/PDF report
+
+### Dashboard (Next.js + Shadcn-Style UI)
+
+A local technician dashboard scaffold is included in `/dashboard`.
+
+```shell
+cd dashboard
+cp .env.example .env.local
+npm install
+npm run dev
+```
+
+The dashboard runs on `http://127.0.0.1:3000` and proxies to the local API backend.
+
+### Deployment Assets
+
+- Systemd unit templates: `/deploy/systemd`
+- Optional sudoers profile: `/deploy/sudoers/cdi-health-technician`
+- Deployment guide: `/docs/TECHNICIAN_DEPLOYMENT.md`
+
 ## CLI Usage
 
 ### Scan Command
