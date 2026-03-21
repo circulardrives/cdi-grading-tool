@@ -1,0 +1,22 @@
+[Unit]
+Description=CDI Health Local API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/cdi-grading-tool
+EnvironmentFile=-/etc/default/cdi-health-api
+ExecStart=/usr/local/bin/cdi-health-api --host 127.0.0.1 --port 8844
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

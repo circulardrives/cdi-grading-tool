@@ -1,0 +1,23 @@
+[Unit]
+Description=CDI Health Technician Dashboard
+After=network.target cdi-health-api.service
+Wants=cdi-health-api.service
+
+[Service]
+Type=simple
+User=cdi
+Group=cdi
+WorkingDirectory=/opt/cdi-grading-tool/dashboard
+EnvironmentFile=-/etc/default/cdi-health-dashboard
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

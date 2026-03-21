@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -32,6 +32,9 @@ from concurrent.futures import ThreadPoolExecutor
 # Data Classes
 from dataclasses import dataclass
 
+# Configuration
+from cdi_health.classes.config import get_config
+
 # Exceptions
 from cdi_health.classes.exceptions import CommandException, DevicesException
 
@@ -42,13 +45,7 @@ from cdi_health.classes.helpers import Helper
 from cdi_health.classes.tools import Command, SeaTools, SG3Utils, Smartctl
 
 # Constants
-from cdi_health.constants import (
-    CDI_MAXIMUM_PENDING_SECTORS,
-    CDI_MAXIMUM_REALLOCATED_SECTORS,
-    CDI_MAXIMUM_UNCORRECTABLE_ERRORS,
-    known_brands_list,
-    none,
-)
+from cdi_health.constants import Protocol
 
 
 class Device:
@@ -103,16 +100,33 @@ class Device:
         },
     }
 
-    def __init__(self, device_id: str = None):
+    def __init__(
+        self,
+        device_id: str = None,
+        smartctl_provider=None,
+        sg3utils_provider=None,
+    ):
         """
         Constructor
         :param device_id: Device ID ("/dev/sda")
+        :param smartctl_provider: Optional Smartctl instance (for testing/mocking)
+        :param sg3utils_provider: Optional SG3Utils instance (for testing/mocking)
         """
 
         # Properties
         self.dut: str = device_id
-        self.dut_sg: str = SG3Utils(self.dut).sg_map26()
-        self.state: str = SG3Utils(self.dut_sg).test_unit_ready()
+
+        # Use provided SG3Utils or create new one
+        if sg3utils_provider:
+            self.dut_sg: str = sg3utils_provider.sg_map26()
+            self.state: str = sg3utils_provider.test_unit_ready()
+        else:
+            self.dut_sg: str = SG3Utils(self.dut).sg_map26()
+            self.state: str = SG3Utils(self.dut_sg).test_unit_ready()
+
+        # Store providers for later use
+        self._smartctl_provider = smartctl_provider
+        self._sg3utils_provider = sg3utils_provider
         self.wwn: str = "Not Reported"
         self.vendor: str = "Not Reported"
         self.model_number: str = "Not Reported"
@@ -141,6 +155,12 @@ class Device:
 
         # NVMe Namespaces
         self.nvme_namespaces = None
+
+        # NVMe Self-Test
+        self.nvme_self_test_log = None
+        self.nvme_self_test_current_status = None
+        self.nvme_self_test_history = []
+        self.nvme_self_test_failed_count = 0
 
         # S.M.A.R.T
         self.smart_supported: bool = False
@@ -215,6 +235,13 @@ class Device:
         self.ssd_wear_levelling = None
         self.ssd_life_left = None
 
+        # NVMe-specific attributes
+        self.percentage_used = None
+        self.critical_warning = None
+        self.media_errors = None
+        self.data_written_bytes = None
+        self.data_written_tb = None
+
         # Temperatures
         self.current_temperature = None
         self.maximum_temperature = None
@@ -238,9 +265,12 @@ class Device:
         # Flags
         self.flags = list()
 
-        # Tools
+        # Tools - use provided providers or create new instances
         self.seatools = SeaTools(device_id=self.dut_sg)
-        self.smartctl = Smartctl(device_id=self.dut_sg)
+        if self._smartctl_provider:
+            self.smartctl = self._smartctl_provider
+        else:
+            self.smartctl = Smartctl(device_id=self.dut_sg)
 
         # Outputs
         self.smartctl_json = None
@@ -345,6 +375,21 @@ class Device:
         """
 
         # Loop Brands
+        known_brands_list = [
+            "SAMSUNG",
+            "SEAGATE",
+            "WESTERN",
+            "TOSHIBA",
+            "HITACHI",
+            "HGST",
+            "INTEL",
+            "MICRON",
+            "CRUCIAL",
+            "KINGSTON",
+            "SANDISK",
+            "WD",
+            "WDC",
+        ]
         for brand in known_brands_list:
             # If Brand equals Model
             if brand in model:
@@ -478,6 +523,21 @@ class Device:
         """
 
         # Loop Brands
+        known_brands_list = [
+            "SAMSUNG",
+            "SEAGATE",
+            "WESTERN",
+            "TOSHIBA",
+            "HITACHI",
+            "HGST",
+            "INTEL",
+            "MICRON",
+            "CRUCIAL",
+            "KINGSTON",
+            "SANDISK",
+            "WD",
+            "WDC",
+        ]
         for brand in known_brands_list:
             # If Brand in Model Number
             if brand in model:
@@ -742,8 +802,8 @@ class Devices:
     """
 
     # Commands
-    scan_devices_command: str = "sudo smartctl --scan-open -j"
-    scan_devices_alt_command: str = "sudo lsblk -d -b -e 1,7,11,252 -O -J"
+    scan_devices_command: str = "/usr/bin/sudo smartctl --scan-open -j"
+    scan_devices_alt_command: str = "/usr/bin/sudo lsblk -d -b -e 1,7,11,252 -O -J"
 
     def __init__(
         self,
@@ -815,7 +875,18 @@ class Devices:
             raise CommandException(self.scan_command)
 
         # Decode JSON
-        json_output = json.loads(self.scan_command.get_output())
+        output = self.scan_command.get_output()
+        if isinstance(output, bytes):
+            output = output.decode("utf-8")
+        output = output.strip()
+
+        if not output:
+            raise CommandException("smartctl scan returned empty output")
+
+        try:
+            json_output = json.loads(output)
+        except json.JSONDecodeError as e:
+            raise CommandException(f"Failed to parse smartctl JSON: {e}. Output: {output[:200]}")
 
         # Loop Devices
         for device in json_output["devices"]:
@@ -880,10 +951,12 @@ class Devices:
         # Create Threads and Analyse Devices
         with ThreadPoolExecutor() as analysis:
             # Devices List
-            self.devices = list(
+            devices_list = list(
                 # Map List Comprehension
                 analysis.map(self.analyse_device, [drive["name"] for drive in self.scanned])
             )
+            # Filter out False values (failed device analyses)
+            self.devices = [device for device in devices_list if device is not False]
 
         # Return
         return True
@@ -988,7 +1061,7 @@ class ATAProtocol:
         device.vendor: str = str(device.determine_brand_by_model_number(model_name)).upper()
 
         # If Vendor is None
-        if device.vendor == none:
+        if device.vendor is None or device.vendor == "NONE":
             # Determine Vendor
             brand = device.determine_brand_by_model_number_starts_with(model_name)
             if brand is not None:
@@ -1122,6 +1195,121 @@ class ATAProtocol:
         # Get Device Load Cycle Count
         device.load_cycle_count = self.get_smart_attribute_by_id(attribute_id=193, attributes=device.smart_attributes)
 
+        # Extract SSD Percentage Used and Endurance (vendor-specific)
+        # Leverage smartctl's database interpretations and Device Statistics Log
+        if device.is_ssd:
+            # Priority 1: Device Statistics Log - "Percentage Used Endurance Indicator" (most reliable)
+            # This is from the ATA Device Statistics Log, page 7 (Solid State Device Statistics)
+            device_statistics_pages = smartctl.get("ata_device_statistics", {}).get("pages", [])
+            for page in device_statistics_pages:
+                if page.get("name") == "Solid State Device Statistics":
+                    table = page.get("table", [])
+                    for entry in table:
+                        if entry.get("name") == "Percentage Used Endurance Indicator":
+                            pct_used_value = entry.get("value")
+                            if pct_used_value is not None and pct_used_value >= 0:
+                                device.ssd_percentage_used_endurance = pct_used_value
+                                break
+
+            # Priority 2: Attribute 233 - Media_Wearout_Indicator (common across vendors)
+            # Normalized value typically represents remaining life (100 = 0% used, 0 = 100% used)
+            # Some vendors use raw value differently, but normalized is more standardized
+            if device.ssd_percentage_used_endurance is None:
+                attr_233 = self.get_smart_attribute_by_id(attribute_id=233, attributes=device.smart_attributes)
+                if attr_233 is not None:
+                    # Get normalized value (more reliable than raw for this attribute)
+                    attr_233_obj = next((a for a in device.smart_attributes if a.get("id") == 233), None)
+                    if attr_233_obj:
+                        normalized_value = attr_233_obj.get("value")
+                        if normalized_value is not None:
+                            # Normalized value is remaining life percentage (100 = 0% used)
+                            device.ssd_media_wearout_indicator = normalized_value
+                            device.ssd_percentage_used_endurance = 100 - normalized_value
+
+            # Priority 3: Attribute 230 - Some vendors use this for percentage used
+            # Check if normalized value is in reasonable range (0-100)
+            if device.ssd_percentage_used_endurance is None:
+                attr_230 = self.get_smart_attribute_by_id(attribute_id=230, attributes=device.smart_attributes)
+                if attr_230 is not None:
+                    attr_230_obj = next((a for a in device.smart_attributes if a.get("id") == 230), None)
+                    if attr_230_obj:
+                        normalized_value = attr_230_obj.get("value")
+                        # Some vendors report percentage used directly in normalized value
+                        if normalized_value is not None and 0 <= normalized_value <= 100:
+                            device.ssd_percentage_used_endurance = normalized_value
+
+            # Priority 4: Attribute 231 - Wear Leveling Count (some vendors)
+            if device.ssd_percentage_used_endurance is None:
+                wear_leveling = self.get_smart_attribute_by_id(
+                    attribute_id=231, attributes=device.smart_attributes, default=0
+                )
+                if wear_leveling and wear_leveling != 0:
+                    # Some vendors use raw value as percentage used directly
+                    attr_231_obj = next((a for a in device.smart_attributes if a.get("id") == 231), None)
+                    if attr_231_obj:
+                        raw_value = attr_231_obj.get("raw", {}).get("value")
+                        normalized_value = attr_231_obj.get("value")
+                        # Try normalized first (if in 0-100 range), then raw
+                        if normalized_value is not None and 0 <= normalized_value <= 100:
+                            device.ssd_percentage_used_endurance = normalized_value
+                        elif raw_value is not None and 0 <= raw_value <= 100:
+                            device.ssd_percentage_used_endurance = raw_value
+
+            # Priority 5: Attribute 177 - Wear Leveling Count (Samsung) - value is remaining life
+            if device.ssd_percentage_used_endurance is None:
+                samsung_wear = self.get_smart_attribute_by_id(
+                    attribute_id=177, attributes=device.smart_attributes, default=0
+                )
+                if samsung_wear and samsung_wear != 0:
+                    attr_177_obj = next((a for a in device.smart_attributes if a.get("id") == 177), None)
+                    if attr_177_obj:
+                        normalized_value = attr_177_obj.get("value")
+                        if normalized_value is not None and 0 <= normalized_value <= 100:
+                            # Samsung reports remaining life (0-100), calculate used percentage
+                            device.ssd_percentage_used_endurance = 100 - normalized_value
+
+            # Priority 6: Attribute 169 - Remaining Life (some vendors)
+            if device.ssd_percentage_used_endurance is None:
+                remaining_life = self.get_smart_attribute_by_id(
+                    attribute_id=169, attributes=device.smart_attributes, default=0
+                )
+                if remaining_life and remaining_life != 0:
+                    attr_169_obj = next((a for a in device.smart_attributes if a.get("id") == 169), None)
+                    if attr_169_obj:
+                        normalized_value = attr_169_obj.get("value")
+                        if normalized_value is not None and 0 <= normalized_value <= 100:
+                            device.ssd_percentage_used_endurance = 100 - normalized_value
+
+            # Priority 7: Attribute 202 - Percentage Used (some vendors)
+            if device.ssd_percentage_used_endurance is None:
+                pct_used = self.get_smart_attribute_by_id(
+                    attribute_id=202, attributes=device.smart_attributes, default=0
+                )
+                if pct_used and pct_used != 0:
+                    attr_202_obj = next((a for a in device.smart_attributes if a.get("id") == 202), None)
+                    if attr_202_obj:
+                        normalized_value = attr_202_obj.get("value")
+                        raw_value = attr_202_obj.get("raw", {}).get("value")
+                        # Try normalized first, then raw
+                        if normalized_value is not None and 0 <= normalized_value <= 100:
+                            device.ssd_percentage_used_endurance = normalized_value
+                        elif raw_value is not None and 0 <= raw_value <= 100:
+                            device.ssd_percentage_used_endurance = raw_value
+
+            # Priority 8: Attribute 232 - Available Reserved Space (Intel) - can indicate wear
+            # Lower normalized value indicates more wear (100 = 100% reserved = 0% used)
+            if device.ssd_percentage_used_endurance is None:
+                intel_reserved = self.get_smart_attribute_by_id(
+                    attribute_id=232, attributes=device.smart_attributes, default=0
+                )
+                if intel_reserved and intel_reserved != 0:
+                    attr_232_obj = next((a for a in device.smart_attributes if a.get("id") == 232), None)
+                    if attr_232_obj:
+                        normalized_value = attr_232_obj.get("value")
+                        if normalized_value is not None and 0 <= normalized_value <= 100:
+                            # Reserved space remaining, so used = 100 - reserved
+                            device.ssd_percentage_used_endurance = 100 - normalized_value
+
         # Get ATA Device Statistics Pages
         device_statistics_pages = smartctl.get("ata_device_statistics", {}).get("pages", [])
 
@@ -1194,6 +1382,9 @@ class ATAProtocol:
                         # Get Current Temperature
                         device.lowest_average_long_temperature = temperature.get("value", "Not Reported")
 
+        # Get configuration for thresholds
+        config = get_config()
+
         # Set A Grade Default
         device.cdi_grade = "A"
         device.cdi_eligible = True
@@ -1207,7 +1398,7 @@ class ATAProtocol:
             device.cdi_certified = False
 
         # If Maximum Reallocated Sectors exceeded
-        if device.reallocated_sectors >= CDI_MAXIMUM_REALLOCATED_SECTORS:
+        if device.reallocated_sectors >= config.maximum_reallocated_sectors:
             # Set State to Failed
             device.state = f"Fail"
 
@@ -1217,7 +1408,7 @@ class ATAProtocol:
             device.cdi_certified = False
 
         # If Maximum Pending Sectors exceeded
-        if device.pending_reallocated_sectors >= CDI_MAXIMUM_PENDING_SECTORS:
+        if device.pending_reallocated_sectors >= config.maximum_pending_sectors:
             # Set State to Failed
             device.state = f"Fail"
 
@@ -1226,8 +1417,8 @@ class ATAProtocol:
             device.cdi_eligible = False
             device.cdi_certified = False
 
-        # If Maximum Reallocated Sectors exceeded
-        if device.offline_uncorrectable_sectors >= CDI_MAXIMUM_UNCORRECTABLE_ERRORS:
+        # If Maximum Uncorrectable Errors exceeded
+        if device.offline_uncorrectable_sectors >= config.maximum_uncorrectable_errors:
             # Set State to Failed
             device.state = f"Fail"
 
@@ -1256,6 +1447,7 @@ class ATAProtocol:
         worst_value=False,
         threshold=False,
         flags=False,
+        default=0,
     ):
         """
         Get ATA S.M.A.R.T. Attribute by ID
@@ -1265,11 +1457,9 @@ class ATAProtocol:
         @param worst_value: True if user wants the worst value, otherwise false
         @param threshold: True if user wants the threshold value, otherwise false
         @param flags: True if user wants the flags value, otherwise false
+        @param default: Default value to return if attribute not found
         @return: S.M.A.R.T Attribute Value as selected
         """
-
-        # Default
-        default = 0
 
         # If Reported
         if not attributes == "Not Reported":
@@ -1324,7 +1514,7 @@ class NVMeProtocol:
         device.vendor = str(device.determine_brand_by_model_number(model_name)).upper()
 
         # If Vendor is None
-        if device.vendor == none:
+        if device.vendor is None or device.vendor == "NONE":
             # Determine Vendor
             brand = device.determine_brand_by_model_number_starts_with(model_name)
             if brand is not None:
@@ -1389,13 +1579,35 @@ class NVMeProtocol:
         # Else
         else:
             # Prepare Command
-            nvme_list = Command(f"sudo /usr/bin/nvme list -o json {device.dut}")
+            nvme_list = Command(f"/usr/bin/sudo /usr/sbin/nvme list -o json {device.dut}")
             output, errors, return_code = nvme_list.execute()
 
-            output = json.loads(output)
+            if not output or return_code != 0:
+                raise CommandException(f"nvme list failed: return_code={return_code}, errors={errors}")
+
+            try:
+                output = json.loads(output)
+            except json.JSONDecodeError as e:
+                raise CommandException(f"Failed to parse nvme list JSON: {e}. Output: {output[:200]}")
+
+            # Find the device matching our device path (e.g., /dev/nvme1 should match /dev/nvme1n1)
+            device_info = None
+            for dev in output.get("Devices", []):
+                dev_path = dev.get("DevicePath", "")
+                # Match if device path starts with our device (e.g., /dev/nvme1 matches /dev/nvme1n1)
+                if dev_path.startswith(device.dut):
+                    device_info = dev
+                    break
+
+            # Fallback to first device if not found
+            if device_info is None and output.get("Devices"):
+                device_info = output["Devices"][0]
+
+            if device_info is None:
+                raise CommandException(f"Device {device.dut} not found in nvme list output")
 
             # Get Capacities
-            capacity_in_bytes = output["Devices"][0].get("PhysicalSize", 0)
+            capacity_in_bytes = device_info.get("PhysicalSize", 0)
 
             # Capacity in Bytes
             device.bytes = capacity_in_bytes
@@ -1416,8 +1628,8 @@ class NVMeProtocol:
             device.tebibytes = capacity_in_bytes / (1024**4)
 
             # Sectors and Sector Sizes
-            device.sectors = int(output["Devices"][0].get("MaximumLBA", 0))
-            device.logical_sector_size = int(output["Devices"][0].get("SectorSize", 0))
+            device.sectors = int(device_info.get("MaximumLBA", 0))
+            device.logical_sector_size = int(device_info.get("SectorSize", 0))
             device.physical_sector_size = 0
 
         # Get All Namespace Capacities
@@ -1426,13 +1638,21 @@ class NVMeProtocol:
         # If Namespaces are 0
         if device.nvme_namespaces == 0:
             # Get Namespaces
-            get_namespaces = Command(f"sudo /usr/bin/smartctl -x -j {device.dut}n1")
+            get_namespaces = Command(f"/usr/bin/sudo /usr/bin/smartctl -x -j {device.dut}n1")
 
             # Execute
             output, errors, return_code = get_namespaces.execute()
 
             # Decode JSON Output
-            output = json.loads(output)
+            if not output or return_code != 0:
+                # Skip namespace detection if command fails
+                device.nvme_namespaces = {}
+            else:
+                try:
+                    output = json.loads(output)
+                except json.JSONDecodeError:
+                    device.nvme_namespaces = {}
+                    output = {}
 
             # If Namespaces
             if "nvme_namespaces" in output:
@@ -1443,12 +1663,50 @@ class NVMeProtocol:
                 # Get All Namespace Capacities
                 device.nvme_namespaces = {}
 
+        # Extract NVMe Health Information Log data
+        nvme_health = smartctl.get("nvme_smart_health_information_log", {})
+        if nvme_health:
+            # Percentage Used (endurance indicator)
+            device.percentage_used = nvme_health.get("percentage_used")
+            # Critical Warning
+            device.critical_warning = nvme_health.get("critical_warning", 0)
+            # Media Errors
+            device.media_errors = nvme_health.get("media_errors", 0)
+            # Data Units Written (for data written calculation)
+            data_units_written = nvme_health.get("data_units_written", 0)
+            if data_units_written:
+                # Convert from 512-byte data units to bytes, then to TB
+                device.data_written_bytes = data_units_written * 512 * 1000  # 1000 = multiplier in smartctl
+                device.data_written_tb = device.data_written_bytes / (1000**4)
+
         # S.M.A.R.T Support
         device.smart_supported = smartctl.get("smart_support", dict()).get("available", "Not Reported")
         device.smart_enabled = smartctl.get("smart_support", dict()).get("enabled", "Not Reported")
 
         # S.M.A.R.T Status
         device.smart_status = smartctl.get("smart_status", dict()).get("passed", "Not Reported")
+
+        # Extract NVMe Self-Test Log (Log Page 0x06)
+        nvme_self_test_log = smartctl.get("nvme_self_test_log", {})
+        if nvme_self_test_log:
+            # Store self-test log data for scoring
+            device.nvme_self_test_log = nvme_self_test_log
+
+            # Extract current operation status
+            current_op = nvme_self_test_log.get("current_self_test_operation", {})
+            device.nvme_self_test_current_status = current_op.get("string", "No self-test in progress")
+
+            # Extract entries (self-test history)
+            device.nvme_self_test_history = nvme_self_test_log.get("entries", [])
+
+            # Count failed tests
+            failed_count = sum(1 for entry in device.nvme_self_test_history if entry.get("result", 0) == 1)
+            device.nvme_self_test_failed_count = failed_count
+        else:
+            device.nvme_self_test_log = None
+            device.nvme_self_test_current_status = None
+            device.nvme_self_test_history = []
+            device.nvme_self_test_failed_count = 0
 
         # Set A Grade Default
         device.cdi_grade = "A"
@@ -1457,6 +1715,14 @@ class NVMeProtocol:
 
         # If S.M.A.R.T Fail
         if not device.smart_status:
+            # Set F Grade
+            device.cdi_grade = "F"
+            device.cdi_eligible = False
+            device.cdi_certified = False
+
+        # If Self-Test Failed - Drive is bad, set to F Grade
+        # A failed self-test means the drive cannot reliably store/retrieve data
+        if device.nvme_self_test_failed_count > 0:
             # Set F Grade
             device.cdi_grade = "F"
             device.cdi_eligible = False
@@ -1616,6 +1882,9 @@ class SCSIProtocol:
         # Convert Uncorrectable Errors
         device.offline_uncorrectable_sectors: int = int(uncorrectable_errors)
 
+        # Get configuration for thresholds
+        config = get_config()
+
         # Set A Grade Default
         device.cdi_grade: str = "A"
         device.cdi_eligible: bool = True
@@ -1631,8 +1900,8 @@ class SCSIProtocol:
             device.cdi_eligible: bool = False
             device.cdi_certified: bool = False
 
-        # If Maximum Reallocated Sectors exceeded
-        if device.reallocated_sectors >= CDI_MAXIMUM_REALLOCATED_SECTORS:
+        # If Maximum Grown Defects exceeded
+        if device.reallocated_sectors >= config.maximum_grown_defects:
             # Set State to Failed
             device.state: str = f"Fail"
 
@@ -1641,8 +1910,8 @@ class SCSIProtocol:
             device.cdi_eligible: bool = False
             device.cdi_certified: bool = False
 
-        # If Maximum Reallocated Sectors exceeded
-        if device.offline_uncorrectable_sectors >= CDI_MAXIMUM_UNCORRECTABLE_ERRORS:
+        # If Maximum Uncorrected Errors exceeded
+        if device.offline_uncorrectable_sectors >= config.maximum_scsi_uncorrected_errors:
             # Set State to Failed
             device.state: str = f"Fail"
 

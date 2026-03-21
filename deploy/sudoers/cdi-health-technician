@@ -1,0 +1,18 @@
+# Optional profile for running CDI API as non-root service account.
+# Preferred deployment is still root-owned systemd service for cdi-health-api.
+#
+# Install with:
+#   sudo cp deploy/sudoers/cdi-health-technician /etc/sudoers.d/cdi-health-technician
+#   sudo chmod 440 /etc/sudoers.d/cdi-health-technician
+#   sudo visudo -cf /etc/sudoers.d/cdi-health-technician
+#
+# Replace cdiapi with your chosen service account.
+
+User_Alias CDI_API_USER = cdiapi
+Cmnd_Alias CDI_SMARTCTL = /usr/sbin/smartctl *, /usr/bin/smartctl *
+Cmnd_Alias CDI_NVME = /usr/sbin/nvme *, /usr/bin/nvme *
+Cmnd_Alias CDI_SG = /usr/bin/sg_map26 *, /usr/sbin/sg_map26 *, /usr/bin/sg_turs *, /usr/sbin/sg_turs *
+Cmnd_Alias CDI_SEACHEST = /usr/local/bin/openSeaChest_Basics *, /usr/local/bin/openSeaChest_SMART *
+
+Defaults:CDI_API_USER !requiretty
+CDI_API_USER ALL=(root) NOPASSWD: CDI_SMARTCTL, CDI_NVME, CDI_SG, CDI_SEACHEST

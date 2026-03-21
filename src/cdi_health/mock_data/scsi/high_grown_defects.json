@@ -1,0 +1,98 @@
+{
+  "json_format_version": [1, 0],
+  "smartctl": {
+    "version": [7, 4],
+    "svn_revision": "5530",
+    "platform_info": "x86_64-linux-6.6.0",
+    "build_info": "(local build)",
+    "argv": ["smartctl", "--xall", "--json=ov", "/dev/sdg"],
+    "exit_status": 0
+  },
+  "local_time": {
+    "time_t": 1706400000,
+    "asctime": "Mon Jan 28 00:00:00 2026 UTC"
+  },
+  "device": {
+    "name": "/dev/sdg",
+    "info_name": "/dev/sdg",
+    "type": "scsi",
+    "protocol": "SCSI"
+  },
+  "vendor": "HGST",
+  "product": "HUC101212CSS600",
+  "model_name": "HGST HUC101212CSS600",
+  "revision": "A31A",
+  "scsi_version": "SPC-4",
+  "user_capacity": {
+    "blocks": 2344225968,
+    "bytes": 1200243695616
+  },
+  "logical_block_size": 512,
+  "physical_block_size": 512,
+  "rotation_rate": 10000,
+  "form_factor": {
+    "scsi_value": 3,
+    "name": "2.5 inches"
+  },
+  "serial_number": "PDKABC1234",
+  "device_type": {
+    "scsi_value": 0,
+    "name": "disk"
+  },
+  "transport_protocol": {
+    "name": "SAS",
+    "value": 6
+  },
+  "smart_support": {
+    "available": true,
+    "enabled": true
+  },
+  "smart_status": {
+    "passed": true
+  },
+  "temperature": {
+    "current": 38,
+    "drive_trip": 65
+  },
+  "scsi_percentage_used_endurance_indicator": 0,
+  "scsi_grown_defect_list": 150,
+  "scsi_error_counter_log": {
+    "read": {
+      "errors_corrected_by_eccfast": 100,
+      "errors_corrected_by_eccdelayed": 50,
+      "errors_corrected_by_rereads_rewrites": 25,
+      "total_errors_corrected": 175,
+      "correction_algorithm_invocations": 1000,
+      "gigabytes_processed": "98765.432",
+      "total_uncorrected_errors": 15
+    },
+    "write": {
+      "errors_corrected_by_eccfast": 20,
+      "errors_corrected_by_eccdelayed": 10,
+      "errors_corrected_by_rereads_rewrites": 5,
+      "total_errors_corrected": 35,
+      "correction_algorithm_invocations": 500,
+      "gigabytes_processed": "87654.321",
+      "total_uncorrected_errors": 5
+    },
+    "verify": {
+      "errors_corrected_by_eccfast": 10,
+      "errors_corrected_by_eccdelayed": 5,
+      "errors_corrected_by_rereads_rewrites": 2,
+      "total_errors_corrected": 17,
+      "correction_algorithm_invocations": 200,
+      "gigabytes_processed": "5432.109",
+      "total_uncorrected_errors": 3
+    }
+  },
+  "power_on_time": {
+    "hours": 65000,
+    "minutes": 45
+  },
+  "scsi_start_stop_cycle_counter": {
+    "specified_cycle_count_over_device_lifetime": 10000,
+    "accumulated_start_stop_cycles": 800,
+    "specified_load_unload_count_over_device_lifetime": 600000,
+    "accumulated_load_unload_cycles": 8000
+  }
+}

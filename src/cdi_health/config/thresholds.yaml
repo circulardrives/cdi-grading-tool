@@ -1,0 +1,89 @@
+#
+# CDI Health - Default Threshold Configuration
+#
+# This file contains the default thresholds used for CDI grading.
+# You can customize these values by creating your own configuration file
+# and passing it to the CLI with --config.
+#
+
+# SMART Status
+# Expected result for SMART overall health assessment
+smart:
+  expected_result: "Pass"
+  expected_self_test_result: "Pass"
+
+# ATA/SATA Device Thresholds
+ata:
+  # Maximum reallocated sectors before Grade F
+  maximum_reallocated_sectors: 10
+
+  # Maximum pending sectors before Grade F
+  maximum_pending_sectors: 10
+
+  # Maximum uncorrectable errors before Grade F
+  maximum_uncorrectable_errors: 10
+
+# NVMe Device Thresholds
+nvme:
+  # Maximum percentage used endurance (0-100, some drives report >100)
+  maximum_percentage_used: 100
+
+  # Minimum available spare percentage
+  minimum_available_spare: 97
+
+# SCSI/SAS Device Thresholds
+scsi:
+  # Maximum grown defects before Grade F
+  maximum_grown_defects: 10
+
+  # Maximum total uncorrected errors (read + write + verify)
+  maximum_uncorrected_errors: 10
+
+# Temperature Thresholds
+# Note: These are fallbacks if the drive doesn't report its own limits
+temperature:
+  # Maximum operating temperature in Celsius
+  maximum_operating: 60
+
+  # Warning temperature in Celsius
+  warning: 55
+
+# Grading Rules
+# Defines what conditions result in each grade
+grading:
+  # Grade A: Perfect condition
+  grade_a:
+    smart_status: true
+    max_reallocated: 0
+    max_pending: 0
+    max_uncorrectable: 0
+
+  # Grade B: Good condition (reserved for future use)
+  grade_b:
+    smart_status: true
+    max_reallocated: 5
+    max_pending: 5
+    max_uncorrectable: 5
+
+  # Grade C: Fair condition (reserved for future use)
+  grade_c:
+    smart_status: true
+    max_reallocated: 10
+    max_pending: 10
+    max_uncorrectable: 10
+
+  # Grade D: Poor condition (reserved for future use)
+  grade_d:
+    smart_status: true
+    max_reallocated: 50
+    max_pending: 50
+    max_uncorrectable: 50
+
+  # Grade F: Failed - any of these conditions
+  grade_f:
+    conditions:
+      - smart_status_failed
+      - reallocated_exceeds_threshold
+      - pending_exceeds_threshold
+      - uncorrectable_exceeds_threshold
+      - temperature_exceeds_maximum
