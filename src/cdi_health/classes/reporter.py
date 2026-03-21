@@ -26,10 +26,46 @@ Generates detailed HTML and PDF reports for device health.
 from __future__ import annotations
 
 import html
+import json
 from datetime import datetime
 from pathlib import Path
 
 from cdi_health.classes.scoring import HealthScoreCalculator
+
+
+def _read_asset(name: str) -> str:
+    """Load packaged brand asset (palette CSS, logo SVG)."""
+    try:
+        from importlib import resources
+
+        return (resources.files("cdi_health.assets") / name).read_text(encoding="utf-8")
+    except Exception:
+        alt = Path(__file__).resolve().parent.parent / "assets" / name
+        if alt.is_file():
+            return alt.read_text(encoding="utf-8")
+        raise FileNotFoundError(f"CDI asset not found: {name}") from None
+
+
+def _prepare_logo_svg(svg: str) -> str:
+    """Strip XML declaration and tag the logo for styling."""
+    s = svg.strip()
+    if s.startswith("<?xml"):
+        s = "\n".join(s.splitlines()[1:]).strip()
+    return s.replace(
+        "<svg ",
+        '<svg class="brand-logo-svg" role="img" aria-label="Circular Drive Initiative logo" ',
+        1,
+    )
+
+
+# Primary report tabs (left nav), in display order
+_REPORT_TABS: tuple[tuple[str, str], ...] = (
+    ("SATA HDD", "sata-hdd"),
+    ("SAS HDD", "sas-hdd"),
+    ("SATA SSD", "sata-ssd"),
+    ("SAS SSD", "sas-ssd"),
+    ("NVMe SSD", "nvme-ssd"),
+)
 
 
 class ReportGenerator:
@@ -46,13 +82,8 @@ class ReportGenerator:
         :param devices: List of device dictionaries
         :param output_path: Output file path
         """
-        # Enrich devices with health scores
         enriched = self._enrich_devices(devices)
-
-        # Generate HTML content
-        html_content = self._generate_html_content(enriched)
-
-        # Write to file
+        html_content = self._generate_html_content(enriched, default_view="simple")
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html_content)
 
@@ -68,11 +99,8 @@ class ReportGenerator:
         except ImportError:
             raise RuntimeError("PDF generation requires weasyprint. Install with: pip install weasyprint")
 
-        # Generate HTML first
         enriched = self._enrich_devices(devices)
-        html_content = self._generate_html_content(enriched)
-
-        # Convert to PDF
+        html_content = self._generate_html_content(enriched, default_view="advanced")
         HTML(string=html_content).write_pdf(output_path)
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
@@ -86,217 +114,336 @@ class ReportGenerator:
             d["health_status"] = score.status
             d["health_deductions"] = score.deductions
             d["is_certified"] = score.is_certified
+            d["report_category"] = self._device_report_category(d)
             enriched.append(d)
         return enriched
 
-    def _generate_html_content(self, devices: list[dict]) -> str:
-        """Generate HTML content for the report."""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    @staticmethod
+    def _device_report_category(device: dict) -> str:
+        """Map a device to a report tab (SATA HDD, SAS HDD, …)."""
+        proto = device.get("transport_protocol", "")
+        media = device.get("media_type", "")
+        link = str(device.get("interface_link", "")).upper()
 
-        # Count by status
+        if proto == "NVMe":
+            return "NVMe SSD"
+        if proto == "ATA":
+            return "SATA HDD" if media == "HDD" else "SATA SSD"
+        if proto == "SCSI":
+            if "SAS" in link:
+                return "SAS HDD" if media == "HDD" else "SAS SSD"
+            if "SATA" in link:
+                return "SATA HDD" if media == "HDD" else "SATA SSD"
+            return "SAS HDD" if media == "HDD" else "SAS SSD"
+        return "Other"
+
+    def _generate_html_content(self, devices: list[dict], default_view: str = "simple") -> str:
+        """Generate HTML content for the report.
+
+        :param default_view: ``simple`` (grading-focused) or ``advanced`` (full tables + raw fields).
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        dv = default_view if default_view in ("simple", "advanced") else "simple"
+        btn_simple_active = " active" if dv == "simple" else ""
+        btn_adv_active = " active" if dv == "advanced" else ""
+
         healthy = sum(1 for d in devices if d["health_score"] >= 75)
         warning = sum(1 for d in devices if 40 <= d["health_score"] < 75)
         failed = sum(1 for d in devices if d["health_score"] < 40)
 
-        # Generate device rows
-        device_rows = ""
-        for device in devices:
-            device_rows += self._generate_device_row(device)
+        by_cat: dict[str, list[dict]] = {label: [] for label, _ in _REPORT_TABS}
+        by_cat["Other"] = []
+        for d in devices:
+            cat = d.get("report_category", "Other")
+            if cat not in by_cat:
+                by_cat[cat] = []
+            by_cat[cat].append(d)
 
-        # Generate device details
-        device_details = ""
-        for device in devices:
-            device_details += self._generate_device_detail(device)
+        nav_items = []
+        panels = []
+        for idx, (label, slug) in enumerate(_REPORT_TABS):
+            count = len(by_cat.get(label, []))
+            nav_items.append(self._sidebar_link(label, slug, count, active=(idx == 0)))
+            panels.append(self._category_panel(label, slug, by_cat.get(label, []), active=(idx == 0)))
+
+        other_devices = by_cat.get("Other", [])
+        if other_devices:
+            nav_items.append(self._sidebar_link("Other", "other", len(other_devices), active=False))
+            panels.append(self._category_panel("Other", "other", other_devices, active=False))
+
+        nav_html = "\n".join(nav_items)
+        panels_html = "\n".join(panels)
+
+        palette_css = _read_asset("cdi_brand_palette.css")
+        logo_svg = _prepare_logo_svg(_read_asset("CDILogo-01.svg"))
 
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CDI Health Report - {timestamp}</title>
+    <title>CDI Health Report — {html.escape(timestamp)}</title>
     <style>
-        {self._get_css_styles()}
+        {palette_css}
+        {self._get_report_layout_css()}
     </style>
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>CDI Health Report</h1>
-            <p class="subtitle">Storage Device Health Assessment</p>
-            <p class="timestamp">Generated: {timestamp}</p>
-        </header>
-
-        <section class="summary">
-            <h2>Summary</h2>
-            <div class="summary-cards">
-                <div class="card">
-                    <div class="card-value">{len(devices)}</div>
-                    <div class="card-label">Total Devices</div>
+<body data-view="{html.escape(dv)}">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-logo">{logo_svg}</div>
+            <div class="brand-text">
+                <strong>CDI Health</strong>
+                <span>Circular Drive Initiative</span>
+            </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Device categories">
+{nav_html}
+        </nav>
+        <p class="sidebar-foot">Storage health assessment</p>
+    </aside>
+    <main class="main">
+        <header class="hero">
+            <div class="hero-top">
+                <div>
+                    <h1>CDI Health Report</h1>
+                    <p class="hero-sub">Offline-friendly report · drives identified by serial number only</p>
+                    <p class="hero-time">Generated {html.escape(timestamp)}</p>
                 </div>
-                <div class="card card-healthy">
-                    <div class="card-value">{healthy}</div>
-                    <div class="card-label">Healthy</div>
-                </div>
-                <div class="card card-warning">
-                    <div class="card-value">{warning}</div>
-                    <div class="card-label">Warning</div>
-                </div>
-                <div class="card card-failed">
-                    <div class="card-value">{failed}</div>
-                    <div class="card-label">Failed</div>
+                <div class="view-mode-bar" role="toolbar" aria-label="Report layout">
+                    <span class="view-mode-label">View</span>
+                    <button type="button" class="mode-btn{btn_simple_active}" data-view="simple">Simple</button>
+                    <button type="button" class="mode-btn{btn_adv_active}" data-view="advanced">Advanced</button>
                 </div>
             </div>
+        </header>
+
+        <section class="summary-strip" aria-label="Fleet summary">
+            <div class="s-card"><span class="s-label">Total devices</span><span class="s-val">{len(devices)}</span></div>
+            <div class="s-card s-ok"><span class="s-label">Healthy</span><span class="s-val">{healthy}</span></div>
+            <div class="s-card s-warn"><span class="s-label">Warning</span><span class="s-val">{warning}</span></div>
+            <div class="s-card s-bad"><span class="s-label">At risk</span><span class="s-val">{failed}</span></div>
         </section>
 
-        <section class="devices">
-            <h2>Device Overview</h2>
-            <table class="device-table">
-                <thead>
-                    <tr>
-                        <th>Device</th>
-                        <th>Model</th>
-                        <th>Serial</th>
-                        <th>Protocol</th>
-                        <th>Capacity</th>
-                        <th>Score</th>
-                        <th>Grade</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {device_rows}
-                </tbody>
-            </table>
-        </section>
+{panels_html}
 
-        <section class="details">
-            <h2>Device Details</h2>
-            {device_details}
-        </section>
-
-        <footer>
+        <footer class="page-foot">
             <p>Generated by CDI Health Scanner</p>
-            <p>&copy; {datetime.now().year} Circular Drive Initiative</p>
+            <p>© {datetime.now().year} Circular Drive Initiative</p>
         </footer>
-    </div>
+    </main>
+    <script>
+    (function() {{
+      function setView(mode) {{
+        if (mode !== "simple" && mode !== "advanced") mode = "simple";
+        document.body.setAttribute("data-view", mode);
+        document.querySelectorAll(".mode-btn").forEach(function(b) {{
+          b.classList.toggle("active", b.getAttribute("data-view") === mode);
+        }});
+        try {{ localStorage.setItem("cdi-report-view", mode); }} catch (e) {{}}
+      }}
+      document.querySelectorAll(".mode-btn").forEach(function(btn) {{
+        btn.addEventListener("click", function() {{
+          setView(btn.getAttribute("data-view"));
+        }});
+      }});
+      try {{
+        var v = localStorage.getItem("cdi-report-view");
+        if (v === "simple" || v === "advanced") setView(v);
+      }} catch (e) {{}}
+
+      var tabs = document.querySelectorAll(".nav-tabs .tab-btn");
+      var panels = document.querySelectorAll(".tab-panel");
+      function show(slug) {{
+        tabs.forEach(function(t) {{
+          t.classList.toggle("active", t.getAttribute("data-tab") === slug);
+        }});
+        panels.forEach(function(p) {{
+          p.classList.toggle("active", p.getAttribute("data-panel") === slug);
+        }});
+        try {{ localStorage.setItem("cdi-report-tab", slug); }} catch (e) {{}}
+      }}
+      tabs.forEach(function(btn) {{
+        btn.addEventListener("click", function(e) {{
+          e.preventDefault();
+          show(btn.getAttribute("data-tab"));
+        }});
+      }});
+      var initial = "{_REPORT_TABS[0][1]}";
+      try {{
+        var saved = localStorage.getItem("cdi-report-tab");
+        if (saved) initial = saved;
+      }} catch (e) {{}}
+      if (!document.querySelector('.tab-panel[data-panel="' + initial + '"]')) {{
+        initial = "{_REPORT_TABS[0][1]}";
+      }}
+      show(initial);
+    }})();
+    </script>
 </body>
 </html>"""
 
-    def _generate_device_row(self, device: dict) -> str:
-        """Generate HTML table row for a device."""
-        score = device.get("health_score", 0)
-        grade = device.get("health_grade", "F")
-        status = device.get("health_status", "Unknown")
+    def _sidebar_link(self, label: str, slug: str, count: int, active: bool = False) -> str:
+        badge = f'<span class="tab-count">{count}</span>'
+        active_class = " active" if active else ""
+        return f"""            <a href="#" class="tab-btn{active_class}" data-tab="{html.escape(slug)}" data-label="{html.escape(label)}">
+                <span class="tab-title">{html.escape(label)}</span>
+                {badge}
+            </a>"""
 
-        grade_class = f"grade-{grade.lower()}"
-        status_class = "status-healthy" if score >= 75 else ("status-warning" if score >= 40 else "status-failed")
+    @staticmethod
+    def _serial_label(device: dict) -> str:
+        """Primary row key for offline reports (no /dev paths)."""
+        s = str(device.get("serial_number", "") or "").strip()
+        return s if s else "—"
 
-        return f"""
-                    <tr>
-                        <td>{html.escape(str(device.get("dut", "-")))}</td>
-                        <td>{html.escape(str(device.get("model_number", "-")))}</td>
-                        <td>{html.escape(str(device.get("serial_number", "-")))}</td>
-                        <td>{html.escape(str(device.get("transport_protocol", "-")))}</td>
-                        <td>{self._format_capacity(device.get("capacity"))}</td>
-                        <td class="score">{score}</td>
-                        <td class="{grade_class}">{grade}</td>
-                        <td class="{status_class}">{status}</td>
-                    </tr>"""
-
-    def _generate_device_detail(self, device: dict) -> str:
-        """Generate detailed section for a device."""
-        score = device.get("health_score", 0)
-        grade = device.get("health_grade", "F")
-        status = device.get("health_status", "Unknown")
-        deductions = device.get("health_deductions", [])
-
-        grade_class = f"grade-{grade.lower()}"
-
-        # Generate deductions list
-        deductions_html = ""
-        if deductions:
-            deductions_html = "<h4>Health Deductions</h4><ul class='deductions'>"
-            for d in deductions:
-                severity_class = f"severity-{d.severity}"
-                if d.threshold is not None:
-                    msg = f"{d.reason}: {d.value} (threshold: {d.threshold}) [-{d.points} pts]"
+    def _format_deductions_short(self, deductions) -> str:
+        """One-line summary for table cells."""
+        if not deductions:
+            return "—"
+        parts = []
+        for d in deductions:
+            if hasattr(d, "reason") and hasattr(d, "points"):
+                if getattr(d, "threshold", None) is not None:
+                    parts.append(f"{d.reason}: {d.value} (≤{d.threshold}) [-{d.points}]")
                 else:
-                    msg = f"{d.reason} [-{d.points} pts]"
-                deductions_html += f"<li class='{severity_class}'>{html.escape(msg)}</li>"
-            deductions_html += "</ul>"
-        else:
-            deductions_html = "<p class='no-issues'>No health issues detected</p>"
+                    parts.append(f"{d.reason} [-{d.points}]")
+            elif isinstance(d, dict):
+                parts.append(str(d.get("reason", d)))
+            else:
+                parts.append(str(d))
+        return " | ".join(parts)
 
-        # Generate metrics table
-        metrics = self._get_device_metrics(device)
-        metrics_html = "<table class='metrics-table'>"
-        for label, value in metrics:
-            metrics_html += f"<tr><th>{html.escape(label)}</th><td>{html.escape(str(value))}</td></tr>"
-        metrics_html += "</table>"
+    def _advanced_column_specs(self):
+        """Wide table: SMART + device statistics + health (serial first, no device paths)."""
+        cap = self._format_capacity
 
-        return f"""
-            <div class="device-detail">
-                <div class="device-header">
-                    <h3>{html.escape(str(device.get("dut", "Unknown")))}</h3>
-                    <span class="score-badge">{score}</span>
-                    <span class="grade-badge {grade_class}">{grade}</span>
-                </div>
-                <div class="device-info">
-                    <p><strong>Model:</strong> {html.escape(str(device.get("model_number", "-")))}</p>
-                    <p><strong>Serial:</strong> {html.escape(str(device.get("serial_number", "-")))}</p>
-                    <p><strong>Protocol:</strong> {html.escape(str(device.get("transport_protocol", "-")))}</p>
-                    <p><strong>Capacity:</strong> {self._format_capacity(device.get("capacity"))}</p>
-                    <p><strong>CDI Certified:</strong> {"Yes" if device.get("is_certified") else "No"}</p>
-                </div>
-                <div class="device-metrics">
-                    <h4>Device Metrics</h4>
-                    {metrics_html}
-                </div>
-                <div class="device-health">
-                    {deductions_html}
-                </div>
-            </div>"""
+        def serial(d: dict) -> str:
+            return self._serial_label(d)
 
-    def _get_device_metrics(self, device: dict) -> list[tuple[str, str]]:
-        """Get device metrics as label-value pairs."""
-        protocol = device.get("transport_protocol", "").upper()
+        def pending(d: dict):
+            v = d.get("pending_sectors")
+            if v is not None:
+                return v
+            return d.get("pending_reallocated_sectors", "—")
 
-        metrics = [
-            ("SMART Status", device.get("smart_status", "-")),
+        def ocp_json(d: dict) -> str:
+            o = d.get("ocp_smart_log")
+            if not o:
+                return "—"
+            try:
+                return json.dumps(o, ensure_ascii=False, default=str)
+            except TypeError:
+                return str(o)
+
+        return [
+            ("Serial", serial),
+            ("Model", lambda d: d.get("model_number", "—")),
+            ("Vendor", lambda d: d.get("vendor", "—")),
+            ("Protocol", lambda d: d.get("transport_protocol", "—")),
+            ("Interface", lambda d: d.get("interface_link", "—")),
+            ("Media", lambda d: d.get("media_type", "—")),
+            ("Capacity", lambda d: cap(d.get("capacity") or d.get("bytes"))),
+            ("Firmware", lambda d: d.get("firmware_revision", "—")),
+            ("Form factor", lambda d: d.get("form_factor", "—")),
+            ("Rotation rate", lambda d: d.get("rotation_rate", "—")),
+            ("SMART status", lambda d: d.get("smart_status", "—")),
+            ("Power-on hours", lambda d: d.get("power_on_hours", "—")),
+            ("Power cycles", lambda d: d.get("power_cycle_count", "—")),
+            ("Load cycles", lambda d: d.get("load_cycle_count", "—")),
+            ("Start/stop count", lambda d: d.get("start_stop_count", "—")),
+            ("Temperature °C", lambda d: d.get("current_temperature", "—")),
+            ("Highest temp °C", lambda d: d.get("highest_temperature", "—")),
+            ("Max rated temp °C", lambda d: d.get("maximum_temperature", "—")),
+            ("Reallocated sectors", lambda d: d.get("reallocated_sectors", "—")),
+            ("Pending sectors", pending),
+            ("Uncorrectable errors", lambda d: d.get("uncorrectable_errors", "—")),
+            ("Offline uncorrectable", lambda d: d.get("offline_uncorrectable_sectors", "—")),
+            ("SSD % used (ATA)", lambda d: d.get("ssd_percentage_used_endurance", "—")),
+            ("NVMe % used", lambda d: d.get("percentage_used", "—")),
+            ("Avail spare %", lambda d: d.get("available_spare", "—")),
+            ("Critical warning", lambda d: d.get("critical_warning", "—")),
+            ("Media errors", lambda d: d.get("media_errors", "—")),
+            ("Data written (TB)", lambda d: d.get("data_written_tb", "—")),
+            ("NVMe self-test fails", lambda d: d.get("nvme_self_test_failed_count", "—")),
+            ("OCP SMART log (JSON)", ocp_json),
+            ("Health score", lambda d: d.get("health_score", "—")),
+            ("Grade", lambda d: d.get("health_grade", "—")),
+            ("Health status", lambda d: d.get("health_status", "—")),
+            ("CDI certified", lambda d: "Yes" if d.get("is_certified") else "No"),
+            ("Deductions", lambda d: self._format_deductions_short(d.get("health_deductions"))),
         ]
 
-        if protocol == "ATA":
-            metrics.extend(
-                [
-                    ("Reallocated Sectors", device.get("reallocated_sectors", "-")),
-                    ("Pending Sectors", device.get("pending_sectors", "-")),
-                    ("Uncorrectable Errors", device.get("uncorrectable_errors", "-")),
-                    ("Power On Hours", device.get("power_on_hours", "-")),
-                    ("Power Cycles", device.get("power_cycle_count", "-")),
-                ]
-            )
-        elif protocol == "NVME":
-            metrics.extend(
-                [
-                    ("Percentage Used", f"{device.get('percentage_used', '-')}%"),
-                    ("Available Spare", f"{device.get('available_spare', '-')}%"),
-                    ("Media Errors", device.get("media_errors", "-")),
-                    ("Power On Hours", device.get("power_on_hours", "-")),
-                    ("Power Cycles", device.get("power_cycle_count", "-")),
-                ]
-            )
-        elif protocol == "SCSI":
-            metrics.extend(
-                [
-                    ("Grown Defects", device.get("grown_defects", "-")),
-                    ("Uncorrected Errors", device.get("uncorrected_errors", "-")),
-                    ("Power On Hours", device.get("power_on_hours", "-")),
-                ]
-            )
+    def _category_panel(self, title: str, slug: str, devices: list[dict], active: bool = False) -> str:
+        active_class = " active" if active else ""
+        if not devices:
+            body = '<p class="empty-cat">No devices in this category.</p>'
+        else:
+            rows_simple = "".join(self._generate_row_simple(d) for d in devices)
+            specs = self._advanced_column_specs()
+            thead_adv = "".join(f"<th>{html.escape(h)}</th>" for h, _ in specs)
+            rows_adv = "".join(self._generate_row_advanced(d, specs) for d in devices)
+            table_simple = f"""
+            <div class="table-wrap simple-only">
+                <table class="device-table device-table--simple">
+                    <thead>
+                        <tr>
+                            <th>Serial</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Status</th>
+                            <th>Deductions</th>
+                        </tr>
+                    </thead>
+                    <tbody>{rows_simple}</tbody>
+                </table>
+            </div>"""
+            table_adv = f"""
+            <div class="table-wrap advanced-only">
+                <table class="device-table device-table--wide">
+                    <thead><tr>{thead_adv}</tr></thead>
+                    <tbody>{rows_adv}</tbody>
+                </table>
+            </div>"""
+            body = table_simple + table_adv
 
-        metrics.append(("Temperature", f"{device.get('current_temperature', '-')}°C"))
+        return f"""
+        <section class="tab-panel{active_class}" data-panel="{html.escape(slug)}" aria-labelledby="hdr-{html.escape(slug)}">
+            <h2 class="cat-head" id="hdr-{html.escape(slug)}">{html.escape(title)}</h2>
+            <p class="cat-meta">{len(devices)} drive(s) · rows keyed by serial number</p>
+            {body}
+        </section>"""
 
-        return metrics
+    def _generate_row_simple(self, device: dict) -> str:
+        """Grading-focused row (serial + score + deductions summary)."""
+        score = device.get("health_score", 0)
+        grade = device.get("health_grade", "F")
+        status = device.get("health_status", "Unknown")
+        grade_class = f"grade-{grade.lower()}"
+        status_class = "status-healthy" if score >= 75 else ("status-warning" if score >= 40 else "status-failed")
+        ded = self._format_deductions_short(device.get("health_deductions"))
+        return f"""
+                        <tr>
+                            <td class="col-serial">{html.escape(self._serial_label(device))}</td>
+                            <td class="score">{score}</td>
+                            <td class="{grade_class}">{grade}</td>
+                            <td class="{status_class}">{html.escape(str(status))}</td>
+                            <td class="cell-deductions">{html.escape(ded)}</td>
+                        </tr>"""
+
+    def _generate_row_advanced(self, device: dict, specs: list) -> str:
+        """One row: all SMART / statistics columns."""
+        cells = []
+        for _, fn in specs:
+            try:
+                raw = fn(device)
+            except Exception:
+                raw = "—"
+            if raw is None:
+                raw = "—"
+            text = str(raw)
+            cells.append(f'<td class="cell-stat">{html.escape(text)}</td>')
+        return f"<tr>{''.join(cells)}</tr>"
 
     def _format_capacity(self, capacity) -> str:
         """Format capacity in human-readable form."""
@@ -318,259 +465,289 @@ class ReportGenerator:
 
         if value >= 100:
             return f"{value:.0f} {units[unit_idx]}"
-        elif value >= 10:
+        if value >= 10:
             return f"{value:.1f} {units[unit_idx]}"
-        else:
-            return f"{value:.2f} {units[unit_idx]}"
+        return f"{value:.2f} {units[unit_idx]}"
 
-    def _get_css_styles(self) -> str:
-        """Get CSS styles for HTML report."""
+    def _get_report_layout_css(self) -> str:
+        """Layout and components (brand tokens from cdi_brand_palette.css)."""
         return """
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        @import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap");
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f5f5f5;
+          font-family: var(--font);
+          background: var(--bg);
+          color: var(--text);
+          display: flex;
+          min-height: 100vh;
+          line-height: 1.5;
         }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+        .sidebar {
+          width: var(--sidebar-w);
+          flex-shrink: 0;
+          background: var(--surface-sidebar);
+          border-right: 1px solid var(--border);
+          display: flex;
+          flex-direction: column;
+          position: sticky;
+          top: 0;
+          align-self: flex-start;
+          min-height: 100vh;
         }
-
-        header {
-            background: linear-gradient(135deg, #2c3e50, #3498db);
-            color: white;
-            padding: 40px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            text-align: center;
+        .brand {
+          padding: 20px 16px;
+          border-bottom: 1px solid var(--border);
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
         }
-
-        header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
+        .brand-logo {
+          width: 100%;
+          max-width: 200px;
         }
-
-        header .subtitle {
-            font-size: 1.2em;
-            opacity: 0.9;
+        .brand-logo-svg {
+          display: block;
+          width: 100%;
+          height: auto;
         }
-
-        header .timestamp {
-            margin-top: 15px;
-            opacity: 0.8;
-            font-size: 0.9em;
+        .brand-text strong { display: block; font-size: 16px; color: var(--accent-secondary); }
+        .brand-text span { font-size: 12px; color: var(--muted); font-weight: 500; }
+        .nav-tabs {
+          display: flex;
+          flex-direction: column;
+          padding: 12px 8px;
+          gap: 4px;
+          flex: 1;
         }
-
-        section {
-            background: white;
-            border-radius: 10px;
-            padding: 25px;
-            margin-bottom: 25px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        .nav-tabs .tab-btn {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 10px 14px;
+          border-radius: 8px;
+          text-decoration: none;
+          color: var(--muted);
+          font-size: 14px;
+          font-weight: 500;
+          border: 1px solid transparent;
+          transition: background .15s, color .15s, border-color .15s;
         }
-
-        h2 {
-            color: #2c3e50;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
+        .nav-tabs .tab-btn:hover {
+          background: var(--accent-soft);
+          color: var(--text);
         }
-
-        .summary-cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 20px;
+        .nav-tabs .tab-btn.active {
+          background: var(--bg-card);
+          color: var(--accent);
+          border-color: var(--border);
+          box-shadow: 0 1px 3px rgba(0,0,0,.06);
         }
-
-        .card {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            text-align: center;
-            border-left: 4px solid #3498db;
+        .tab-count {
+          font-family: var(--mono);
+          font-size: 12px;
+          background: var(--accent-soft);
+          color: var(--accent);
+          padding: 2px 8px;
+          border-radius: 999px;
         }
-
-        .card-value {
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #2c3e50;
+        .nav-tabs .tab-btn.active .tab-count {
+          background: var(--accent);
+          color: #fff;
         }
-
-        .card-label {
-            color: #666;
-            margin-top: 5px;
+        .sidebar-foot {
+          padding: 16px;
+          font-size: 11px;
+          color: var(--muted);
+          border-top: 1px solid var(--border);
         }
-
-        .card-healthy { border-left-color: #27ae60; }
-        .card-healthy .card-value { color: #27ae60; }
-
-        .card-warning { border-left-color: #f39c12; }
-        .card-warning .card-value { color: #f39c12; }
-
-        .card-failed { border-left-color: #e74c3c; }
-        .card-failed .card-value { color: #e74c3c; }
-
+        .main {
+          flex: 1;
+          padding: 28px 32px 48px;
+          max-width: 1280px;
+        }
+        .hero {
+          margin-bottom: 24px;
+        }
+        .hero h1 {
+          font-size: 28px;
+          font-weight: 700;
+          color: var(--accent-secondary);
+          letter-spacing: -0.02em;
+        }
+        .hero-sub { color: var(--muted); margin-top: 6px; font-size: 15px; }
+        .hero-time { font-size: 13px; color: var(--muted); margin-top: 8px; font-family: var(--mono); }
+        .hero-top {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
+        }
+        .view-mode-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .view-mode-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--muted);
+          text-transform: uppercase;
+          letter-spacing: .06em;
+        }
+        .mode-btn {
+          padding: 8px 16px;
+          border-radius: 8px;
+          border: 1px solid var(--border);
+          background: var(--bg-card);
+          color: var(--text);
+          font-family: var(--font);
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .mode-btn:hover {
+          background: var(--accent-soft);
+          border-color: var(--accent);
+        }
+        .mode-btn.active {
+          background: var(--accent);
+          color: #fff;
+          border-color: var(--accent);
+        }
+        body[data-view="simple"] .advanced-only { display: none !important; }
+        body[data-view="advanced"] .simple-only { display: none !important; }
+        .summary-strip {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 12px;
+          margin-bottom: 28px;
+        }
+        .s-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 14px 16px;
+        }
+        .s-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+        .s-val { display: block; font-size: 26px; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
+        .s-ok .s-val { color: var(--accent); }
+        .s-warn .s-val { color: var(--warn); }
+        .s-bad .s-val { color: var(--danger); }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        .cat-head {
+          font-size: 20px;
+          color: var(--accent-secondary);
+          margin-bottom: 4px;
+          padding-bottom: 8px;
+          border-bottom: 2px solid var(--cdi-green-spruce);
+        }
+        .cat-meta { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+        .empty-cat {
+          padding: 24px;
+          background: var(--bg-card);
+          border: 1px dashed var(--border);
+          border-radius: var(--radius);
+          color: var(--muted);
+          text-align: center;
+        }
+        .table-wrap {
+          overflow-x: auto;
+          background: var(--bg-card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          margin-bottom: 24px;
+        }
+        .table-wrap.inner { margin-bottom: 0; }
         .device-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 13px;
+          font-family: var(--mono);
         }
-
-        .device-table th,
-        .device-table td {
-            padding: 12px 15px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
+        .device-table th, .device-table td {
+          padding: 10px 12px;
+          text-align: left;
+          border-bottom: 1px solid var(--border);
         }
-
         .device-table th {
-            background: #2c3e50;
-            color: white;
-            font-weight: 500;
+          background: var(--accent-soft);
+          color: var(--accent);
+          font-weight: 600;
+          font-family: var(--font);
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: .04em;
         }
-
-        .device-table tr:hover {
-            background: #f5f5f5;
+        .device-table tbody tr:hover { background: rgba(92, 146, 121, 0.12); }
+        .device-table .score { font-weight: 700; }
+        .device-table--wide {
+          font-size: 11px;
+          min-width: max-content;
         }
-
-        .device-table .score {
-            font-weight: bold;
+        .device-table--wide th {
+          white-space: nowrap;
+          position: sticky;
+          top: 0;
+          z-index: 2;
         }
-
-        .grade-a { color: #27ae60; font-weight: bold; }
-        .grade-b { color: #2ecc71; font-weight: bold; }
-        .grade-c { color: #f39c12; font-weight: bold; }
-        .grade-d { color: #e67e22; font-weight: bold; }
-        .grade-f { color: #e74c3c; font-weight: bold; }
-
-        .status-healthy { color: #27ae60; }
-        .status-warning { color: #f39c12; }
-        .status-failed { color: #e74c3c; }
-
-        .device-detail {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
+        .device-table--wide .cell-stat {
+          max-width: 28rem;
+          word-break: break-word;
+          white-space: pre-wrap;
+          vertical-align: top;
         }
-
-        .device-header {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #eee;
+        .device-table--wide td:first-child,
+        .device-table--wide th:first-child {
+          position: sticky;
+          left: 0;
+          z-index: 1;
+          background: var(--bg-card);
+          box-shadow: 2px 0 4px rgba(0,0,0,.06);
         }
-
-        .device-header h3 {
-            flex-grow: 1;
-            color: #2c3e50;
+        .device-table--wide thead th:first-child { z-index: 3; background: var(--accent-soft); }
+        .cell-deductions {
+          max-width: 24rem;
+          font-size: 12px;
+          word-break: break-word;
+          vertical-align: top;
         }
-
-        .score-badge {
-            background: #2c3e50;
-            color: white;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-weight: bold;
+        .col-serial { font-weight: 600; }
+        .grade-a { color: var(--cdi-foliage-green); font-weight: 700; }
+        .grade-b { color: var(--cdi-green-spruce); font-weight: 700; }
+        .grade-c { color: var(--warn); font-weight: 700; }
+        .grade-d { color: #c65f00; font-weight: 700; }
+        .grade-f { color: var(--danger); font-weight: 700; }
+        .status-healthy { color: var(--cdi-simply-green); }
+        .status-warning { color: var(--warn); }
+        .status-failed { color: var(--danger); }
+        .page-foot {
+          margin-top: 40px;
+          padding-top: 20px;
+          border-top: 1px solid var(--border);
+          text-align: center;
+          font-size: 12px;
+          color: var(--muted);
         }
-
-        .grade-badge {
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-weight: bold;
-            color: white;
-        }
-
-        .grade-badge.grade-a { background: #27ae60; }
-        .grade-badge.grade-b { background: #2ecc71; }
-        .grade-badge.grade-c { background: #f39c12; }
-        .grade-badge.grade-d { background: #e67e22; }
-        .grade-badge.grade-f { background: #e74c3c; }
-
-        .device-info {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .device-info p {
-            margin: 5px 0;
-        }
-
-        .device-metrics h4,
-        .device-health h4 {
-            color: #2c3e50;
-            margin-bottom: 10px;
-        }
-
-        .metrics-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .metrics-table th,
-        .metrics-table td {
-            padding: 8px 12px;
-            text-align: left;
-            border-bottom: 1px solid #eee;
-        }
-
-        .metrics-table th {
-            background: #f8f9fa;
-            width: 40%;
-        }
-
-        .deductions {
-            list-style: none;
-            padding: 0;
-        }
-
-        .deductions li {
-            padding: 8px 12px;
-            margin: 5px 0;
-            border-radius: 4px;
-            background: #f8f9fa;
-        }
-
-        .deductions li.severity-warning {
-            background: #fff3cd;
-            border-left: 4px solid #f39c12;
-        }
-
-        .deductions li.severity-critical {
-            background: #f8d7da;
-            border-left: 4px solid #e74c3c;
-        }
-
-        .no-issues {
-            color: #27ae60;
-            padding: 10px;
-            background: #d4edda;
-            border-radius: 4px;
-        }
-
-        footer {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-            font-size: 0.9em;
-        }
-
         @media print {
-            body { background: white; }
-            .container { max-width: 100%; }
-            section { box-shadow: none; border: 1px solid #ddd; }
+          .sidebar { display: none; }
+          .main { max-width: 100%; padding: 16px; }
+          .tab-panel { display: block !important; page-break-before: always; }
+          .tab-panel:first-of-type { page-break-before: auto; }
+        }
+        @media (max-width: 900px) {
+          body { flex-direction: column; }
+          .sidebar {
+            position: relative;
+            width: 100%;
+            min-height: unset;
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: center;
+          }
+          .nav-tabs { flex-direction: row; flex-wrap: wrap; width: 100%; }
         }
         """

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 # Modules
 import json
+import re
 
 # Concurrent Futures
 from concurrent.futures import ThreadPoolExecutor
@@ -133,6 +134,7 @@ class Device:
         self.serial_number: str = "Not Reported"
         self.firmware_revision: str = "Not Reported"
         self.media_type: str = "Not Reported"
+        self.interface_link: str = "Not Reported"
         self.transport_protocol: str = "Not Reported"
         self.transport_version: str = "Not Reported"
         self.transport_revision: str = "Not Reported"
@@ -155,6 +157,9 @@ class Device:
 
         # NVMe Namespaces
         self.nvme_namespaces = None
+
+        # NVMe OCP SMART Additional Log (log page C0h), from nvme-cli when supported
+        self.ocp_smart_log: dict | None = None
 
         # NVMe Self-Test
         self.nvme_self_test_log = None
@@ -1081,6 +1086,8 @@ class ATAProtocol:
             smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0"
         )
 
+        device.interface_link = "SATA"
+
         # Capacity
         capacity_info = smartctl.get("user_capacity", dict())
         capacity_in_bytes: int = int(capacity_info.get("bytes", 0))
@@ -1503,9 +1510,21 @@ class NVMeProtocol:
     # Set Helper
     helper: Helper = Helper()
 
+    @staticmethod
+    def nvme_namespace_block_path(dut: str) -> str:
+        """Resolve block device path for nvme-cli (e.g. /dev/nvme0 -> /dev/nvme0n1)."""
+        if re.match(r"^/dev/nvme\d+n\d+$", dut):
+            return dut
+        m = re.match(r"^(/dev/nvme\d+)$", dut)
+        if m:
+            return f"{m.group(1)}n1"
+        return dut
+
     def __init__(self, device: Device, smartctl: dict):
         # Initialize
         super().__init__()
+
+        device.interface_link = "NVMe"
 
         # Set Properties
         model_name = smartctl.get("model_name", "Not Reported")
@@ -1708,6 +1727,19 @@ class NVMeProtocol:
             device.nvme_self_test_history = []
             device.nvme_self_test_failed_count = 0
 
+        # OCP SMART Additional Log (NVMe log page C0h) — optional; only when drive/firmware supports it
+        device.ocp_smart_log = None
+        ns_path = NVMeProtocol.nvme_namespace_block_path(device.dut)
+        ocp_cmd = Command(f"/usr/bin/sudo /usr/sbin/nvme ocp smart-add-log {ns_path} -o json")
+        ocp_out, _ocp_err, ocp_rc = ocp_cmd.execute()
+        if ocp_out and ocp_rc == 0:
+            try:
+                parsed = json.loads(ocp_out)
+                if isinstance(parsed, dict) and parsed:
+                    device.ocp_smart_log = parsed
+            except json.JSONDecodeError:
+                pass
+
         # Set A Grade Default
         device.cdi_grade = "A"
         device.cdi_eligible = True
@@ -1770,6 +1802,15 @@ class SCSIProtocol:
         device.firmware_revision: str = smartctl.get("scsi_revision", "Not Reported")
         device.transport_revision: str = smartctl.get("scsi_version", "Not Reported")
         device.transport_version: str = smartctl.get("scsi_transport_protocol", "Not Reported")
+        _tp = smartctl.get("transport_protocol")
+        if isinstance(_tp, dict):
+            device.interface_link = str(_tp.get("name", "Not Reported")).strip()
+        elif isinstance(_tp, str) and _tp:
+            device.interface_link = _tp
+        elif device.transport_version not in (None, "Not Reported"):
+            device.interface_link = str(device.transport_version)
+        else:
+            device.interface_link = "Not Reported"
         device.form_factor: str = smartctl.get("form_factor", {}).get("name", "Not Reported")
         device.rotation_rate: str = smartctl.get("rotation_rate", "Not Reported")
         device.power_on_hours: str = smartctl.get("power_on_time", {}).get("hours", 0)

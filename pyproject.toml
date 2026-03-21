@@ -83,6 +83,7 @@ include-package-data = true
 [tool.setuptools.package-data]
 "cdi_health.mock_data" = ["**/*.json"]
 "cdi_health.config" = ["*.yaml"]
+"cdi_health.assets" = ["*.css", "*.svg"]
 
 [tool.setuptools_scm]
 write_to = "src/cdi_health/_version.py"
