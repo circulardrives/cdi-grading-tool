@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -71,7 +71,7 @@ class ThresholdConfig:
     Supports loading from YAML files and provides easy access to threshold values.
     """
 
-    _instance: "ThresholdConfig" = None
+    _instance: ThresholdConfig = None
 
     def __init__(self, config_path: str | Path = None):
         """
@@ -90,7 +90,7 @@ class ThresholdConfig:
             self.load_from_file(config_path)
 
     @classmethod
-    def get_instance(cls) -> "ThresholdConfig":
+    def get_instance(cls) -> ThresholdConfig:
         """
         Get the singleton instance.
 
@@ -106,7 +106,7 @@ class ThresholdConfig:
         cls._instance = None
 
     @classmethod
-    def configure(cls, config_path: str | Path = None) -> "ThresholdConfig":
+    def configure(cls, config_path: str | Path = None) -> ThresholdConfig:
         """
         Configure the global instance with a config file.
 
@@ -134,7 +134,7 @@ class ThresholdConfig:
             return False
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 loaded_config = yaml.safe_load(f)
 
             if loaded_config:

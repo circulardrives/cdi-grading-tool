@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -88,6 +88,6 @@ class TestConstants:
         assert GRADE_C_MIN == 60
         assert GRADE_D_MIN == 40
         assert GRADE_F_MAX == 39
-        
+
         # Verify thresholds are in correct order
         assert GRADE_A_MIN > GRADE_B_MIN > GRADE_C_MIN > GRADE_D_MIN > GRADE_F_MAX

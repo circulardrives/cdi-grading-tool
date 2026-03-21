@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -61,7 +61,7 @@ class MockDataLoader:
         if filepath in self._cache:
             return self._cache[filepath]
 
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             data = json.load(f)
 
         self._cache[filepath] = data
@@ -360,7 +360,7 @@ def create_mock_device(
     json_file: str | Path = None,
     mock_data: dict = None,
     device_id: str = None,
-) -> "Device":
+) -> Device:
     """
     Create a Device instance using mock data instead of real hardware.
 
@@ -409,7 +409,7 @@ def create_mock_device(
     return device
 
 
-def _init_device_defaults(device: "Device") -> None:
+def _init_device_defaults(device: Device) -> None:
     """
     Initialize device properties with default values.
 

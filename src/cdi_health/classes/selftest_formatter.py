@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -36,38 +36,38 @@ class SelfTestFormatter:
     def __init__(self):
         """Initialize formatter with terminal width detection."""
         import os
-        
+
         # Try multiple methods to detect terminal width
         terminal_width = None
-        
+
         # Method 1: Check COLUMNS environment variable
         if "COLUMNS" in os.environ:
             try:
                 terminal_width = int(os.environ["COLUMNS"])
             except (ValueError, TypeError):
                 pass
-        
+
         # Method 2: Use shutil.get_terminal_size()
         if terminal_width is None:
             try:
                 terminal_width = shutil.get_terminal_size().columns
             except (AttributeError, OSError):
                 pass
-        
+
         # Method 3: Fallback to default
         if terminal_width is None:
             terminal_width = 80
-        
+
         # Ensure minimum width
         if terminal_width < 60:
             terminal_width = 60
-        
+
         self.terminal_width = terminal_width
 
     def format_summary(self, results: list[dict]) -> str:
         """
         Format self-test results summary.
-        
+
         :param results: List of self-test result dictionaries
         :return: Formatted table string
         """
@@ -87,7 +87,7 @@ class SelfTestFormatter:
         box_width = min(self.terminal_width - 2, 120)  # Max 120 chars, but respect terminal width
         title = "CDI Self-Test Summary"
         stats_line = f"Devices: {total} | Supported: {supported} | Started: {started} | Completed: {completed} | Passed: {passed} | Failed: {failed} | In Progress: {in_progress}"
-        
+
         # If stats line is too long, wrap it
         if len(stats_line) > box_width - 4:
             # Split stats into two lines
@@ -109,12 +109,12 @@ class SelfTestFormatter:
                 Symbols.BOX_V + stats_line.center(box_width - 2) + Symbols.BOX_V,
                 Symbols.BOX_BL + Symbols.BOX_H * (box_width - 2) + Symbols.BOX_BR,
             ]
-        
+
         header = Colors.bold("\n".join(header_lines))
 
         # Determine if we should use compact layout (for narrow terminals)
         use_compact = self.terminal_width < 100
-        
+
         if use_compact:
             # Compact layout: fewer columns, shorter names
             return self._format_compact_table(results, header)
@@ -133,15 +133,25 @@ class SelfTestFormatter:
         type_width = 12
         result_width = 12
         last_test_width = 12
-        
+
         # Adjust if terminal is narrow
-        total_table_width = device_width + model_width + serial_width + support_width + status_width + type_width + result_width + last_test_width + 9
+        total_table_width = (
+            device_width
+            + model_width
+            + serial_width
+            + support_width
+            + status_width
+            + type_width
+            + result_width
+            + last_test_width
+            + 9
+        )
         if total_table_width > self.terminal_width - 4:
             # Reduce widths to fit
             excess = total_table_width - (self.terminal_width - 4)
             model_width = max(12, model_width - excess // 2)
             serial_width = max(10, serial_width - excess // 2)
-        
+
         # Table header
         table_header = (
             f"┌{'─' * (device_width + 2)}┬{'─' * (model_width + 2)}┬{'─' * (serial_width + 2)}┬{'─' * (support_width + 2)}┬{'─' * (status_width + 2)}┬{'─' * (type_width + 2)}┬{'─' * (result_width + 2)}┬{'─' * (last_test_width + 2)}┐\n"
@@ -155,26 +165,26 @@ class SelfTestFormatter:
             device = result.get("device", "Unknown")
             model = result.get("model", "Unknown")
             if len(model) > model_width:
-                model = model[:model_width-3] + "..."
+                model = model[: model_width - 3] + "..."
             serial = result.get("serial", "Unknown")
             if len(serial) > serial_width:
-                serial = serial[:serial_width-3] + "..."
+                serial = serial[: serial_width - 3] + "..."
             supported = "✓ Yes" if result.get("supported", False) else "✗ No"
             test_status = self._format_test_status(result)
             # Strip ANSI codes for width calculation
             test_status_plain = self._strip_ansi(str(test_status))
             if len(test_status_plain) > status_width:
-                test_status = test_status[:status_width-3] + "..."
+                test_status = test_status[: status_width - 3] + "..."
             test_type = result.get("test_type", "-") or "-"
             if len(test_type) > type_width:
-                test_type = test_type[:type_width-3] + "..."
+                test_type = test_type[: type_width - 3] + "..."
             test_result = self._format_test_result(result)
             test_result_plain = self._strip_ansi(str(test_result))
             if len(test_result_plain) > result_width:
-                test_result = test_result[:result_width-3] + "..."
+                test_result = test_result[: result_width - 3] + "..."
             last_test = self._format_last_test(result)
             if len(str(last_test)) > last_test_width:
-                last_test = str(last_test)[:last_test_width-3] + "..."
+                last_test = str(last_test)[: last_test_width - 3] + "..."
 
             rows.append(
                 f"│ {device:<{device_width}} │ {model:<{model_width}} │ {serial:<{serial_width}} │ {supported:<{support_width}} │ {test_status:<{status_width}} │ {test_type:<{type_width}} │ {test_result:<{result_width}} │ {last_test:<{last_test_width}} │"
@@ -202,7 +212,7 @@ class SelfTestFormatter:
         serial_width = 12 if has_serial_column else 0
         status_width = 16
         result_width = 12
-        
+
         # Table header
         if has_serial_column:
             table_header = (
@@ -223,24 +233,24 @@ class SelfTestFormatter:
             device = result.get("device", "Unknown")
             model = result.get("model", "Unknown")
             if len(model) > model_width:
-                model = model[:model_width-3] + "..."
-            
+                model = model[: model_width - 3] + "..."
+
             serial = result.get("serial", "Unknown")
             if has_serial_column and len(serial) > serial_width:
-                serial = serial[:serial_width-3] + "..."
-            
+                serial = serial[: serial_width - 3] + "..."
+
             # Combine support and test status
             supported = "✓" if result.get("supported", False) else "✗"
             test_status = self._format_test_status(result)
             status_text = f"{supported} {test_status}"
             status_plain = self._strip_ansi(status_text)
             if len(status_plain) > status_width:
-                status_text = status_text[:status_width-3] + "..."
-            
+                status_text = status_text[: status_width - 3] + "..."
+
             test_result = self._format_test_result(result)
             result_plain = self._strip_ansi(str(test_result))
             if len(result_plain) > result_width:
-                test_result = test_result[:result_width-3] + "..."
+                test_result = test_result[: result_width - 3] + "..."
 
             if has_serial_column:
                 rows.append(
@@ -269,8 +279,9 @@ class SelfTestFormatter:
     def _strip_ansi(self, text: str) -> str:
         """Strip ANSI color codes from text for width calculation."""
         import re
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        return ansi_escape.sub('', text)
+
+        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        return ansi_escape.sub("", text)
 
     def _format_test_status(self, result: dict) -> str:
         """Format test status."""
@@ -308,7 +319,7 @@ class SelfTestFormatter:
 def format_selftest_summary(results: list[dict]) -> str:
     """
     Convenience function to format self-test summary.
-    
+
     :param results: List of self-test result dictionaries
     :return: Formatted table string
     """

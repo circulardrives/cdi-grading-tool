@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -32,6 +32,9 @@ from concurrent.futures import ThreadPoolExecutor
 # Data Classes
 from dataclasses import dataclass
 
+# Configuration
+from cdi_health.classes.config import get_config
+
 # Exceptions
 from cdi_health.classes.exceptions import CommandException, DevicesException
 
@@ -43,9 +46,6 @@ from cdi_health.classes.tools import Command, SeaTools, SG3Utils, Smartctl
 
 # Constants
 from cdi_health.constants import Protocol
-
-# Configuration
-from cdi_health.classes.config import get_config
 
 
 class Device:
@@ -234,7 +234,7 @@ class Device:
         self.ssd_media_wearout_indicator = None
         self.ssd_wear_levelling = None
         self.ssd_life_left = None
-        
+
         # NVMe-specific attributes
         self.percentage_used = None
         self.critical_warning = None
@@ -375,7 +375,21 @@ class Device:
         """
 
         # Loop Brands
-        known_brands_list = ["SAMSUNG", "SEAGATE", "WESTERN", "TOSHIBA", "HITACHI", "HGST", "INTEL", "MICRON", "CRUCIAL", "KINGSTON", "SANDISK", "WD", "WDC"]
+        known_brands_list = [
+            "SAMSUNG",
+            "SEAGATE",
+            "WESTERN",
+            "TOSHIBA",
+            "HITACHI",
+            "HGST",
+            "INTEL",
+            "MICRON",
+            "CRUCIAL",
+            "KINGSTON",
+            "SANDISK",
+            "WD",
+            "WDC",
+        ]
         for brand in known_brands_list:
             # If Brand equals Model
             if brand in model:
@@ -509,7 +523,21 @@ class Device:
         """
 
         # Loop Brands
-        known_brands_list = ["SAMSUNG", "SEAGATE", "WESTERN", "TOSHIBA", "HITACHI", "HGST", "INTEL", "MICRON", "CRUCIAL", "KINGSTON", "SANDISK", "WD", "WDC"]
+        known_brands_list = [
+            "SAMSUNG",
+            "SEAGATE",
+            "WESTERN",
+            "TOSHIBA",
+            "HITACHI",
+            "HGST",
+            "INTEL",
+            "MICRON",
+            "CRUCIAL",
+            "KINGSTON",
+            "SANDISK",
+            "WD",
+            "WDC",
+        ]
         for brand in known_brands_list:
             # If Brand in Model Number
             if brand in model:
@@ -851,10 +879,10 @@ class Devices:
         if isinstance(output, bytes):
             output = output.decode("utf-8")
         output = output.strip()
-        
+
         if not output:
             raise CommandException("smartctl scan returned empty output")
-        
+
         try:
             json_output = json.loads(output)
         except json.JSONDecodeError as e:
@@ -1182,7 +1210,7 @@ class ATAProtocol:
                             if pct_used_value is not None and pct_used_value >= 0:
                                 device.ssd_percentage_used_endurance = pct_used_value
                                 break
-            
+
             # Priority 2: Attribute 233 - Media_Wearout_Indicator (common across vendors)
             # Normalized value typically represents remaining life (100 = 0% used, 0 = 100% used)
             # Some vendors use raw value differently, but normalized is more standardized
@@ -1197,7 +1225,7 @@ class ATAProtocol:
                             # Normalized value is remaining life percentage (100 = 0% used)
                             device.ssd_media_wearout_indicator = normalized_value
                             device.ssd_percentage_used_endurance = 100 - normalized_value
-            
+
             # Priority 3: Attribute 230 - Some vendors use this for percentage used
             # Check if normalized value is in reasonable range (0-100)
             if device.ssd_percentage_used_endurance is None:
@@ -1209,10 +1237,12 @@ class ATAProtocol:
                         # Some vendors report percentage used directly in normalized value
                         if normalized_value is not None and 0 <= normalized_value <= 100:
                             device.ssd_percentage_used_endurance = normalized_value
-            
+
             # Priority 4: Attribute 231 - Wear Leveling Count (some vendors)
             if device.ssd_percentage_used_endurance is None:
-                wear_leveling = self.get_smart_attribute_by_id(attribute_id=231, attributes=device.smart_attributes, default=0)
+                wear_leveling = self.get_smart_attribute_by_id(
+                    attribute_id=231, attributes=device.smart_attributes, default=0
+                )
                 if wear_leveling and wear_leveling != 0:
                     # Some vendors use raw value as percentage used directly
                     attr_231_obj = next((a for a in device.smart_attributes if a.get("id") == 231), None)
@@ -1224,10 +1254,12 @@ class ATAProtocol:
                             device.ssd_percentage_used_endurance = normalized_value
                         elif raw_value is not None and 0 <= raw_value <= 100:
                             device.ssd_percentage_used_endurance = raw_value
-            
+
             # Priority 5: Attribute 177 - Wear Leveling Count (Samsung) - value is remaining life
             if device.ssd_percentage_used_endurance is None:
-                samsung_wear = self.get_smart_attribute_by_id(attribute_id=177, attributes=device.smart_attributes, default=0)
+                samsung_wear = self.get_smart_attribute_by_id(
+                    attribute_id=177, attributes=device.smart_attributes, default=0
+                )
                 if samsung_wear and samsung_wear != 0:
                     attr_177_obj = next((a for a in device.smart_attributes if a.get("id") == 177), None)
                     if attr_177_obj:
@@ -1235,20 +1267,24 @@ class ATAProtocol:
                         if normalized_value is not None and 0 <= normalized_value <= 100:
                             # Samsung reports remaining life (0-100), calculate used percentage
                             device.ssd_percentage_used_endurance = 100 - normalized_value
-            
+
             # Priority 6: Attribute 169 - Remaining Life (some vendors)
             if device.ssd_percentage_used_endurance is None:
-                remaining_life = self.get_smart_attribute_by_id(attribute_id=169, attributes=device.smart_attributes, default=0)
+                remaining_life = self.get_smart_attribute_by_id(
+                    attribute_id=169, attributes=device.smart_attributes, default=0
+                )
                 if remaining_life and remaining_life != 0:
                     attr_169_obj = next((a for a in device.smart_attributes if a.get("id") == 169), None)
                     if attr_169_obj:
                         normalized_value = attr_169_obj.get("value")
                         if normalized_value is not None and 0 <= normalized_value <= 100:
                             device.ssd_percentage_used_endurance = 100 - normalized_value
-            
+
             # Priority 7: Attribute 202 - Percentage Used (some vendors)
             if device.ssd_percentage_used_endurance is None:
-                pct_used = self.get_smart_attribute_by_id(attribute_id=202, attributes=device.smart_attributes, default=0)
+                pct_used = self.get_smart_attribute_by_id(
+                    attribute_id=202, attributes=device.smart_attributes, default=0
+                )
                 if pct_used and pct_used != 0:
                     attr_202_obj = next((a for a in device.smart_attributes if a.get("id") == 202), None)
                     if attr_202_obj:
@@ -1259,11 +1295,13 @@ class ATAProtocol:
                             device.ssd_percentage_used_endurance = normalized_value
                         elif raw_value is not None and 0 <= raw_value <= 100:
                             device.ssd_percentage_used_endurance = raw_value
-            
+
             # Priority 8: Attribute 232 - Available Reserved Space (Intel) - can indicate wear
             # Lower normalized value indicates more wear (100 = 100% reserved = 0% used)
             if device.ssd_percentage_used_endurance is None:
-                intel_reserved = self.get_smart_attribute_by_id(attribute_id=232, attributes=device.smart_attributes, default=0)
+                intel_reserved = self.get_smart_attribute_by_id(
+                    attribute_id=232, attributes=device.smart_attributes, default=0
+                )
                 if intel_reserved and intel_reserved != 0:
                     attr_232_obj = next((a for a in device.smart_attributes if a.get("id") == 232), None)
                     if attr_232_obj:
@@ -1546,7 +1584,7 @@ class NVMeProtocol:
 
             if not output or return_code != 0:
                 raise CommandException(f"nvme list failed: return_code={return_code}, errors={errors}")
-            
+
             try:
                 output = json.loads(output)
             except json.JSONDecodeError as e:
@@ -1560,14 +1598,14 @@ class NVMeProtocol:
                 if dev_path.startswith(device.dut):
                     device_info = dev
                     break
-            
+
             # Fallback to first device if not found
             if device_info is None and output.get("Devices"):
                 device_info = output["Devices"][0]
-            
+
             if device_info is None:
                 raise CommandException(f"Device {device.dut} not found in nvme list output")
-            
+
             # Get Capacities
             capacity_in_bytes = device_info.get("PhysicalSize", 0)
 
@@ -1640,7 +1678,7 @@ class NVMeProtocol:
                 # Convert from 512-byte data units to bytes, then to TB
                 device.data_written_bytes = data_units_written * 512 * 1000  # 1000 = multiplier in smartctl
                 device.data_written_tb = device.data_written_bytes / (1000**4)
-        
+
         # S.M.A.R.T Support
         device.smart_supported = smartctl.get("smart_support", dict()).get("available", "Not Reported")
         device.smart_enabled = smartctl.get("smart_support", dict()).get("enabled", "Not Reported")
@@ -1653,14 +1691,14 @@ class NVMeProtocol:
         if nvme_self_test_log:
             # Store self-test log data for scoring
             device.nvme_self_test_log = nvme_self_test_log
-            
+
             # Extract current operation status
             current_op = nvme_self_test_log.get("current_self_test_operation", {})
             device.nvme_self_test_current_status = current_op.get("string", "No self-test in progress")
-            
+
             # Extract entries (self-test history)
             device.nvme_self_test_history = nvme_self_test_log.get("entries", [])
-            
+
             # Count failed tests
             failed_count = sum(1 for entry in device.nvme_self_test_history if entry.get("result", 0) == 1)
             device.nvme_self_test_failed_count = failed_count

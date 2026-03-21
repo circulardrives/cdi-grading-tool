@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -37,14 +37,14 @@ class TestIntegration:
     def test_end_to_end_scan_mock_data(self, mock_data_dir: Path) -> None:
         """Test end-to-end scan with mock data."""
         from cdi_health.cli import scan_devices_mock
-        
+
         devices = scan_devices_mock(str(mock_data_dir))
         assert isinstance(devices, list)
-        
+
         # Skip if no devices found (may happen if mock data structure changed)
         if not devices:
             pytest.skip("No mock devices available - mock data structure may have changed")
-        
+
         # Test scoring
         calculator = HealthScoreCalculator()
         for device in devices:
@@ -56,24 +56,24 @@ class TestIntegration:
 
     def test_formatter_with_scored_devices(self, mock_data_dir: Path) -> None:
         """Test formatters with scored devices."""
-        from cdi_health.cli import scan_devices_mock
         from cdi_health.classes.scoring import HealthScoreCalculator
-        
+        from cdi_health.cli import scan_devices_mock
+
         devices = scan_devices_mock(str(mock_data_dir))
-        
+
         # Skip if no devices found
         if not devices:
             pytest.skip("No mock devices available for testing")
-        
+
         calculator = HealthScoreCalculator()
-        
+
         # Score devices
         scored_devices = []
         for device in devices:
             score = calculator.calculate(device)
             device.update(score.to_dict())
             scored_devices.append(device)
-        
+
         # Test all formatters
         for fmt_name in ["table", "json", "csv", "yaml"]:
             formatter = get_formatter(fmt_name)
@@ -86,24 +86,24 @@ class TestIntegration:
     def test_mock_data_files_exist(self, mock_data_dir: Path) -> None:
         """Test that mock data files exist and are valid JSON."""
         import json
-        
+
         # Check NVMe devices
         nvme_dir = mock_data_dir / "nvme"
         if nvme_dir.exists():
             nvme_files = list(nvme_dir.glob("*.json"))
             assert len(nvme_files) > 0, "No NVMe mock data files found"
-            
+
             for file in nvme_files:
                 with file.open() as f:
                     data = json.load(f)
                     assert isinstance(data, dict)
-        
+
         # Check ATA devices
         ata_dir = mock_data_dir / "ata"
         if ata_dir.exists():
             ata_files = list(ata_dir.glob("*.json"))
             assert len(ata_files) > 0, "No ATA mock data files found"
-            
+
             for file in ata_files:
                 with file.open() as f:
                     data = json.load(f)

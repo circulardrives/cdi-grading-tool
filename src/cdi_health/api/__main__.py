@@ -24,4 +24,3 @@ import sys
 from cdi_health.api.server import main
 
 sys.exit(main())
-

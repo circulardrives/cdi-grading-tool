@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -49,11 +49,12 @@ class TestPrerequisites:
     @patch("shutil.which")
     def test_check_prerequisites_some_missing(self, mock_which: MagicMock) -> None:
         """Test when some prerequisites are missing."""
+
         def side_effect(tool: str) -> str | None:
             if tool == "nvme":
                 return "/usr/bin/nvme"
             return None
-        
+
         mock_which.side_effect = side_effect
         missing = check_prerequisites()
         # Should list missing tools
@@ -66,6 +67,7 @@ class TestScanCommands:
     def test_scan_single_mock(self, mock_data_dir) -> None:
         """Test scanning single mock device."""
         import os
+
         mock_file = os.path.join(mock_data_dir, "nvme", "healthy_ssd.json")
         if os.path.exists(mock_file):
             devices = scan_single_mock(mock_file)
@@ -79,14 +81,12 @@ class TestScanCommands:
 
     @patch("cdi_health.cli.scan_devices_mock")
     @patch("cdi_health.cli.setup_logging")
-    def test_cmd_scan_mock_mode(
-        self, mock_setup_logging: MagicMock, mock_scan: MagicMock
-    ) -> None:
+    def test_cmd_scan_mock_mode(self, mock_setup_logging: MagicMock, mock_scan: MagicMock) -> None:
         """Test scan command with mock data."""
         from argparse import Namespace
-        
+
         mock_scan.return_value = [{"dut": "/dev/nvme0", "model_number": "Test"}]
-        
+
         args = Namespace(
             mock_data="test/path",
             mock_file=None,
@@ -101,7 +101,7 @@ class TestScanCommands:
             no_color=False,
             config=None,
         )
-        
+
         result = cmd_scan(args)
         assert result == 0
 

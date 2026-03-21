@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -21,8 +21,9 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from cdi_health.classes.selftest_formatter import SelfTestFormatter
 
@@ -97,8 +98,9 @@ class TestSelfTestFormatter:
     def test_terminal_width_detection(self, mock_terminal_size) -> None:
         """Test terminal width detection."""
         from unittest.mock import MagicMock
+
         mock_terminal_size.return_value = MagicMock(columns=80)
-        
+
         formatter = SelfTestFormatter()
         assert formatter.terminal_width == 80
 
@@ -106,8 +108,9 @@ class TestSelfTestFormatter:
     def test_terminal_width_fallback(self, mock_terminal_size) -> None:
         """Test terminal width fallback."""
         import os
+
         mock_terminal_size.side_effect = OSError()
-        
+
         # Test with COLUMNS env var
         with patch.dict(os.environ, {"COLUMNS": "120"}):
             formatter = SelfTestFormatter()

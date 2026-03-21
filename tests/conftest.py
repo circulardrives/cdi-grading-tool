@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -44,7 +44,7 @@ def sample_nvme_device(mock_data_dir: Path) -> dict[str, Any]:
         device_file = next(nvme_dir.glob("*.json"), None)
         if device_file is None:
             pytest.skip("No mock NVMe device data available")
-    
+
     with device_file.open() as f:
         return json.load(f)
 
@@ -59,7 +59,7 @@ def sample_ata_device(mock_data_dir: Path) -> dict[str, Any]:
         device_file = next(ata_dir.glob("*.json"), None)
         if device_file is None:
             pytest.skip("No mock ATA device data available")
-    
+
     with device_file.open() as f:
         return json.load(f)
 
@@ -70,6 +70,6 @@ def sample_scsi_device(mock_data_dir: Path) -> dict[str, Any]:
     device_file = mock_data_dir / "scsi" / "healthy_sas.json"
     if not device_file.exists():
         pytest.skip("No mock SCSI device data available")
-    
+
     with device_file.open() as f:
         return json.load(f)

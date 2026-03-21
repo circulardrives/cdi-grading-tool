@@ -74,7 +74,7 @@ from cdi_health.classes.scoring import HealthScoreCalculator
 
 class TestMyFeature:
     """Test cases for my feature."""
-    
+
     def test_basic_functionality(self) -> None:
         """Test basic functionality."""
         calculator = HealthScoreCalculator()

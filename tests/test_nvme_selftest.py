@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -53,13 +53,13 @@ class TestNVMeSelfTest:
         mock_result.return_code = 0
         mock_result.output = b'{"oacs": 16}'  # Bit 4 set (0x10 = 16)
         mock_run.return_value = mock_result
-        
+
         with patch("cdi_health.classes.tools.Command") as mock_command:
             mock_cmd = MagicMock()
             mock_cmd.return_code = 0
             mock_cmd.output = b'{"oacs": 16}'
             mock_command.return_value = mock_cmd
-            
+
             selftest = NVMeSelfTest("/dev/nvme0")
             # Mock the command run
             mock_cmd.run = MagicMock()
@@ -74,7 +74,7 @@ class TestNVMeSelfTest:
         mock_result.returncode = 0
         mock_result.stdout = '{"Devices": [{"DevicePath": "/dev/nvme0n1"}, {"DevicePath": "/dev/nvme1n1"}]}'
         mock_run.return_value = mock_result
-        
+
         devices = NVMeSelfTest.find_nvme_devices()
         assert isinstance(devices, list)
         # Should extract controllers from namespace paths

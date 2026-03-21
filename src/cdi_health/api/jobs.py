@@ -127,4 +127,3 @@ class JobStore:
         with self._lock:
             jobs = list(self._jobs.values())
         return sorted(jobs, key=lambda j: j.created_at, reverse=True)
-

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -96,10 +96,10 @@ class TestSeaTools:
         mock_which.return_value = None
         mock_exists.return_value = True
         mock_access.return_value = True
-        
+
         tools = SeaTools("/dev/sda")
         path = tools.get_seachest_path("openSeaChest_Basics")
-        
+
         # Should check standard paths
         assert mock_exists.called
         # Should return a path (either found or fallback to tool name)
@@ -114,7 +114,7 @@ class TestSeaTools:
         """Test fallback to tool name when not found."""
         mock_which.return_value = None
         mock_exists.return_value = False  # Path doesn't exist
-        
+
         with patch("subprocess.run") as mock_run:
             mock_run.return_value.returncode = 1
             tools = SeaTools("/dev/sda")
@@ -144,7 +144,7 @@ class TestSmartctl:
     def test_get_smartctl_path_fallback(self, mock_which: MagicMock) -> None:
         """Test fallback to 'smartctl' when not found."""
         mock_which.return_value = None
-        
+
         with patch("subprocess.run") as mock_run:
             mock_run.return_value.returncode = 1
             smartctl = Smartctl("/dev/sda")

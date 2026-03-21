@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -66,9 +66,7 @@ class ReportGenerator:
         try:
             from weasyprint import HTML
         except ImportError:
-            raise RuntimeError(
-                "PDF generation requires weasyprint. Install with: pip install weasyprint"
-            )
+            raise RuntimeError("PDF generation requires weasyprint. Install with: pip install weasyprint")
 
         # Generate HTML first
         enriched = self._enrich_devices(devices)
@@ -195,11 +193,11 @@ class ReportGenerator:
 
         return f"""
                     <tr>
-                        <td>{html.escape(str(device.get('dut', '-')))}</td>
-                        <td>{html.escape(str(device.get('model_number', '-')))}</td>
-                        <td>{html.escape(str(device.get('serial_number', '-')))}</td>
-                        <td>{html.escape(str(device.get('transport_protocol', '-')))}</td>
-                        <td>{self._format_capacity(device.get('capacity'))}</td>
+                        <td>{html.escape(str(device.get("dut", "-")))}</td>
+                        <td>{html.escape(str(device.get("model_number", "-")))}</td>
+                        <td>{html.escape(str(device.get("serial_number", "-")))}</td>
+                        <td>{html.escape(str(device.get("transport_protocol", "-")))}</td>
+                        <td>{self._format_capacity(device.get("capacity"))}</td>
                         <td class="score">{score}</td>
                         <td class="{grade_class}">{grade}</td>
                         <td class="{status_class}">{status}</td>
@@ -239,16 +237,16 @@ class ReportGenerator:
         return f"""
             <div class="device-detail">
                 <div class="device-header">
-                    <h3>{html.escape(str(device.get('dut', 'Unknown')))}</h3>
+                    <h3>{html.escape(str(device.get("dut", "Unknown")))}</h3>
                     <span class="score-badge">{score}</span>
                     <span class="grade-badge {grade_class}">{grade}</span>
                 </div>
                 <div class="device-info">
-                    <p><strong>Model:</strong> {html.escape(str(device.get('model_number', '-')))}</p>
-                    <p><strong>Serial:</strong> {html.escape(str(device.get('serial_number', '-')))}</p>
-                    <p><strong>Protocol:</strong> {html.escape(str(device.get('transport_protocol', '-')))}</p>
-                    <p><strong>Capacity:</strong> {self._format_capacity(device.get('capacity'))}</p>
-                    <p><strong>CDI Certified:</strong> {'Yes' if device.get('is_certified') else 'No'}</p>
+                    <p><strong>Model:</strong> {html.escape(str(device.get("model_number", "-")))}</p>
+                    <p><strong>Serial:</strong> {html.escape(str(device.get("serial_number", "-")))}</p>
+                    <p><strong>Protocol:</strong> {html.escape(str(device.get("transport_protocol", "-")))}</p>
+                    <p><strong>Capacity:</strong> {self._format_capacity(device.get("capacity"))}</p>
+                    <p><strong>CDI Certified:</strong> {"Yes" if device.get("is_certified") else "No"}</p>
                 </div>
                 <div class="device-metrics">
                     <h4>Device Metrics</h4>
@@ -268,27 +266,33 @@ class ReportGenerator:
         ]
 
         if protocol == "ATA":
-            metrics.extend([
-                ("Reallocated Sectors", device.get("reallocated_sectors", "-")),
-                ("Pending Sectors", device.get("pending_sectors", "-")),
-                ("Uncorrectable Errors", device.get("uncorrectable_errors", "-")),
-                ("Power On Hours", device.get("power_on_hours", "-")),
-                ("Power Cycles", device.get("power_cycle_count", "-")),
-            ])
+            metrics.extend(
+                [
+                    ("Reallocated Sectors", device.get("reallocated_sectors", "-")),
+                    ("Pending Sectors", device.get("pending_sectors", "-")),
+                    ("Uncorrectable Errors", device.get("uncorrectable_errors", "-")),
+                    ("Power On Hours", device.get("power_on_hours", "-")),
+                    ("Power Cycles", device.get("power_cycle_count", "-")),
+                ]
+            )
         elif protocol == "NVME":
-            metrics.extend([
-                ("Percentage Used", f"{device.get('percentage_used', '-')}%"),
-                ("Available Spare", f"{device.get('available_spare', '-')}%"),
-                ("Media Errors", device.get("media_errors", "-")),
-                ("Power On Hours", device.get("power_on_hours", "-")),
-                ("Power Cycles", device.get("power_cycle_count", "-")),
-            ])
+            metrics.extend(
+                [
+                    ("Percentage Used", f"{device.get('percentage_used', '-')}%"),
+                    ("Available Spare", f"{device.get('available_spare', '-')}%"),
+                    ("Media Errors", device.get("media_errors", "-")),
+                    ("Power On Hours", device.get("power_on_hours", "-")),
+                    ("Power Cycles", device.get("power_cycle_count", "-")),
+                ]
+            )
         elif protocol == "SCSI":
-            metrics.extend([
-                ("Grown Defects", device.get("grown_defects", "-")),
-                ("Uncorrected Errors", device.get("uncorrected_errors", "-")),
-                ("Power On Hours", device.get("power_on_hours", "-")),
-            ])
+            metrics.extend(
+                [
+                    ("Grown Defects", device.get("grown_defects", "-")),
+                    ("Uncorrected Errors", device.get("uncorrected_errors", "-")),
+                    ("Power On Hours", device.get("power_on_hours", "-")),
+                ]
+            )
 
         metrics.append(("Temperature", f"{device.get('current_temperature', '-')}°C"))
 

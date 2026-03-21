@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -156,10 +156,7 @@ class HealthScoreCalculator:
         score = max(0, min(100, score))
 
         # Check for failed self-test - this is a hard failure, drive is bad
-        has_failed_selftest = any(
-            "failed" in d.reason.lower() and "self-test" in d.reason.lower()
-            for d in deductions
-        )
+        has_failed_selftest = any("failed" in d.reason.lower() and "self-test" in d.reason.lower() for d in deductions)
 
         # Determine grade and status
         # If self-test failed, Grade F regardless of score
@@ -174,9 +171,7 @@ class HealthScoreCalculator:
         # Determine certification (Grade A or B)
         # Failed self-test = automatic failure, cannot be certified
         is_certified = (
-            grade in ("A", "B")
-            and not any(d.severity == "critical" for d in deductions)
-            and not has_failed_selftest
+            grade in ("A", "B") and not any(d.severity == "critical" for d in deductions) and not has_failed_selftest
         )
 
         return HealthScore(
@@ -460,7 +455,7 @@ class HealthScoreCalculator:
         # Check current operation
         current_op = self_test_log.get("current_self_test_operation", {})
         op_value = current_op.get("value", 0)
-        
+
         # Check for failed tests in history
         entries = self_test_log.get("entries", [])
         if entries:
@@ -470,7 +465,7 @@ class HealthScoreCalculator:
                 result = entry.get("result", 0)
                 if result == 1:  # Failed
                     recent_failures.append(entry)
-            
+
             if recent_failures:
                 # FAILED SELF-TEST = CRITICAL FAILURE
                 # This should result in Grade F, similar to SMART failure

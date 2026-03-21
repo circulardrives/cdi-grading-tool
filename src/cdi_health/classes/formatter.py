@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -360,16 +360,16 @@ class TableFormatter(BaseFormatter):
     def _format_errors_summary(self, device: dict) -> str:
         """Format error summary: reallocated/pending/uncorrectable/media errors."""
         errors = []
-        
+
         # ATA errors
         reallocated = device.get("reallocated_sectors") or 0
         pending = device.get("pending_sectors") or device.get("pending_reallocated_sectors") or 0
         uncorrectable = device.get("uncorrectable_errors") or device.get("offline_uncorrectable_sectors") or 0
-        
+
         # NVMe errors
         media_errors = device.get("media_errors") or 0
         critical_warning = device.get("critical_warning") or 0
-        
+
         # Build summary
         if reallocated > 0:
             errors.append(f"R:{reallocated}")
@@ -381,7 +381,7 @@ class TableFormatter(BaseFormatter):
             errors.append(f"M:{media_errors}")
         if critical_warning > 0:
             errors.append(f"CW:{critical_warning}")
-        
+
         if errors:
             return ",".join(errors)
         return "0"
@@ -395,7 +395,7 @@ class TableFormatter(BaseFormatter):
                 return f"{int(pct)}%"
             except (ValueError, TypeError):
                 pass
-        
+
         # Try SSD percentage used endurance (SATA SSDs - vendor-specific)
         pct = device.get("ssd_percentage_used_endurance")
         if pct is not None and pct != "Not Reported" and pct != 0:
@@ -405,7 +405,7 @@ class TableFormatter(BaseFormatter):
                     return f"{pct_int}%"
             except (ValueError, TypeError):
                 pass
-        
+
         return "-"
 
     def _format_legend(self) -> str:

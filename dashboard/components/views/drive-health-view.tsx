@@ -228,7 +228,7 @@ export function DriveHealthView(): JSX.Element {
                     >
                       <TableCell className={cn("font-mono text-xs", preferences.denseTableRows && "py-2")}>{toText(item.device.dut)}</TableCell>
                       <TableCell className={cn(preferences.denseTableRows && "py-2")}>{toText(item.device.model_number)}</TableCell>
-                      <TableCell className={cn(preferences.denseTableRows && "py-2")}> 
+                      <TableCell className={cn(preferences.denseTableRows && "py-2")}>
                         <Badge variant={protocolTone(toText(item.device.transport_protocol))}>{toText(item.device.transport_protocol)}</Badge>
                       </TableCell>
                       <TableCell className={cn(preferences.denseTableRows && "py-2")}>{toText(item.device.power_on_hours)}</TableCell>

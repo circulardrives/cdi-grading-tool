@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import os
 
-
 ALLOW_NON_ROOT_ENV = "CDI_HEALTH_API_ALLOW_NON_ROOT"
 API_TOKEN_ENV = "CDI_HEALTH_API_TOKEN"
 

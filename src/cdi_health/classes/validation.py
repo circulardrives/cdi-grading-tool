@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -240,7 +240,7 @@ def _validate_field_types(device: dict, result: ValidationResult) -> None:
 
     for field in numeric_fields:
         if field in device and device[field] is not None:
-            if not isinstance(device[field], (int, float)):
+            if not isinstance(device[field], int | float):
                 result.add_error(field, f"Expected number, got {type(device[field]).__name__}")
 
 
@@ -277,7 +277,7 @@ def _validate_field_values(device: dict, result: ValidationResult) -> None:
     sector_fields = ["reallocated_sectors", "pending_sectors", "uncorrectable_errors"]
     for field in sector_fields:
         if field in device and device[field] is not None:
-            if isinstance(device[field], (int, float)) and device[field] < 0:
+            if isinstance(device[field], int | float) and device[field] < 0:
                 result.add_warning(field, f"{field} is negative ({device[field]})")
 
 

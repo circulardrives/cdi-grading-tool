@@ -108,4 +108,3 @@ class JobResponse(BaseModel):
     completed_at: datetime | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
-

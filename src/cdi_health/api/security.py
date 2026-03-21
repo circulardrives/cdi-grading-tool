@@ -23,7 +23,6 @@ import os
 
 from fastapi import Header, HTTPException, status
 
-
 ALLOW_NON_ROOT_ENV = "CDI_HEALTH_API_ALLOW_NON_ROOT"
 API_TOKEN_ENV = "CDI_HEALTH_API_TOKEN"
 
@@ -71,4 +70,3 @@ def verify_api_token(x_api_token: str | None = Header(default=None, alias="X-API
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API token",
         )
-

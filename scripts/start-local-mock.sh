@@ -133,43 +133,43 @@ trap cleanup EXIT INT TERM
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --mock-data)
-      RUN_MOCK_DATA=1
-      shift
-      ;;
-    --real-data)
-      RUN_MOCK_DATA=0
-      shift
-      ;;
-    --mock-path)
-      if [[ $# -lt 2 ]]; then
-        echo "Missing value for --mock-path" >&2
-        exit 1
-      fi
-      MOCK_DATA_PATH="$2"
-      shift 2
-      ;;
-    --mock-path=*)
-      MOCK_DATA_PATH="${1#*=}"
-      shift
-      ;;
-    --skip-install)
-      SKIP_INSTALL=1
-      shift
-      ;;
-    --kill-existing)
-      KILL_EXISTING_ON_PORT=1
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      usage >&2
+  --mock-data)
+    RUN_MOCK_DATA=1
+    shift
+    ;;
+  --real-data)
+    RUN_MOCK_DATA=0
+    shift
+    ;;
+  --mock-path)
+    if [[ $# -lt 2 ]]; then
+      echo "Missing value for --mock-path" >&2
       exit 1
-      ;;
+    fi
+    MOCK_DATA_PATH="$2"
+    shift 2
+    ;;
+  --mock-path=*)
+    MOCK_DATA_PATH="${1#*=}"
+    shift
+    ;;
+  --skip-install)
+    SKIP_INSTALL=1
+    shift
+    ;;
+  --kill-existing)
+    KILL_EXISTING_ON_PORT=1
+    shift
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "Unknown option: $1" >&2
+    usage >&2
+    exit 1
+    ;;
   esac
 done
 
@@ -199,7 +199,7 @@ else
   echo "Skipping dependency installation (SKIP_INSTALL=1)"
 fi
 
-cat > "$ROOT_DIR/dashboard/.env.local" <<ENV
+cat >"$ROOT_DIR/dashboard/.env.local" <<ENV
 CDI_API_BASE_URL=http://${API_HOST}:${API_PORT}
 CDI_API_TOKEN=${API_TOKEN}
 NEXT_PUBLIC_CDI_USE_MOCK_DATA=${RUN_MOCK_DATA}

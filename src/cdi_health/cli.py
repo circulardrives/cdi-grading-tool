@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -43,7 +43,7 @@ logger = get_logger(__name__)
 
 # Version - try to get from package metadata, fallback to _version
 try:
-    from importlib.metadata import version, PackageNotFoundError
+    from importlib.metadata import PackageNotFoundError, version
 
     try:
         __version__ = version("cdi_health")
@@ -85,31 +85,31 @@ DEFAULT_REQUIRED_TOOLS = ["nvme", "smartctl"]
 def check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) -> list[str]:
     """Check for required tools and return list of missing ones based on device types."""
     missing = []
-    
+
     # Always check default required tools (nvme and smartctl)
     for tool in DEFAULT_REQUIRED_TOOLS:
         if not shutil.which(tool):
             missing.append(tool)
-    
+
     # Check NVMe-specific tools if not ignoring NVMe (already checked above, but keep for clarity)
     if not ignore_nvme:
         for tool in REQUIRED_TOOLS["nvme"]:
             if tool not in DEFAULT_REQUIRED_TOOLS and not shutil.which(tool):
                 missing.append(tool)
-    
+
     # Check ATA tools if not ignoring ATA (smartctl is already checked above)
     if not ignore_ata:
         for tool in REQUIRED_TOOLS["ata"]:
             if tool not in DEFAULT_REQUIRED_TOOLS and not shutil.which(tool):
                 missing.append(tool)
         # Note: openSeaChest tools are optional for ATA devices
-    
+
     # Check SCSI tools if not ignoring SCSI
     if not ignore_scsi:
         for tool in REQUIRED_TOOLS["scsi"]:
             if tool not in DEFAULT_REQUIRED_TOOLS and not shutil.which(tool):
                 missing.append(tool)
-    
+
     return missing
 
 
@@ -149,16 +149,16 @@ def scan_single_mock(mock_file: str) -> list[dict]:
 def cmd_scan(args: Namespace) -> int:
     """
     Execute scan command.
-    
+
     Args:
         args: Parsed command-line arguments
-        
+
     Returns:
         Exit code (0 for success, non-zero for error)
     """
     # Setup logging
     setup_logging(verbose=args.verbose, no_color=args.no_color)
-    
+
     # Auto-detect color support unless explicitly set
     if args.no_color:
         Colors.disable()
@@ -237,16 +237,16 @@ def cmd_scan(args: Namespace) -> int:
 def cmd_report(args: Namespace) -> int:
     """
     Execute report command.
-    
+
     Args:
         args: Parsed command-line arguments
-        
+
     Returns:
         Exit code (0 for success, non-zero for error)
     """
     # Setup logging
     setup_logging(verbose=args.verbose, no_color=args.no_color)
-    
+
     # Determine if using mock mode
     mock_mode = args.mock_data is not None or args.mock_file is not None
 
@@ -322,21 +322,22 @@ def cmd_report(args: Namespace) -> int:
 def cmd_selftest(args: Namespace) -> int:
     """
     Execute self-test command.
-    
+
     Args:
         args: Parsed command-line arguments
-        
+
     Returns:
         Exit code (0 for success, non-zero for error)
     """
     # Setup logging
     setup_logging(verbose=args.verbose, no_color=args.no_color)
-    
-    from cdi_health.classes.nvme_selftest import NVMeSelfTest
-    from cdi_health.classes.exceptions import CommandException
-    from cdi_health.classes.selftest_formatter import format_selftest_summary
-    from cdi_health.classes.devices import Device
+
     import time
+
+    from cdi_health.classes.devices import Device
+    from cdi_health.classes.exceptions import CommandException
+    from cdi_health.classes.nvme_selftest import NVMeSelfTest
+    from cdi_health.classes.selftest_formatter import format_selftest_summary
 
     # If device specified, handle single device operations
     if args.device:
@@ -362,7 +363,7 @@ def cmd_selftest(args: Namespace) -> int:
                 print(f"Self-Test Status for {device_path}:")
                 print(f"  Current Operation: {status['status']}")
                 print(f"  In Progress: {status['in_progress']}")
-                
+
                 entries = status.get("entries", [])
                 if entries:
                     print(f"\nSelf-Test History ({len(entries)} entries):")
@@ -370,18 +371,18 @@ def cmd_selftest(args: Namespace) -> int:
                         print(f"  {i}. {entry.get('type_string', 'Unknown')} - {entry.get('result_string', 'Unknown')}")
                 else:
                     print("  No self-tests logged.")
-                
+
                 last_test = selftest.get_last_test_date()
                 if last_test:
                     days = selftest.days_since_last_test()
                     print(f"\nLast Test: {last_test.strftime('%Y-%m-%d %H:%M:%S')} ({days} days ago)")
                 else:
                     print("\nNo previous self-tests found.")
-                
+
                 failed = selftest.get_failed_tests()
                 if failed:
                     logger.warning("%d failed self-test(s) found in last 90 days", len(failed))
-                
+
                 return 0
 
             # Handle abort request
@@ -400,7 +401,7 @@ def cmd_selftest(args: Namespace) -> int:
             test_type = args.type
             logger.info("Starting %s self-test on %s", test_type, device_path)
             logger.info("Note: Extended tests may take several hours to complete")
-            
+
             if test_type == "short":
                 cmd = selftest.execute_short()
             else:
@@ -446,16 +447,16 @@ def cmd_selftest(args: Namespace) -> int:
     try:
         # Find all NVMe devices that support self-test
         logger.debug("Scanning for NVMe devices...")
-        
+
         supported_devices = NVMeSelfTest.find_supported_devices()
-        
+
         if not supported_devices:
             logger.warning("No NVMe devices found")
             return 0
-        
+
         # Filter to only supported devices
         testable_devices = [d for d in supported_devices if d["supported"]]
-        
+
         if not testable_devices:
             logger.warning("No NVMe devices found that support self-test")
             logger.info("Devices found:")
@@ -470,21 +471,22 @@ def cmd_selftest(args: Namespace) -> int:
         # Get device information for summary
         results = []
         test_type = args.type
-        
+
         # First, check all devices for existing test status/results
         devices_with_tests = []
         devices_without_tests = []
-        
+
         for dev_info in testable_devices:
             device_path = dev_info["device"]
             handler = dev_info["handler"]
-            
+
             # Get device model and serial info
             model = "Unknown"
             serial = "Unknown"
             try:
                 # Try to get model and serial from nvme id-ctrl (try with sudo first)
                 import subprocess
+
                 for use_sudo in [True, False]:
                     sudo_prefix = ["sudo"] if use_sudo else []
                     result = subprocess.run(
@@ -495,6 +497,7 @@ def cmd_selftest(args: Namespace) -> int:
                     )
                     if result.returncode == 0:
                         import json
+
                         data = json.loads(result.stdout)
                         model = data.get("mn", "Unknown").strip() or "Unknown"
                         serial = data.get("sn", "Unknown").strip() or "Unknown"
@@ -508,7 +511,7 @@ def cmd_selftest(args: Namespace) -> int:
                     serial = device.serial_number or "Unknown"
                 except Exception:
                     pass
-            
+
             # Check for existing test status/results
             has_existing_test = False
             result = {
@@ -525,16 +528,16 @@ def cmd_selftest(args: Namespace) -> int:
                 "test_error": None,
                 "last_test_date": None,
             }
-            
+
             try:
                 # Get current status
                 status = handler.get_current_status()
                 result["test_in_progress"] = status.get("in_progress", False)
-                
+
                 # Check for recent test results
                 test_results = handler.get_results()
                 entries = test_results.get("entries", [])
-                
+
                 # If test is in progress, we have an existing test
                 if result["test_in_progress"]:
                     has_existing_test = True
@@ -552,7 +555,7 @@ def cmd_selftest(args: Namespace) -> int:
                             result["test_type"] = "extended"
                         else:
                             result["test_type"] = test_type
-                
+
                 elif entries:
                     # Test has completed - get results from entries
                     latest = entries[0]
@@ -560,7 +563,7 @@ def cmd_selftest(args: Namespace) -> int:
                     result["test_started"] = True
                     result["test_completed"] = True
                     has_existing_test = True
-                    
+
                     # Check result - filter to valid entries first
                     valid_entries = [e for e in entries if e.get("result") in (0, 1, 2) and e.get("type") in (1, 2)]
                     if valid_entries:
@@ -572,21 +575,21 @@ def cmd_selftest(args: Namespace) -> int:
                             result["test_failed"] = True
                         elif result_value == 2:
                             result["test_aborted"] = True
-                    
+
                     # Get last test date
                     last_test = handler.get_last_test_date()
                     if last_test:
                         result["last_test_date"] = last_test.strftime("%Y-%m-%d %H:%M")
-                    
+
             except Exception as e:
                 logger.debug("Could not check status for %s: %s", device_path, e)
-            
+
             # Categorize device based on whether it has existing tests
             if has_existing_test:
                 devices_with_tests.append((dev_info, result))
             else:
                 devices_without_tests.append((dev_info, result))
-        
+
         # If we have existing tests, display those results instead of starting new ones
         if devices_with_tests:
             logger.info("Found %d device(s) with existing test results. Displaying results...", len(devices_with_tests))
@@ -597,25 +600,25 @@ def cmd_selftest(args: Namespace) -> int:
                 logger.info("Displaying status of %d in-progress test(s)...", in_progress_count)
             elif completed_count > 0:
                 logger.info("Displaying results from %d completed test(s)...", completed_count)
-            
+
             for dev_info, result in devices_with_tests:
                 results.append(result)
-        
+
         # Only start new tests if no existing tests found
         if not devices_with_tests and devices_without_tests:
             logger.info("Starting new %s self-tests on %d device(s)...", test_type, len(devices_without_tests))
-            
+
             for dev_info, result in devices_without_tests:
                 device_path = result["device"]
                 handler = dev_info["handler"]
-                
+
                 # Execute self-test
                 try:
                     if test_type == "short":
                         cmd = handler.execute_short()
                     else:
                         cmd = handler.execute_extended()
-                    
+
                     if cmd.return_code == 0:
                         result["test_started"] = True
                         result["test_in_progress"] = True
@@ -633,13 +636,13 @@ def cmd_selftest(args: Namespace) -> int:
                 except Exception as e:
                     result["test_error"] = str(e)
                     logger.error("Error on %s: %s", device_path, e, exc_info=args.verbose)
-                
+
                 results.append(result)
         elif devices_without_tests:
             # Add devices without tests to results (for display)
             for dev_info, result in devices_without_tests:
                 results.append(result)
-        
+
         # Add devices that don't support self-test to results
         for dev_info in supported_devices:
             if not dev_info["supported"]:
@@ -648,6 +651,7 @@ def cmd_selftest(args: Namespace) -> int:
                 try:
                     # Try to get model and serial from nvme id-ctrl (try with sudo first)
                     import subprocess
+
                     for use_sudo in [True, False]:
                         sudo_prefix = ["sudo"] if use_sudo else []
                         result = subprocess.run(
@@ -658,6 +662,7 @@ def cmd_selftest(args: Namespace) -> int:
                         )
                         if result.returncode == 0:
                             import json
+
                             data = json.loads(result.stdout)
                             model = data.get("mn", "Unknown").strip() or "Unknown"
                             serial = data.get("sn", "Unknown").strip() or "Unknown"
@@ -671,27 +676,30 @@ def cmd_selftest(args: Namespace) -> int:
                         serial = device.serial_number or "Unknown"
                     except Exception:
                         pass
-                
-                results.append({
-                    "device": dev_info["device"],
-                    "model": model,
-                    "serial": serial,
-                    "supported": False,
-                    "test_type": "-",
-                    "test_started": False,
-                    "test_completed": False,
-                    "test_passed": False,
-                    "test_failed": False,
-                    "test_in_progress": False,
-                    "test_error": None,
-                    "last_test_date": None,
-                })
-        
+
+                results.append(
+                    {
+                        "device": dev_info["device"],
+                        "model": model,
+                        "serial": serial,
+                        "supported": False,
+                        "test_type": "-",
+                        "test_started": False,
+                        "test_completed": False,
+                        "test_passed": False,
+                        "test_failed": False,
+                        "test_in_progress": False,
+                        "test_error": None,
+                        "last_test_date": None,
+                    }
+                )
+
         # Print summary based on output format
         output_format = getattr(args, "output", "table")
-        
+
         if output_format == "json":
             import json as json_lib
+
             # Remove ANSI codes and format as JSON
             json_results = []
             for r in results:
@@ -715,11 +723,21 @@ def cmd_selftest(args: Namespace) -> int:
         elif output_format == "csv":
             import csv as csv_lib
             import io
+
             output_buffer = io.StringIO()
-            fieldnames = ["device", "model", "serial", "supported", "test_status", "test_result", "test_type", "last_test_date"]
+            fieldnames = [
+                "device",
+                "model",
+                "serial",
+                "supported",
+                "test_status",
+                "test_result",
+                "test_type",
+                "last_test_date",
+            ]
             writer = csv_lib.DictWriter(output_buffer, fieldnames=fieldnames)
             writer.writeheader()
-            
+
             for r in results:
                 # Determine test status
                 if r.get("test_in_progress"):
@@ -734,7 +752,7 @@ def cmd_selftest(args: Namespace) -> int:
                     test_status = "Ready"
                 else:
                     test_status = "Not Supported"
-                
+
                 # Determine test result
                 if r.get("test_passed"):
                     test_result = "Passed"
@@ -744,40 +762,42 @@ def cmd_selftest(args: Namespace) -> int:
                     test_result = "Aborted"
                 else:
                     test_result = "-"
-                
-                writer.writerow({
-                    "device": r.get("device", ""),
-                    "model": r.get("model", "Unknown"),
-                    "serial": r.get("serial", "Unknown"),
-                    "supported": "Yes" if r.get("supported") else "No",
-                    "test_status": test_status,
-                    "test_result": test_result,
-                    "test_type": r.get("test_type", "-"),
-                    "last_test_date": r.get("last_test_date", "-"),
-                })
-            
+
+                writer.writerow(
+                    {
+                        "device": r.get("device", ""),
+                        "model": r.get("model", "Unknown"),
+                        "serial": r.get("serial", "Unknown"),
+                        "supported": "Yes" if r.get("supported") else "No",
+                        "test_status": test_status,
+                        "test_result": test_result,
+                        "test_type": r.get("test_type", "-"),
+                        "last_test_date": r.get("last_test_date", "-"),
+                    }
+                )
+
             print(output_buffer.getvalue())
         else:
             # Default table format
             print(format_selftest_summary(results))
-        
+
         # If wait requested, poll for completion
         if args.wait:
             logger.info("Waiting for self-tests to complete...")
             logger.info("Short tests typically take 1-2 minutes. Extended tests may take hours.")
             logger.info("Checking status every 30 seconds...")
-            
+
             start_time = time.time()
             check_count = 0
-            
+
             while True:
                 time.sleep(30)  # Check every 30 seconds
                 check_count += 1
                 elapsed = int(time.time() - start_time)
-                
+
                 all_complete = True
                 in_progress_count = 0
-                
+
                 for result in results:
                     if result.get("test_started") and not result.get("test_completed"):
                         try:
@@ -786,20 +806,21 @@ def cmd_selftest(args: Namespace) -> int:
                             if not status.get("in_progress", False):
                                 result["test_completed"] = True
                                 result["test_in_progress"] = False
-                                
+
                                 # Check result - try multiple times as log may take time to update
                                 import time
+
                                 time.sleep(1)  # Give log page time to update
-                                
+
                                 test_results = handler.get_results()
                                 entries = test_results.get("entries", [])
-                                
+
                                 # If no entries yet, try once more after a short delay
                                 if not entries:
                                     time.sleep(2)
                                     test_results = handler.get_results()
                                     entries = test_results.get("entries", [])
-                                
+
                                 if entries:
                                     latest = entries[0]
                                     result_value = latest.get("result", -1)
@@ -825,22 +846,27 @@ def cmd_selftest(args: Namespace) -> int:
                     else:
                         # Not started, skip
                         pass
-                
+
                 # Show progress every check
                 if in_progress_count > 0:
-                    logger.info("Still waiting... %d test(s) in progress (elapsed: %dm %ds)", 
-                               in_progress_count, elapsed // 60, elapsed % 60)
-                
+                    logger.info(
+                        "Still waiting... %d test(s) in progress (elapsed: %dm %ds)",
+                        in_progress_count,
+                        elapsed // 60,
+                        elapsed % 60,
+                    )
+
                 if all_complete:
                     logger.info("All self-tests completed!")
                     break
-            
+
             # Print final summary
             # Print final summary based on output format
             output_format = getattr(args, "output", "table")
-            
+
             if output_format == "json":
                 import json as json_lib
+
                 json_results = []
                 for r in results:
                     json_result = {
@@ -863,11 +889,21 @@ def cmd_selftest(args: Namespace) -> int:
             elif output_format == "csv":
                 import csv as csv_lib
                 import io
+
                 output_buffer = io.StringIO()
-                fieldnames = ["device", "model", "serial", "supported", "test_status", "test_result", "test_type", "last_test_date"]
+                fieldnames = [
+                    "device",
+                    "model",
+                    "serial",
+                    "supported",
+                    "test_status",
+                    "test_result",
+                    "test_type",
+                    "last_test_date",
+                ]
                 writer = csv_lib.DictWriter(output_buffer, fieldnames=fieldnames)
                 writer.writeheader()
-                
+
                 for r in results:
                     if r.get("test_in_progress"):
                         test_status = "Running"
@@ -881,7 +917,7 @@ def cmd_selftest(args: Namespace) -> int:
                         test_status = "Ready"
                     else:
                         test_status = "Not Supported"
-                    
+
                     if r.get("test_passed"):
                         test_result = "Passed"
                     elif r.get("test_failed"):
@@ -890,18 +926,20 @@ def cmd_selftest(args: Namespace) -> int:
                         test_result = "Aborted"
                     else:
                         test_result = "-"
-                    
-                    writer.writerow({
-                        "device": r.get("device", ""),
-                        "model": r.get("model", "Unknown"),
-                        "serial": r.get("serial", "Unknown"),
-                        "supported": "Yes" if r.get("supported") else "No",
-                        "test_status": test_status,
-                        "test_result": test_result,
-                        "test_type": r.get("test_type", "-"),
-                        "last_test_date": r.get("last_test_date", "-"),
-                    })
-                
+
+                    writer.writerow(
+                        {
+                            "device": r.get("device", ""),
+                            "model": r.get("model", "Unknown"),
+                            "serial": r.get("serial", "Unknown"),
+                            "supported": "Yes" if r.get("supported") else "No",
+                            "test_status": test_status,
+                            "test_result": test_result,
+                            "test_type": r.get("test_type", "-"),
+                            "last_test_date": r.get("last_test_date", "-"),
+                        }
+                    )
+
                 print("\n" + output_buffer.getvalue())
             else:
                 print("\n" + format_selftest_summary(results))
@@ -910,7 +948,7 @@ def cmd_selftest(args: Namespace) -> int:
             logger.info("Self-tests started. Use 'cdi-health selftest --wait' to wait for completion,")
             logger.info("or run 'cdi-health selftest' again to check status.")
             logger.info("Short tests typically complete in 1-2 minutes.")
-        
+
         return 0
 
     except Exception as e:
@@ -921,10 +959,10 @@ def cmd_selftest(args: Namespace) -> int:
 def cmd_watch(args: Namespace) -> int:
     """
     Execute watch command.
-    
+
     Args:
         args: Parsed command-line arguments
-        
+
     Returns:
         Exit code (0 for success, non-zero for error)
     """
@@ -969,7 +1007,8 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add common arguments to a parser."""
     # Global options
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show detailed information",
     )
@@ -1052,7 +1091,8 @@ Examples:
     )
     add_common_arguments(scan_parser)
     scan_parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         choices=["table", "json", "csv", "yaml"],
         default="table",
         help="Output format (default: table)",
@@ -1141,7 +1181,8 @@ Examples:
         help="Wait for self-test to complete (extended tests may take hours)",
     )
     selftest_parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         choices=["table", "json", "csv"],
         default="table",
         help="Output format (default: table)",

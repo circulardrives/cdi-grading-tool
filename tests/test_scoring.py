@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -41,9 +41,9 @@ class TestHealthScoreCalculator:
             "temperature": 30,
             "percentage_used": 0,
         }
-        
+
         result = calculator.calculate(device)
-        
+
         assert result.score == 100
         assert result.grade == "A"
         assert result.status == "Excellent"
@@ -57,9 +57,9 @@ class TestHealthScoreCalculator:
             "transport_protocol": "NVME",  # Must use transport_protocol
             "smart_status": "FAILED",
         }
-        
+
         result = calculator.calculate(device)
-        
+
         # Failed SMART deducts 50 points, so score is 50 (not 0)
         # But it should still be Grade D or F due to critical failure
         assert result.score == 50  # 100 - 50 = 50
@@ -89,9 +89,9 @@ class TestHealthScoreCalculator:
                 ],
             },
         }
-        
+
         result = calculator.calculate(device)
-        
+
         # Failed self-test should result in score 0 and Grade F
         assert result.score == 0
         assert result.grade == "F"
@@ -107,9 +107,9 @@ class TestHealthScoreCalculator:
             "smart_status": "PASSED",
             "reallocated_sectors": 10,
         }
-        
+
         result = calculator.calculate(device)
-        
+
         # Reallocated sectors should cause deductions
         # 10 sectors * 5 points = 50 points deduction (capped at 50)
         assert result.score < 100
@@ -118,7 +118,7 @@ class TestHealthScoreCalculator:
     def test_grade_thresholds(self) -> None:
         """Test grade assignment at threshold boundaries."""
         calculator = HealthScoreCalculator()
-        
+
         # Test A grade (90-100) - need to ensure score is in range
         device_a = {
             "transport_protocol": "ATA",  # Must use transport_protocol
@@ -128,7 +128,7 @@ class TestHealthScoreCalculator:
         result_a = calculator.calculate(device_a)
         assert result_a.grade == "A"
         assert result_a.score == 95
-        
+
         # Test B grade (75-89) - need enough deductions
         device_b = {
             "transport_protocol": "ATA",  # Must use transport_protocol

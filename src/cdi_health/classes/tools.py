@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Circular Drive Initiative.
+# Copyright (c) 2026 Circular Drive Initiative.
 #
 # This file is part of CDI Health.
 # See https://github.com/circulardrives/cdi-grading-tool/ for further info.
@@ -184,22 +184,22 @@ class Command:
         """
         # Run the command
         self.run()
-        
+
         # Get output and decode if bytes
         output = self.get_output()
         if isinstance(output, bytes):
             output = output.decode("utf-8")
         output = output.strip()
-        
+
         # Get errors and decode if bytes
         errors = self.get_errors()
         if isinstance(errors, bytes):
             errors = errors.decode("utf-8")
         errors = errors.strip() if errors else ""
-        
+
         # Get return code
         return_code = self.get_return_code()
-        
+
         return output, errors, return_code
 
     def get_duration(self):
@@ -277,45 +277,46 @@ class SeaTools:
     def get_seachest_path(self, tool_name: str) -> str:
         """
         Get the full path of SeaChest tools.
-        
+
         Searches in the following order:
         1. PATH (via shutil.which) - works for deb-installed packages in /usr/local/bin
         2. Standard installation paths (/usr/local/bin, /usr/bin)
         3. whereis command
         4. Returns tool name as fallback (will use from PATH at runtime)
-        
+
         Args:
             tool_name: Name of the tool (e.g., "openSeaChest_Basics", "openSeaChest_SMART")
-            
+
         Returns:
             Full path of the tool or tool name if not found
         """
         import os
+
         from cdi_health.logger import get_logger
-        
+
         logger = get_logger(__name__)
-        
+
         # Standard installation paths (deb packages install to /usr/local/bin)
         standard_paths = [
             "/usr/local/bin",  # Default deb installation path
-            "/usr/bin",        # Alternative installation path
+            "/usr/bin",  # Alternative installation path
             "/opt/seagate/openSeaChest/bin",  # Custom installation path
         ]
-        
+
         try:
             # Method 1: Check PATH using shutil.which (works for deb-installed packages)
             path = shutil.which(tool_name)
             if path:
                 logger.debug("Found %s via PATH: %s", tool_name, path)
                 return path
-            
+
             # Method 2: Check standard installation paths
             for base_path in standard_paths:
                 full_path = os.path.join(base_path, tool_name)
                 if os.path.exists(full_path) and os.access(full_path, os.X_OK):
                     logger.debug("Found %s in standard path: %s", tool_name, full_path)
                     return full_path
-            
+
             # Method 3: Try whereis command as fallback
             result = subprocess.run(
                 ["whereis", tool_name],
@@ -323,7 +324,7 @@ class SeaTools:
                 text=True,
                 timeout=5,
             )
-            
+
             if result.returncode == 0:
                 paths = result.stdout.strip().split()
                 for path in paths[1:]:  # Skip tool name, check paths
@@ -395,44 +396,45 @@ class SG3Utils:
     def get_sg3utils_path(self, tool_name: str) -> str:
         """
         Get the full path of sg3_utils tools.
-        
+
         Searches in the following order:
         1. PATH (via shutil.which) - works for package-installed tools
         2. Standard installation paths (/usr/bin, /usr/sbin)
         3. whereis command
         4. Returns tool name as fallback (will use from PATH at runtime)
-        
+
         Args:
             tool_name: Name of the tool (e.g., "sg_map26", "sg_turs")
-            
+
         Returns:
             Full path of the tool or tool name if not found
         """
         import os
+
         from cdi_health.logger import get_logger
-        
+
         logger = get_logger(__name__)
-        
+
         # Standard installation paths for sg3-utils
         standard_paths = [
-            "/usr/bin",   # Standard deb installation path
+            "/usr/bin",  # Standard deb installation path
             "/usr/sbin",  # Alternative installation path
         ]
-        
+
         try:
             # Method 1: Check PATH using shutil.which
             path = shutil.which(tool_name)
             if path:
                 logger.debug("Found %s via PATH: %s", tool_name, path)
                 return path
-            
+
             # Method 2: Check standard installation paths
             for base_path in standard_paths:
                 full_path = os.path.join(base_path, tool_name)
                 if os.path.exists(full_path) and os.access(full_path, os.X_OK):
                     logger.debug("Found %s in standard path: %s", tool_name, full_path)
                     return full_path
-            
+
             # Method 3: Try whereis command as fallback
             result = subprocess.run(
                 ["whereis", tool_name],
@@ -440,7 +442,7 @@ class SG3Utils:
                 text=True,
                 timeout=5,
             )
-            
+
             if result.returncode == 0:
                 paths = result.stdout.strip().split()
                 for path in paths[1:]:  # Skip tool name, check paths

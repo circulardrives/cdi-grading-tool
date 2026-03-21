@@ -49,7 +49,7 @@ def _serialize(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
-    if isinstance(value, (str, int, float, bool)) or value is None:
+    if isinstance(value, str | int | float | bool) or value is None:
         return value
     return str(value)
 
@@ -374,4 +374,3 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
         "format": request.format,
         "devices_count": len(devices),
     }
-
