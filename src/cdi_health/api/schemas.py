@@ -53,7 +53,7 @@ class ScanResponse(BaseModel):
 class ReportRequest(BaseModel):
     """Report generation request payload."""
 
-    format: Literal["html", "pdf"] = "html"
+    format: Literal["html", "pdf", "csv"] = "html"
     output_file: str | None = None
     ignore_ata: bool = False
     ignore_nvme: bool = False
@@ -67,7 +67,7 @@ class ReportRequest(BaseModel):
 class ReportResponse(BaseModel):
     generated_at: datetime
     output_file: str
-    format: Literal["html", "pdf"]
+    format: Literal["html", "pdf", "csv"]
     devices_count: int
 
 

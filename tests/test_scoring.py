@@ -100,7 +100,7 @@ class TestHealthScoreCalculator:
         assert any("self-test" in d.reason.lower() and "failed" in d.reason.lower() for d in result.deductions)
 
     def test_calculate_reallocated_sectors(self) -> None:
-        """Test scoring with reallocated sectors."""
+        """Test scoring with reallocated sectors at HDD failure threshold (10)."""
         calculator = HealthScoreCalculator()
         device = {
             "transport_protocol": "ATA",  # Must be uppercase and use transport_protocol
@@ -110,32 +110,31 @@ class TestHealthScoreCalculator:
 
         result = calculator.calculate(device)
 
-        # Reallocated sectors should cause deductions
-        # 10 sectors * 5 points = 50 points deduction (capped at 50)
-        assert result.score < 100
+        # 10 sectors => max defect deduction (10 pts), critical
+        assert result.score == 90
         assert any("reallocated" in d.reason.lower() for d in result.deductions)
+        assert any(d.severity == "critical" and d.points == 10 for d in result.deductions)
 
     def test_grade_thresholds(self) -> None:
-        """Test grade assignment at threshold boundaries."""
+        """Test grade assignment at HDD sector defect boundaries."""
         calculator = HealthScoreCalculator()
 
-        # Test A grade (90-100) - need to ensure score is in range
+        # At or below concern threshold (2): no deduction
         device_a = {
-            "transport_protocol": "ATA",  # Must use transport_protocol
+            "transport_protocol": "ATA",
             "smart_status": "PASSED",
-            "reallocated_sectors": 1,  # -5 points = 95 (A grade)
+            "reallocated_sectors": 1,
         }
         result_a = calculator.calculate(device_a)
         assert result_a.grade == "A"
-        assert result_a.score == 95
+        assert result_a.score == 100
 
-        # Test B grade (75-89) - need enough deductions
+        # Mid range: 5 reallocated => (5-2)/(10-2)*10 ≈ 3.75 -> 4 pts
         device_b = {
-            "transport_protocol": "ATA",  # Must use transport_protocol
+            "transport_protocol": "ATA",
             "smart_status": "PASSED",
-            "reallocated_sectors": 5,  # -25 points = 75 (B grade)
+            "reallocated_sectors": 5,
         }
         result_b = calculator.calculate(device_b)
-        # Score should be 75, which is exactly at B threshold
-        assert result_b.score == 75
-        assert result_b.grade == "B"
+        assert result_b.score == 96
+        assert result_b.grade == "A"

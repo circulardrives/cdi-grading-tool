@@ -61,6 +61,10 @@ DEFAULT_THRESHOLDS = {
         "maximum_operating": 60,
         "warning": 55,
     },
+    "grading": {
+        "hdd_sector_concern_threshold": 2,
+        "hdd_sector_defect_max_deduction_points": 10,
+    },
 }
 
 
@@ -263,6 +267,16 @@ class ThresholdConfig:
     def warning_temperature(self) -> int:
         """Warning temperature in Celsius."""
         return self.get("temperature", "warning", default=55)
+
+    @property
+    def hdd_sector_concern_threshold(self) -> int:
+        """Reallocated/pending/grown counts at or below this value incur no score deduction."""
+        return self.get("grading", "hdd_sector_concern_threshold", default=2)
+
+    @property
+    def hdd_sector_defect_max_deduction_points(self) -> int:
+        """Maximum score points deducted per defect type at failure threshold (e.g. 10 sectors)."""
+        return self.get("grading", "hdd_sector_defect_max_deduction_points", default=10)
 
     def to_dict(self) -> dict:
         """

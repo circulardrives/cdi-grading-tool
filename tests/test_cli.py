@@ -27,6 +27,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cdi_health.cli import (
+    _filter_devices_by_path,
     check_prerequisites,
     cmd_scan,
     create_parser,
@@ -94,8 +95,7 @@ class TestScanCommands:
             ignore_nvme=False,
             ignore_scsi=False,
             output="table",
-            all=False,
-            details=False,
+            details=True,
             device=None,
             verbose=False,
             no_color=False,
@@ -104,6 +104,22 @@ class TestScanCommands:
 
         result = cmd_scan(args)
         assert result == 0
+
+
+class TestFilterDevicesByPath:
+    """Test device path filtering for ``scan --device``."""
+
+    def test_exact_match(self) -> None:
+        devs = [{"dut": "/dev/sda"}, {"dut": "/dev/sdb"}]
+        assert _filter_devices_by_path(devs, "/dev/sda") == [{"dut": "/dev/sda"}]
+
+    def test_nvme_controller_to_namespace(self) -> None:
+        devs = [{"dut": "/dev/nvme0"}]
+        assert _filter_devices_by_path(devs, "/dev/nvme0n1") == [{"dut": "/dev/nvme0"}]
+
+    def test_nvme_namespace_to_controller(self) -> None:
+        devs = [{"dut": "/dev/nvme0n1"}]
+        assert _filter_devices_by_path(devs, "/dev/nvme0") == [{"dut": "/dev/nvme0n1"}]
 
 
 class TestCLIParser:

@@ -365,6 +365,8 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
     reporter = ReportGenerator()
     if request.format == "html":
         reporter.generate_html(devices, str(output_path))
+    elif request.format == "csv":
+        reporter.generate_csv(devices, str(output_path))
     else:
         reporter.generate_pdf(devices, str(output_path))
 

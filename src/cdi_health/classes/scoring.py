@@ -87,10 +87,11 @@ class HealthScoreCalculator:
     - Base Score: 100
     - SMART Status Failed: -50 points (results in Grade F)
     - Failed Self-Test: -50 points (results in Grade F - drive is bad)
-    - Per Reallocated Sector: -5 points (up to threshold)
-    - Per Pending Sector: -5 points (up to threshold)
-    - Per Uncorrectable Error: -5 points (up to threshold)
-    - Exceeds Any Threshold: -25 points (triggers Grade F)
+    - SATA/SAS HDD — reallocated, pending, and SCSI grown defects: no deduction at or below
+      the concern threshold (default 2); above that, linear deduction up to a cap (default 10
+      points) when the count reaches the failure threshold (10 sectors/defects)
+    - Per Uncorrectable Error (ATA offline/uncorrectable, SCSI uncorrected): -5 points (up to threshold)
+    - Exceeds uncorrectable threshold: -25 points (critical)
     - Temperature Warning: -5 points
     - Temperature Critical: -15 points
     """
@@ -218,55 +219,73 @@ class HealthScoreCalculator:
 
         return deductions
 
+    def _deduction_hdd_sector_defect(
+        self,
+        count: int,
+        *,
+        failure_threshold: int,
+        reason: str,
+        field: str,
+    ) -> ScoreDeduction | None:
+        """
+        SATA/SAS HDD-style defect counts: no deduction at or below concern threshold;
+        linear scale to max deduction points at failure threshold.
+        """
+        concern = self.config.hdd_sector_concern_threshold
+        max_pt = self.config.hdd_sector_defect_max_deduction_points
+        if count <= concern:
+            return None
+        span = failure_threshold - concern
+        if span < 1:
+            span = 1
+        if count >= failure_threshold:
+            return ScoreDeduction(
+                reason=reason,
+                points=max_pt,
+                severity="critical",
+                field=field,
+                value=count,
+                threshold=failure_threshold,
+            )
+        raw_pts = int(round((count - concern) / span * max_pt))
+        points = max(1, min(max_pt - 1, raw_pts))
+        return ScoreDeduction(
+            reason=reason,
+            points=points,
+            severity="warning",
+            field=field,
+            value=count,
+            threshold=failure_threshold,
+        )
+
     def _check_ata_metrics(self, device: dict) -> list[ScoreDeduction]:
         """Check ATA-specific metrics."""
         deductions = []
 
-        # Reallocated sectors
-        reallocated = device.get("reallocated_sectors", 0) or 0
-        if reallocated > 0:
-            threshold = self.config.maximum_reallocated_sectors
-            points = min(reallocated * self.PER_SECTOR_DEDUCTION, 50)
-
-            if reallocated > threshold:
-                points += self.THRESHOLD_EXCEEDED_DEDUCTION
-                severity = "critical"
-            else:
-                severity = "warning"
-
-            deductions.append(
-                ScoreDeduction(
-                    reason="Reallocated sectors",
-                    points=points,
-                    severity=severity,
-                    field="reallocated_sectors",
-                    value=reallocated,
-                    threshold=threshold,
-                )
-            )
+        # Reallocated sectors (SATA HDD/SSD — HDD failure at configured max, typically 10)
+        reallocated = int(device.get("reallocated_sectors", 0) or 0)
+        d = self._deduction_hdd_sector_defect(
+            reallocated,
+            failure_threshold=self.config.maximum_reallocated_sectors,
+            reason="Reallocated sectors",
+            field="reallocated_sectors",
+        )
+        if d:
+            deductions.append(d)
 
         # Pending sectors
-        pending = device.get("pending_sectors", 0) or 0
-        if pending > 0:
-            threshold = self.config.maximum_pending_sectors
-            points = min(pending * self.PER_SECTOR_DEDUCTION, 50)
-
-            if pending > threshold:
-                points += self.THRESHOLD_EXCEEDED_DEDUCTION
-                severity = "critical"
-            else:
-                severity = "warning"
-
-            deductions.append(
-                ScoreDeduction(
-                    reason="Pending sectors",
-                    points=points,
-                    severity=severity,
-                    field="pending_sectors",
-                    value=pending,
-                    threshold=threshold,
-                )
-            )
+        pending_raw = device.get("pending_sectors")
+        if pending_raw is None:
+            pending_raw = device.get("pending_reallocated_sectors")
+        pending = int(pending_raw or 0)
+        d = self._deduction_hdd_sector_defect(
+            pending,
+            failure_threshold=self.config.maximum_pending_sectors,
+            reason="Pending sectors",
+            field="pending_sectors",
+        )
+        if d:
+            deductions.append(d)
 
         # Uncorrectable errors
         uncorrectable = device.get("uncorrectable_errors", 0) or 0
@@ -515,28 +534,19 @@ class HealthScoreCalculator:
         """Check SCSI-specific metrics."""
         deductions = []
 
-        # Grown defects
-        grown_defects = device.get("grown_defects", 0) or 0
-        if grown_defects > 0:
-            threshold = self.config.maximum_grown_defects
-            points = min(grown_defects * self.PER_SECTOR_DEDUCTION, 50)
-
-            if grown_defects > threshold:
-                points += self.THRESHOLD_EXCEEDED_DEDUCTION
-                severity = "critical"
-            else:
-                severity = "warning"
-
-            deductions.append(
-                ScoreDeduction(
-                    reason="Grown defects",
-                    points=points,
-                    severity=severity,
-                    field="grown_defects",
-                    value=grown_defects,
-                    threshold=threshold,
-                )
-            )
+        # Grown defects (SAS — same scaling as SATA reallocated/pending)
+        grown_raw = device.get("grown_defects")
+        if grown_raw is None:
+            grown_raw = device.get("reallocated_sectors")
+        grown_defects = int(grown_raw or 0)
+        d = self._deduction_hdd_sector_defect(
+            grown_defects,
+            failure_threshold=self.config.maximum_grown_defects,
+            reason="Grown defects",
+            field="grown_defects",
+        )
+        if d:
+            deductions.append(d)
 
         # Uncorrected errors
         uncorrected = device.get("uncorrected_errors", 0) or 0

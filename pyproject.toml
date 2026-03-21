@@ -14,6 +14,7 @@ authors = [
 ]
 
 maintainers = [
+    {name = "Circular Drive Initiative", email = "jm@circulardrives.org"},
     {name = "Nick Hayhurst", email = "nick.hayhurst@interactdc.com"},
     {name = "Jonmichael Hands", email = "jmhands@chia.net"},
 ]
@@ -69,9 +70,9 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/circulardrives/cdi-grading-tool-alpha"
-Documentation = "https://github.com/circulardrives/cdi-grading-tool-alpha#readme"
-Issues = "https://github.com/circulardrives/cdi-grading-tool-alpha/issues"
+Repository = "https://github.com/circulardrives/cdi-grading-tool"
+Documentation = "https://github.com/circulardrives/cdi-grading-tool#readme"
+Issues = "https://github.com/circulardrives/cdi-grading-tool/issues"
 
 [project.scripts]
 "cdi-health" = "cdi_health.__main__:main"

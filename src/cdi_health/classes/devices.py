@@ -161,6 +161,12 @@ class Device:
         # NVMe OCP SMART Additional Log (log page C0h), from nvme-cli when supported
         self.ocp_smart_log: dict | None = None
 
+        # Full NVMe Health Information Log (smartctl JSON) — for reports / tooling
+        self.nvme_smart_health_information_log: dict | None = None
+
+        # NVMe Error Information Log (smartctl JSON, log page 01h) — for reports / tooling
+        self.nvme_error_information_log: dict | None = None
+
         # NVMe Self-Test
         self.nvme_self_test_log = None
         self.nvme_self_test_current_status = None
@@ -1684,6 +1690,7 @@ class NVMeProtocol:
 
         # Extract NVMe Health Information Log data
         nvme_health = smartctl.get("nvme_smart_health_information_log", {})
+        device.nvme_smart_health_information_log = nvme_health if nvme_health else None
         if nvme_health:
             # Percentage Used (endurance indicator)
             device.percentage_used = nvme_health.get("percentage_used")
@@ -1697,6 +1704,9 @@ class NVMeProtocol:
                 # Convert from 512-byte data units to bytes, then to TB
                 device.data_written_bytes = data_units_written * 512 * 1000  # 1000 = multiplier in smartctl
                 device.data_written_tb = device.data_written_bytes / (1000**4)
+
+        nvme_err = smartctl.get("nvme_error_information_log")
+        device.nvme_error_information_log = nvme_err if isinstance(nvme_err, dict) and nvme_err else None
 
         # S.M.A.R.T Support
         device.smart_supported = smartctl.get("smart_support", dict()).get("available", "Not Reported")

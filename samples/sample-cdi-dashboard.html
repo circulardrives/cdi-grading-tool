@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CDI Health Report — 2026-03-21 14:47:00</title>
+    <title>CDI Health Report — 2026-03-21 15:22:35</title>
     <style>
+        @import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap");
         /*
  * Circular Drive Initiative (CDI) — brand color tokens
  * Source: docs/cdi_brand_palette.md
@@ -54,7 +55,7 @@
 }
 
         
-        @import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap");
+        /* Page shell */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
           font-family: var(--font);
@@ -64,6 +65,14 @@
           min-height: 100vh;
           line-height: 1.5;
         }
+        .main {
+          flex: 1;
+          padding: 28px 32px 48px;
+          max-width: 1360px;
+        }
+        
+
+        /* Sidebar */
         .sidebar {
           width: var(--sidebar-w);
           flex-shrink: 0;
@@ -106,6 +115,7 @@
           display: flex;
           align-items: center;
           justify-content: space-between;
+          gap: 12px;
           padding: 10px 14px;
           border-radius: 8px;
           text-decoration: none;
@@ -125,6 +135,7 @@
           border-color: var(--border);
           box-shadow: 0 1px 3px rgba(0,0,0,.06);
         }
+        .tab-title { flex: 1; min-width: 0; }
         .tab-count {
           font-family: var(--mono);
           font-size: 12px;
@@ -132,6 +143,7 @@
           color: var(--accent);
           padding: 2px 8px;
           border-radius: 999px;
+          white-space: nowrap;
         }
         .nav-tabs .tab-btn.active .tab-count {
           background: var(--accent);
@@ -143,11 +155,9 @@
           color: var(--muted);
           border-top: 1px solid var(--border);
         }
-        .main {
-          flex: 1;
-          padding: 28px 32px 48px;
-          max-width: 1280px;
-        }
+        
+
+        /* Header and summary */
         .hero {
           margin-bottom: 24px;
         }
@@ -212,6 +222,7 @@
           border: 1px solid var(--border);
           border-radius: var(--radius);
           padding: 14px 16px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.03);
         }
         .s-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
         .s-val { display: block; font-size: 26px; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
@@ -236,21 +247,25 @@
           color: var(--muted);
           text-align: center;
         }
+        
+
+        /* Tables */
         .table-wrap {
           overflow-x: auto;
           background: var(--bg-card);
           border: 1px solid var(--border);
           border-radius: var(--radius);
           margin-bottom: 24px;
+          box-shadow: 0 1px 4px rgba(0,0,0,.04);
         }
-        .table-wrap.inner { margin-bottom: 0; }
         .device-table {
           width: 100%;
           border-collapse: collapse;
           font-size: 13px;
           font-family: var(--mono);
         }
-        .device-table th, .device-table td {
+        .device-table th,
+        .device-table td {
           padding: 10px 12px;
           text-align: left;
           border-bottom: 1px solid var(--border);
@@ -264,23 +279,34 @@
           text-transform: uppercase;
           letter-spacing: .04em;
         }
+        .device-table tbody tr:nth-child(even) { background: rgba(19, 156, 122, 0.035); }
         .device-table tbody tr:hover { background: rgba(92, 146, 121, 0.12); }
+        .device-table tbody tr:last-child td { border-bottom: 0; }
         .device-table .score { font-weight: 700; }
         .device-table--wide {
-          font-size: 11px;
+          font-size: 12px;
           min-width: max-content;
         }
         .device-table--wide th {
-          white-space: nowrap;
+          white-space: normal;
+          min-width: 8.5rem;
+          max-width: 12rem;
+          line-height: 1.35;
+          vertical-align: bottom;
           position: sticky;
           top: 0;
           z-index: 2;
         }
+        .device-table--wide .col-head--key {
+          min-width: 9rem;
+        }
         .device-table--wide .cell-stat {
-          max-width: 28rem;
+          max-width: 18rem;
+          min-width: 7rem;
           word-break: break-word;
           white-space: pre-wrap;
           vertical-align: top;
+          line-height: 1.45;
         }
         .device-table--wide td:first-child,
         .device-table--wide th:first-child {
@@ -290,7 +316,21 @@
           background: var(--bg-card);
           box-shadow: 2px 0 4px rgba(0,0,0,.06);
         }
-        .device-table--wide thead th:first-child { z-index: 3; background: var(--accent-soft); }
+        .device-table--wide thead th:first-child {
+          z-index: 3;
+          background: var(--accent-soft);
+        }
+        .cell-stat--is-missing {
+          color: var(--muted);
+          font-style: italic;
+        }
+        .cell-stat--is-bool {
+          font-family: var(--font);
+          font-weight: 600;
+        }
+        .cell-stat--is-multiline {
+          line-height: 1.55;
+        }
         .cell-deductions {
           max-width: 24rem;
           font-size: 12px;
@@ -306,6 +346,9 @@
         .status-healthy { color: var(--cdi-simply-green); }
         .status-warning { color: var(--warn); }
         .status-failed { color: var(--danger); }
+        
+
+        /* Footer and print */
         .page-foot {
           margin-top: 40px;
           padding-top: 20px;
@@ -402,7 +445,7 @@
                 <div>
                     <h1>CDI Health Report</h1>
                     <p class="hero-sub">Offline-friendly report · drives identified by serial number only</p>
-                    <p class="hero-time">Generated 2026-03-21 14:47:00</p>
+                    <p class="hero-time">Generated 2026-03-21 15:22:35</p>
                 </div>
                 <div class="view-mode-bar" role="toolbar" aria-label="Report layout">
                     <span class="view-mode-label">View</span>
@@ -413,10 +456,7 @@
         </header>
 
         <section class="summary-strip" aria-label="Fleet summary">
-            <div class="s-card"><span class="s-label">Total devices</span><span class="s-val">12</span></div>
-            <div class="s-card s-ok"><span class="s-label">Healthy</span><span class="s-val">9</span></div>
-            <div class="s-card s-warn"><span class="s-label">Warning</span><span class="s-val">1</span></div>
-            <div class="s-card s-bad"><span class="s-label">At risk</span><span class="s-val">2</span></div>
+            <div class="s-card"><span class="s-label">Total devices</span><span class="s-val">12</span></div><div class="s-card s-ok"><span class="s-label">Healthy</span><span class="s-val">10</span></div><div class="s-card s-warn"><span class="s-label">Warning</span><span class="s-val">1</span></div><div class="s-card s-bad"><span class="s-label">At risk</span><span class="s-val">1</span></div>
         </section>
 
 
@@ -435,48 +475,289 @@
                             <th>Deductions</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr>
-                            <td class="col-serial">WD-WMC3T0123456</td>
-                            <td class="score">50</td>
-                            <td class="grade-d">D</td>
-                            <td class="status-warning">Poor</td>
-                            <td class="cell-deductions">SMART status failed [-50]</td>
-                        </tr>
-                        <tr>
-                            <td class="col-serial">ZFL1ABC1</td>
-                            <td class="score">100</td>
-                            <td class="grade-a">A</td>
-                            <td class="status-healthy">Excellent</td>
-                            <td class="cell-deductions">—</td>
-                        </tr>
-                        <tr>
-                            <td class="col-serial">Z8BSGABC</td>
-                            <td class="score">100</td>
-                            <td class="grade-a">A</td>
-                            <td class="status-healthy">Excellent</td>
-                            <td class="cell-deductions">—</td>
-                        </tr>
-                        <tr>
-                            <td class="col-serial">WGS1ABC2</td>
-                            <td class="score">25</td>
-                            <td class="grade-f">F</td>
-                            <td class="status-failed">Failed</td>
-                            <td class="cell-deductions">Reallocated sectors: 48 (≤10) [-75]</td>
-                        </tr>
-                        <tr>
-                            <td class="col-serial">TF6550ABCDEF</td>
-                            <td class="score">25</td>
-                            <td class="grade-f">F</td>
-                            <td class="status-failed">Failed</td>
-                            <td class="cell-deductions">Offline uncorrectable sectors: 25 (≤10) [-75]</td>
-                        </tr></tbody>
+                    <tbody><tr><td class="col-serial">WD-WMC3T0123456</td><td class="score">50</td><td class="grade-d">D</td><td class="status-warning">Poor</td><td class="cell-deductions">SMART status failed [-50]</td></tr><tr><td class="col-serial">ZFL1ABC1</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr><tr><td class="col-serial">Z8BSGABC</td><td class="score">90</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">Pending sectors: 56 (≤10) [-10]</td></tr><tr><td class="col-serial">WGS1ABC2</td><td class="score">90</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">Reallocated sectors: 48 (≤10) [-10]</td></tr><tr><td class="col-serial">TF6550ABCDEF</td><td class="score">25</td><td class="grade-f">F</td><td class="status-failed">Failed</td><td class="cell-deductions">Offline uncorrectable sectors: 25 (≤10) [-75]</td></tr></tbody>
                 </table>
             </div>
             <div class="table-wrap advanced-only">
                 <table class="device-table device-table--wide">
-                    <thead><tr><th>Serial</th><th>Model</th><th>Vendor</th><th>Protocol</th><th>Interface</th><th>Media</th><th>Capacity</th><th>Firmware</th><th>Form factor</th><th>Rotation rate</th><th>SMART status</th><th>Power-on hours</th><th>Power cycles</th><th>Load cycles</th><th>Start/stop count</th><th>Temperature °C</th><th>Highest temp °C</th><th>Max rated temp °C</th><th>Reallocated sectors</th><th>Pending sectors</th><th>Uncorrectable errors</th><th>Offline uncorrectable</th><th>SSD % used (ATA)</th><th>NVMe % used</th><th>Avail spare %</th><th>Critical warning</th><th>Media errors</th><th>Data written (TB)</th><th>NVMe self-test fails</th><th>OCP SMART log (JSON)</th><th>Health score</th><th>Grade</th><th>Health status</th><th>CDI certified</th><th>Deductions</th></tr></thead>
-                    <tbody><tr><td class="cell-stat">WD-WMC3T0123456</td><td class="cell-stat">WDC WD10EZEX-00WN4A0</td><td class="cell-stat">WD</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">1.00 TB</td><td class="cell-stat">01.01A01</td><td class="cell-stat">3.5 inches</td><td class="cell-stat">7200</td><td class="cell-stat">False</td><td class="cell-stat">25000</td><td class="cell-stat">150</td><td class="cell-stat">500</td><td class="cell-stat">150</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">50</td><td class="cell-stat">D</td><td class="cell-stat">Poor</td><td class="cell-stat">No</td><td class="cell-stat">SMART status failed [-50]</td></tr><tr><td class="cell-stat">ZFL1ABC1</td><td class="cell-stat">ST2000DM008-2FR102</td><td class="cell-stat">SEAGATE</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">2.00 TB</td><td class="cell-stat">0001</td><td class="cell-stat">3.5 inches</td><td class="cell-stat">7200</td><td class="cell-stat">True</td><td class="cell-stat">13500</td><td class="cell-stat">25</td><td class="cell-stat">100</td><td class="cell-stat">50</td><td class="cell-stat">35</td><td class="cell-stat">45</td><td class="cell-stat">60</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">—</td></tr><tr><td class="cell-stat">Z8BSGABC</td><td class="cell-stat">MQ01ABD100</td><td class="cell-stat">TOSHIBA</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">1.00 TB</td><td class="cell-stat">AX001U</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">5400</td><td class="cell-stat">True</td><td class="cell-stat">30000</td><td class="cell-stat">5000</td><td class="cell-stat">250000</td><td class="cell-stat">8500</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">56</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">—</td></tr><tr><td class="cell-stat">WGS1ABC2</td><td class="cell-stat">ST1000LM048-2E7172</td><td class="cell-stat">SEAGATE</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">1.00 TB</td><td class="cell-stat">0002</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">5400</td><td class="cell-stat">True</td><td class="cell-stat">45000</td><td class="cell-stat">1200</td><td class="cell-stat">100000</td><td class="cell-stat">1500</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">48</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">25</td><td class="cell-stat">F</td><td class="cell-stat">Failed</td><td class="cell-stat">No</td><td class="cell-stat">Reallocated sectors: 48 (≤10) [-75]</td></tr><tr><td class="cell-stat">TF6550ABCDEF</td><td class="cell-stat">HTS725050A7E630</td><td class="cell-stat">HGST</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">500 GB</td><td class="cell-stat">GH2OA420</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">7200</td><td class="cell-stat">True</td><td class="cell-stat">20000</td><td class="cell-stat">2000</td><td class="cell-stat">150000</td><td class="cell-stat">2500</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">25</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">25</td><td class="cell-stat">F</td><td class="cell-stat">Failed</td><td class="cell-stat">No</td><td class="cell-stat">Offline uncorrectable sectors: 25 (≤10) [-75]</td></tr></tbody>
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="SMART attr 1 (Raw_Read_Error_Rate)">Attr 1 (Raw Read Error Rate)</th><th class="col-head" scope="col" title="SMART attr 2 (Throughput_Performance)">Attr 2 (Throughput Performance)</th><th class="col-head" scope="col" title="SMART attr 3 (Spin_Up_Time)">Attr 3 (Spin Up Time)</th><th class="col-head" scope="col" title="SMART attr 4 (Start_Stop_Count)">Attr 4 (Start Stop Count)</th><th class="col-head" scope="col" title="SMART attr 5 (Reallocated_Sector_Ct)">Attr 5 (Reallocated Sector Ct)</th><th class="col-head" scope="col" title="SMART attr 7 (Seek_Error_Rate)">Attr 7 (Seek Error Rate)</th><th class="col-head" scope="col" title="SMART attr 8 (Seek_Time_Performance)">Attr 8 (Seek Time Performance)</th><th class="col-head" scope="col" title="SMART attr 9 (Power_On_Hours)">Attr 9 (Power On Hours)</th><th class="col-head" scope="col" title="SMART attr 10 (Spin_Retry_Count)">Attr 10 (Spin Retry Count)</th><th class="col-head" scope="col" title="SMART attr 12 (Power_Cycle_Count)">Attr 12 (Power Cycle Count)</th><th class="col-head" scope="col" title="SMART attr 184 (End-to-End_Error)">Attr 184 (End-to-End Error)</th><th class="col-head" scope="col" title="SMART attr 187 (Reported_Uncorrect)">Attr 187 (Reported Uncorrect)</th><th class="col-head" scope="col" title="SMART attr 188 (Command_Timeout)">Attr 188 (Command Timeout)</th><th class="col-head" scope="col" title="SMART attr 189 (High_Fly_Writes)">Attr 189 (High Fly Writes)</th><th class="col-head" scope="col" title="SMART attr 190 (Airflow_Temperature_Cel)">Attr 190 (Airflow Temperature Cel)</th><th class="col-head" scope="col" title="SMART attr 191 (G-Sense_Error_Rate)">Attr 191 (G-Sense Error Rate)</th><th class="col-head" scope="col" title="SMART attr 192 (Power-Off_Retract_Count)">Attr 192 (Power-Off Retract Count)</th><th class="col-head" scope="col" title="SMART attr 193 (Load_Cycle_Count)">Attr 193 (Load Cycle Count)</th><th class="col-head" scope="col" title="SMART attr 194 (Temperature_Celsius)">Attr 194 (Temperature Celsius)</th><th class="col-head" scope="col" title="SMART attr 196 (Reallocated_Event_Count)">Attr 196 (Reallocated Event Count)</th><th class="col-head" scope="col" title="SMART attr 197 (Current_Pending_Sector)">Attr 197 (Current Pending Sector)</th><th class="col-head" scope="col" title="SMART attr 198 (Offline_Uncorrectable)">Attr 198 (Offline Uncorrectable)</th><th class="col-head" scope="col" title="SMART attr 199 (UDMA_CRC_Error_Count)">Attr 199 (UDMA CRC Error Count)</th><th class="col-head" scope="col" title="SMART attr 200 (Multi_Zone_Error_Rate)">Attr 200 (Multi Zone Error Rate)</th><th class="col-head" scope="col" title="SMART attr 223 (Load_Retry_Count)">Attr 223 (Load Retry Count)</th><th class="col-head" scope="col" title="SMART attr 240 (Head_Flying_Hours)">Attr 240 (Head Flying Hours)</th><th class="col-head" scope="col" title="SMART attr 241 (Total_LBAs_Written)">Attr 241 (Total LBAs Written)</th><th class="col-head" scope="col" title="SMART attr 242 (Total_LBAs_Read)">Attr 242 (Total LBAs Read)</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial">WD-WMC3T0123456</td><td class="cell-stat">WDC WD10EZEX-00WN4A0</td><td class="cell-stat">WD</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">1.00 TB</td><td class="cell-stat">01.01A01</td><td class="cell-stat">3.5 inches</td><td class="cell-stat">7200</td><td class="cell-stat cell-stat--is-bool">No</td><td class="cell-stat">25000</td><td class="cell-stat">150</td><td class="cell-stat">500</td><td class="cell-stat">150</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=51
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=173
+worst=166
+thresh=21
+raw=2216</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=150</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=140
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=95
+worst=95
+thresh=0
+raw=25000</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=150</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=50</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=500</td><td class="cell-stat cell-stat--is-multiline">value=111
+worst=98
+thresh=0
+raw=39</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">50</td><td class="cell-stat">D</td><td class="cell-stat">Poor</td><td class="cell-stat">No</td><td class="cell-stat">SMART status failed [-50]</td></tr><tr><td class="cell-stat col-serial">ZFL1ABC1</td><td class="cell-stat">ST2000DM008-2FR102</td><td class="cell-stat">SEAGATE</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">2.00 TB</td><td class="cell-stat">0001</td><td class="cell-stat">3.5 inches</td><td class="cell-stat">7200</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">13500</td><td class="cell-stat">25</td><td class="cell-stat">100</td><td class="cell-stat">50</td><td class="cell-stat">35</td><td class="cell-stat">45</td><td class="cell-stat">60</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=80
+worst=63
+thresh=6
+raw=166912512</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=97
+worst=97
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=20
+raw=50</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=10
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=87
+worst=60
+thresh=45
+raw=533035008</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=85
+worst=85
+thresh=0
+raw=13500</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=97
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=20
+raw=25</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=99
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=65
+worst=55
+thresh=40
+raw=35 (Min/Max 20/45)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=100</td><td class="cell-stat cell-stat--is-multiline">value=35
+worst=45
+thresh=0
+raw=35 (Min/Max 20/45)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=253
+thresh=0
+raw=8426h+36m+00.000s</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=253
+thresh=0
+raw=12345678901</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=253
+thresh=0
+raw=98765432109</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr><tr><td class="cell-stat col-serial">Z8BSGABC</td><td class="cell-stat">MQ01ABD100</td><td class="cell-stat">TOSHIBA</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">1.00 TB</td><td class="cell-stat">AX001U</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">5400</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">30000</td><td class="cell-stat">5000</td><td class="cell-stat">250000</td><td class="cell-stat">8500</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">56</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=1
+raw=1591</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=8500</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=75
+worst=75
+thresh=0
+raw=30000</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=100
+thresh=30
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=5000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=2</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=50</td><td class="cell-stat cell-stat--is-multiline">value=90
+worst=90
+thresh=0
+raw=250000</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=36 (Min/Max 18/55)</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=50
+worst=50
+thresh=0
+raw=56</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=80
+worst=80
+thresh=0
+raw=21000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">90</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">No</td><td class="cell-stat">Pending sectors: 56 (≤10) [-10]</td></tr><tr><td class="cell-stat col-serial">WGS1ABC2</td><td class="cell-stat">ST1000LM048-2E7172</td><td class="cell-stat">SEAGATE</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">1.00 TB</td><td class="cell-stat">0002</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">5400</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">45000</td><td class="cell-stat">1200</td><td class="cell-stat">100000</td><td class="cell-stat">1500</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">48</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=70
+worst=63
+thresh=6
+raw=250000000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=99
+worst=99
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=99
+worst=99
+thresh=0
+raw=1500</td><td class="cell-stat cell-stat--is-multiline">value=80
+worst=80
+thresh=10
+raw=48</td><td class="cell-stat cell-stat--is-multiline">value=80
+worst=60
+thresh=45
+raw=800000000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=60
+worst=60
+thresh=0
+raw=45000</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=97
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=99
+worst=99
+thresh=0
+raw=1200</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=99
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=60
+worst=50
+thresh=45
+raw=40 (Min/Max 22/50)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=90
+worst=90
+thresh=0
+raw=100000</td><td class="cell-stat cell-stat--is-multiline">value=40
+worst=50
+thresh=0
+raw=40 (Min/Max 22/50)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">90</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">No</td><td class="cell-stat">Reallocated sectors: 48 (≤10) [-10]</td></tr><tr><td class="cell-stat col-serial">TF6550ABCDEF</td><td class="cell-stat">HTS725050A7E630</td><td class="cell-stat">HGST</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">500 GB</td><td class="cell-stat">GH2OA420</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">7200</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">20000</td><td class="cell-stat">2000</td><td class="cell-stat">150000</td><td class="cell-stat">2500</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">25</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=62
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=40
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=183
+worst=183
+thresh=33
+raw=1</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=2500</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=5
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=67
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=128
+worst=128
+thresh=40
+raw=18</td><td class="cell-stat cell-stat--is-multiline">value=85
+worst=85
+thresh=0
+raw=20000</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=60
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=2000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=100</td><td class="cell-stat cell-stat--is-multiline">value=90
+worst=90
+thresh=0
+raw=150000</td><td class="cell-stat cell-stat--is-multiline">value=171
+worst=171
+thresh=0
+raw=37 (Min/Max 15/51)</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=50
+worst=50
+thresh=0
+raw=25</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">25</td><td class="cell-stat">F</td><td class="cell-stat">Failed</td><td class="cell-stat">No</td><td class="cell-stat">Offline uncorrectable sectors: 25 (≤10) [-75]</td></tr></tbody>
                 </table>
             </div>
         </section>
@@ -496,27 +777,13 @@
                             <th>Deductions</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr>
-                            <td class="col-serial">S0K1ABC2</td>
-                            <td class="score">100</td>
-                            <td class="grade-a">A</td>
-                            <td class="status-healthy">Excellent</td>
-                            <td class="cell-deductions">—</td>
-                        </tr>
-                        <tr>
-                            <td class="col-serial">PDKABC1234</td>
-                            <td class="score">100</td>
-                            <td class="grade-a">A</td>
-                            <td class="status-healthy">Excellent</td>
-                            <td class="cell-deductions">—</td>
-                        </tr></tbody>
+                    <tbody><tr><td class="col-serial">S0K1ABC2</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr><tr><td class="col-serial">PDKABC1234</td><td class="score">90</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">Grown defects: 150 (≤10) [-10]</td></tr></tbody>
                 </table>
             </div>
             <div class="table-wrap advanced-only">
                 <table class="device-table device-table--wide">
-                    <thead><tr><th>Serial</th><th>Model</th><th>Vendor</th><th>Protocol</th><th>Interface</th><th>Media</th><th>Capacity</th><th>Firmware</th><th>Form factor</th><th>Rotation rate</th><th>SMART status</th><th>Power-on hours</th><th>Power cycles</th><th>Load cycles</th><th>Start/stop count</th><th>Temperature °C</th><th>Highest temp °C</th><th>Max rated temp °C</th><th>Reallocated sectors</th><th>Pending sectors</th><th>Uncorrectable errors</th><th>Offline uncorrectable</th><th>SSD % used (ATA)</th><th>NVMe % used</th><th>Avail spare %</th><th>Critical warning</th><th>Media errors</th><th>Data written (TB)</th><th>NVMe self-test fails</th><th>OCP SMART log (JSON)</th><th>Health score</th><th>Grade</th><th>Health status</th><th>CDI certified</th><th>Deductions</th></tr></thead>
-                    <tbody><tr><td class="cell-stat">S0K1ABC2</td><td class="cell-stat">NOT REPORTED</td><td class="cell-stat">Not Reported</td><td class="cell-stat">SCSI</td><td class="cell-stat">SAS</td><td class="cell-stat">HDD</td><td class="cell-stat">600 GB</td><td class="cell-stat">Not Reported</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">10000</td><td class="cell-stat">True</td><td class="cell-stat">25000</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">—</td></tr><tr><td class="cell-stat">PDKABC1234</td><td class="cell-stat">NOT REPORTED</td><td class="cell-stat">Not Reported</td><td class="cell-stat">SCSI</td><td class="cell-stat">SAS</td><td class="cell-stat">HDD</td><td class="cell-stat">1.20 TB</td><td class="cell-stat">Not Reported</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">10000</td><td class="cell-stat">True</td><td class="cell-stat">65000</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">150</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">23</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">—</td></tr></tbody>
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="SCSI error log — read › correction_algorithm_invocations">SCSI read / correction_algorithm_invocations</th><th class="col-head" scope="col" title="SCSI error log — read › errors_corrected_by_eccdelayed">SCSI read / errors_corrected_by_eccdelayed</th><th class="col-head" scope="col" title="SCSI error log — read › errors_corrected_by_eccfast">SCSI read / errors_corrected_by_eccfast</th><th class="col-head" scope="col" title="SCSI error log — read › errors_corrected_by_rereads_rewrites">SCSI read / errors_corrected_by_rereads_rewrites</th><th class="col-head" scope="col" title="SCSI error log — read › gigabytes_processed">SCSI read / gigabytes_processed</th><th class="col-head" scope="col" title="SCSI error log — read › total_errors_corrected">SCSI read / total_errors_corrected</th><th class="col-head" scope="col" title="SCSI error log — read › total_uncorrected_errors">SCSI read / total_uncorrected_errors</th><th class="col-head" scope="col" title="SCSI error log — verify › correction_algorithm_invocations">SCSI verify / correction_algorithm_invocations</th><th class="col-head" scope="col" title="SCSI error log — verify › errors_corrected_by_eccdelayed">SCSI verify / errors_corrected_by_eccdelayed</th><th class="col-head" scope="col" title="SCSI error log — verify › errors_corrected_by_eccfast">SCSI verify / errors_corrected_by_eccfast</th><th class="col-head" scope="col" title="SCSI error log — verify › errors_corrected_by_rereads_rewrites">SCSI verify / errors_corrected_by_rereads_rewrites</th><th class="col-head" scope="col" title="SCSI error log — verify › gigabytes_processed">SCSI verify / gigabytes_processed</th><th class="col-head" scope="col" title="SCSI error log — verify › total_errors_corrected">SCSI verify / total_errors_corrected</th><th class="col-head" scope="col" title="SCSI error log — verify › total_uncorrected_errors">SCSI verify / total_uncorrected_errors</th><th class="col-head" scope="col" title="SCSI error log — write › correction_algorithm_invocations">SCSI write / correction_algorithm_invocations</th><th class="col-head" scope="col" title="SCSI error log — write › errors_corrected_by_eccdelayed">SCSI write / errors_corrected_by_eccdelayed</th><th class="col-head" scope="col" title="SCSI error log — write › errors_corrected_by_eccfast">SCSI write / errors_corrected_by_eccfast</th><th class="col-head" scope="col" title="SCSI error log — write › errors_corrected_by_rereads_rewrites">SCSI write / errors_corrected_by_rereads_rewrites</th><th class="col-head" scope="col" title="SCSI error log — write › gigabytes_processed">SCSI write / gigabytes_processed</th><th class="col-head" scope="col" title="SCSI error log — write › total_errors_corrected">SCSI write / total_errors_corrected</th><th class="col-head" scope="col" title="SCSI error log — write › total_uncorrected_errors">SCSI write / total_uncorrected_errors</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial">S0K1ABC2</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">SCSI</td><td class="cell-stat">SAS</td><td class="cell-stat">HDD</td><td class="cell-stat">600 GB</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">10000</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">25000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">12345.678</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">1234.567</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">9876.543</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr><tr><td class="cell-stat col-serial">PDKABC1234</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">SCSI</td><td class="cell-stat">SAS</td><td class="cell-stat">HDD</td><td class="cell-stat">1.20 TB</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">10000</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">65000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">150</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">23</td><td class="cell-stat">1000</td><td class="cell-stat">50</td><td class="cell-stat">100</td><td class="cell-stat">25</td><td class="cell-stat">98765.432</td><td class="cell-stat">175</td><td class="cell-stat">15</td><td class="cell-stat">200</td><td class="cell-stat">5</td><td class="cell-stat">10</td><td class="cell-stat">2</td><td class="cell-stat">5432.109</td><td class="cell-stat">17</td><td class="cell-stat">3</td><td class="cell-stat">500</td><td class="cell-stat">10</td><td class="cell-stat">20</td><td class="cell-stat">5</td><td class="cell-stat">87654.321</td><td class="cell-stat">35</td><td class="cell-stat">5</td><td class="cell-stat">90</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">No</td><td class="cell-stat">Grown defects: 150 (≤10) [-10]</td></tr></tbody>
                 </table>
             </div>
         </section>
@@ -536,34 +803,142 @@
                             <th>Deductions</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr>
-                            <td class="col-serial">MOCK000000</td>
-                            <td class="score">100</td>
-                            <td class="grade-a">A</td>
-                            <td class="status-healthy">Excellent</td>
-                            <td class="cell-deductions">—</td>
-                        </tr>
-                        <tr>
-                            <td class="col-serial">MOCK000001</td>
-                            <td class="score">100</td>
-                            <td class="grade-a">A</td>
-                            <td class="status-healthy">Excellent</td>
-                            <td class="cell-deductions">—</td>
-                        </tr>
-                        <tr>
-                            <td class="col-serial">MOCK000001</td>
-                            <td class="score">100</td>
-                            <td class="grade-a">A</td>
-                            <td class="status-healthy">Excellent</td>
-                            <td class="cell-deductions">—</td>
-                        </tr></tbody>
+                    <tbody><tr><td class="col-serial">MOCK000000</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr><tr><td class="col-serial">MOCK000001</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr><tr><td class="col-serial">MOCK000001</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr></tbody>
                 </table>
             </div>
             <div class="table-wrap advanced-only">
                 <table class="device-table device-table--wide">
-                    <thead><tr><th>Serial</th><th>Model</th><th>Vendor</th><th>Protocol</th><th>Interface</th><th>Media</th><th>Capacity</th><th>Firmware</th><th>Form factor</th><th>Rotation rate</th><th>SMART status</th><th>Power-on hours</th><th>Power cycles</th><th>Load cycles</th><th>Start/stop count</th><th>Temperature °C</th><th>Highest temp °C</th><th>Max rated temp °C</th><th>Reallocated sectors</th><th>Pending sectors</th><th>Uncorrectable errors</th><th>Offline uncorrectable</th><th>SSD % used (ATA)</th><th>NVMe % used</th><th>Avail spare %</th><th>Critical warning</th><th>Media errors</th><th>Data written (TB)</th><th>NVMe self-test fails</th><th>OCP SMART log (JSON)</th><th>Health score</th><th>Grade</th><th>Health status</th><th>CDI certified</th><th>Deductions</th></tr></thead>
-                    <tbody><tr><td class="cell-stat">MOCK000000</td><td class="cell-stat">MK000960GWSSD</td><td class="cell-stat">HPE</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">SSD</td><td class="cell-stat">960 GB</td><td class="cell-stat">HPG3</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">0</td><td class="cell-stat">True</td><td class="cell-stat">10645</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">12</td><td class="cell-stat">29</td><td class="cell-stat">60</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">—</td></tr><tr><td class="cell-stat">MOCK000001</td><td class="cell-stat">SANDISK SDSSDH3 512G</td><td class="cell-stat">UNKNOWN</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">SSD</td><td class="cell-stat">512 GB</td><td class="cell-stat">40101000</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">0</td><td class="cell-stat">True</td><td class="cell-stat">32019</td><td class="cell-stat">19</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">11</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">—</td></tr><tr><td class="cell-stat">MOCK000001</td><td class="cell-stat">SANDISK SDSSDH3 512G</td><td class="cell-stat">UNKNOWN</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">SSD</td><td class="cell-stat">512 GB</td><td class="cell-stat">40101000</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">0</td><td class="cell-stat">True</td><td class="cell-stat">32019</td><td class="cell-stat">19</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">11</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">—</td></tr></tbody>
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="SSD % used (ATA)">Percent used</th><th class="col-head" scope="col" title="SMART attr 1 (Raw_Read_Error_Rate)">Attr 1 (Raw Read Error Rate)</th><th class="col-head" scope="col" title="SMART attr 5 (Reallocated_Sector_Ct)">Attr 5 (Reallocated Sector Ct)</th><th class="col-head" scope="col" title="SMART attr 9 (Power_On_Hours)">Attr 9 (Power On Hours)</th><th class="col-head" scope="col" title="SMART attr 12 (Power_Cycle_Count)">Attr 12 (Power Cycle Count)</th><th class="col-head" scope="col" title="SMART attr 165 (Unknown_Attribute)">Attr 165 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 166 (Unknown_Attribute)">Attr 166 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 167 (Unknown_Attribute)">Attr 167 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 168 (Unknown_Attribute)">Attr 168 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 169 (Unknown_Attribute)">Attr 169 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 170 (Unknown_Attribute)">Attr 170 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 171 (Unknown_Attribute)">Attr 171 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 172 (Unknown_Attribute)">Attr 172 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 173 (Unknown_Attribute)">Attr 173 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 174 (Unknown_Attribute)">Attr 174 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 175 (Program_Fail_Count_Chip)">Attr 175 (Program Fail Count Chip)</th><th class="col-head" scope="col" title="SMART attr 180 (Unused_Rsvd_Blk_Cnt_Tot)">Attr 180 (Unused Rsvd Blk Cnt Tot)</th><th class="col-head" scope="col" title="SMART attr 184 (End-to-End_Error)">Attr 184 (End-to-End Error)</th><th class="col-head" scope="col" title="SMART attr 187 (Reported_Uncorrect)">Attr 187 (Reported Uncorrect)</th><th class="col-head" scope="col" title="SMART attr 188 (Command_Timeout)">Attr 188 (Command Timeout)</th><th class="col-head" scope="col" title="SMART attr 194 (Temperature_Celsius)">Attr 194 (Temperature Celsius)</th><th class="col-head" scope="col" title="SMART attr 196 (Reallocated_Event_Count)">Attr 196 (Reallocated Event Count)</th><th class="col-head" scope="col" title="SMART attr 199 (UDMA_CRC_Error_Count)">Attr 199 (UDMA CRC Error Count)</th><th class="col-head" scope="col" title="SMART attr 202 (Unknown_SSD_Attribute)">Attr 202 (Unknown SSD Attribute)</th><th class="col-head" scope="col" title="SMART attr 230 (Unknown_SSD_Attribute)">Attr 230 (Unknown SSD Attribute)</th><th class="col-head" scope="col" title="SMART attr 232 (Available_Reservd_Space)">Attr 232 (Available Reservd Space)</th><th class="col-head" scope="col" title="SMART attr 233 (Media_Wearout_Indicator)">Attr 233 (Media Wearout Indicator)</th><th class="col-head" scope="col" title="SMART attr 234 (Unknown_Attribute)">Attr 234 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 241 (Total_LBAs_Written)">Attr 241 (Total LBAs Written)</th><th class="col-head" scope="col" title="SMART attr 242 (Total_LBAs_Read)">Attr 242 (Total LBAs Read)</th><th class="col-head" scope="col" title="SMART attr 244 (Unknown_Attribute)">Attr 244 (Unknown Attribute)</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial">MOCK000000</td><td class="cell-stat">MK000960GWSSD</td><td class="cell-stat">HPE</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">SSD</td><td class="cell-stat">960 GB</td><td class="cell-stat">HPG3</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">10645</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">12</td><td class="cell-stat">29</td><td class="cell-stat">60</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=2
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=5
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=97
+worst=97
+thresh=0
+raw=10645</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=99
+worst=99
+thresh=5
+raw=5</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=1
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=97
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=88
+worst=71
+thresh=0
+raw=12</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=5
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=10
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr><tr><td class="cell-stat col-serial">MOCK000001</td><td class="cell-stat">SANDISK SDSSDH3 512G</td><td class="cell-stat">UNKNOWN</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">SSD</td><td class="cell-stat">512 GB</td><td class="cell-stat">40101000</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">32019</td><td class="cell-stat">19</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">11</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=32019</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=19</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=649410523126</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=87</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=45</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=140</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=384</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=116</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=8</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=77
+worst=46
+raw=23 (Min/Max 16/46)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=24
+worst=24
+raw=26624690755639</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=4
+raw=100</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=58994</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=141517</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=253
+raw=113995</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=253
+raw=97983</td><td class="cell-stat cell-stat--is-multiline">value=0
+worst=100
+raw=0</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr><tr><td class="cell-stat col-serial">MOCK000001</td><td class="cell-stat">SANDISK SDSSDH3 512G</td><td class="cell-stat">UNKNOWN</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">SSD</td><td class="cell-stat">512 GB</td><td class="cell-stat">40101000</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">32019</td><td class="cell-stat">19</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">11</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=32019</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=19</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=649410523126</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=87</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=45</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=140</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=384</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=116</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=8</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=77
+worst=46
+raw=23 (Min/Max 16/46)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=24
+worst=24
+raw=26624690755639</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=4
+raw=100</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=58994</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=141517</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=253
+raw=113995</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=253
+raw=97983</td><td class="cell-stat cell-stat--is-multiline">value=0
+worst=100
+raw=0</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr></tbody>
                 </table>
             </div>
         </section>
@@ -589,27 +964,13 @@
                             <th>Deductions</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr>
-                            <td class="col-serial">PHO000002</td>
-                            <td class="score">95</td>
-                            <td class="grade-a">A</td>
-                            <td class="status-healthy">Excellent</td>
-                            <td class="cell-deductions">No self-test run in last 30 days [-5]</td>
-                        </tr>
-                        <tr>
-                            <td class="col-serial">PHO000002</td>
-                            <td class="score">95</td>
-                            <td class="grade-a">A</td>
-                            <td class="status-healthy">Excellent</td>
-                            <td class="cell-deductions">No self-test run in last 30 days [-5]</td>
-                        </tr></tbody>
+                    <tbody><tr><td class="col-serial">PHO000002</td><td class="score">95</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">No self-test run in last 30 days [-5]</td></tr><tr><td class="col-serial">PHO000002</td><td class="score">95</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">No self-test run in last 30 days [-5]</td></tr></tbody>
                 </table>
             </div>
             <div class="table-wrap advanced-only">
                 <table class="device-table device-table--wide">
-                    <thead><tr><th>Serial</th><th>Model</th><th>Vendor</th><th>Protocol</th><th>Interface</th><th>Media</th><th>Capacity</th><th>Firmware</th><th>Form factor</th><th>Rotation rate</th><th>SMART status</th><th>Power-on hours</th><th>Power cycles</th><th>Load cycles</th><th>Start/stop count</th><th>Temperature °C</th><th>Highest temp °C</th><th>Max rated temp °C</th><th>Reallocated sectors</th><th>Pending sectors</th><th>Uncorrectable errors</th><th>Offline uncorrectable</th><th>SSD % used (ATA)</th><th>NVMe % used</th><th>Avail spare %</th><th>Critical warning</th><th>Media errors</th><th>Data written (TB)</th><th>NVMe self-test fails</th><th>OCP SMART log (JSON)</th><th>Health score</th><th>Grade</th><th>Health status</th><th>CDI certified</th><th>Deductions</th></tr></thead>
-                    <tbody><tr><td class="cell-stat">PHO000002</td><td class="cell-stat">SSDPEK1A118GA</td><td class="cell-stat">INTEL</td><td class="cell-stat">NVMe</td><td class="cell-stat">NVMe</td><td class="cell-stat">SSD</td><td class="cell-stat">118 GB</td><td class="cell-stat">U5110550</td><td class="cell-stat">Not Reported</td><td class="cell-stat">Not Reported</td><td class="cell-stat">True</td><td class="cell-stat">24365</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0.566436864</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">95</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">No self-test run in last 30 days [-5]</td></tr><tr><td class="cell-stat">PHO000002</td><td class="cell-stat">SSDPEK1A118GA</td><td class="cell-stat">INTEL</td><td class="cell-stat">NVMe</td><td class="cell-stat">NVMe</td><td class="cell-stat">SSD</td><td class="cell-stat">118 GB</td><td class="cell-stat">U5110550</td><td class="cell-stat">Not Reported</td><td class="cell-stat">Not Reported</td><td class="cell-stat">True</td><td class="cell-stat">24365</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0.56643584</td><td class="cell-stat">0</td><td class="cell-stat">—</td><td class="cell-stat">95</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">No self-test run in last 30 days [-5]</td></tr></tbody>
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="NVMe % used">Percent used</th><th class="col-head" scope="col" title="Avail spare %">Avail spare %</th><th class="col-head" scope="col" title="Critical warning">Critical warning</th><th class="col-head" scope="col" title="Media errors">Media errors</th><th class="col-head" scope="col" title="Data written (TB)">Data written (TB)</th><th class="col-head" scope="col" title="NVMe self-test fails">Self-test fails</th><th class="col-head" scope="col" title="NVMe data units read">Data units read</th><th class="col-head" scope="col" title="NVMe data units written">Data units written</th><th class="col-head" scope="col" title="NVMe host reads">Host reads</th><th class="col-head" scope="col" title="NVMe host writes">Host writes</th><th class="col-head" scope="col" title="Controller busy time (min)">Busy min</th><th class="col-head" scope="col" title="NVMe power cycles (log)">NVMe power cycles</th><th class="col-head" scope="col" title="NVMe POH (log)">NVMe POH</th><th class="col-head" scope="col" title="Unsafe shutdowns">Unsafe shutdowns</th><th class="col-head" scope="col" title="Error log entries">Error log entries</th><th class="col-head" scope="col" title="Warning temp time (min)">Warn temp min</th><th class="col-head" scope="col" title="Critical comp time (min)">Critical temp min</th><th class="col-head" scope="col" title="Self-test current">Self-test current</th><th class="col-head" scope="col" title="NVMe error log — read">NVMe err read</th><th class="col-head" scope="col" title="NVMe error log — size">NVMe err size</th><th class="col-head" scope="col" title="NVMe error log — unread">NVMe err unread</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial">PHO000002</td><td class="cell-stat">SSDPEK1A118GA</td><td class="cell-stat">INTEL</td><td class="cell-stat">NVMe</td><td class="cell-stat">NVMe</td><td class="cell-stat">SSD</td><td class="cell-stat">118 GB</td><td class="cell-stat">U5110550</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">24365</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0.566436864</td><td class="cell-stat">0</td><td class="cell-stat">563941</td><td class="cell-stat">1106322</td><td class="cell-stat">7491917</td><td class="cell-stat">7332148</td><td class="cell-stat">16</td><td class="cell-stat">74</td><td class="cell-stat">24365</td><td class="cell-stat">16</td><td class="cell-stat">0</td><td class="cell-stat">1</td><td class="cell-stat">0</td><td class="cell-stat">No self-test in progress</td><td class="cell-stat">16</td><td class="cell-stat">64</td><td class="cell-stat">0</td><td class="cell-stat">95</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">No self-test run in last 30 days [-5]</td></tr><tr><td class="cell-stat col-serial">PHO000002</td><td class="cell-stat">SSDPEK1A118GA</td><td class="cell-stat">INTEL</td><td class="cell-stat">NVMe</td><td class="cell-stat">NVMe</td><td class="cell-stat">SSD</td><td class="cell-stat">118 GB</td><td class="cell-stat">U5110550</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">24365</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0.56643584</td><td class="cell-stat">0</td><td class="cell-stat">563941</td><td class="cell-stat">1106320</td><td class="cell-stat">7491917</td><td class="cell-stat">7332108</td><td class="cell-stat">16</td><td class="cell-stat">74</td><td class="cell-stat">24365</td><td class="cell-stat">16</td><td class="cell-stat">0</td><td class="cell-stat">1</td><td class="cell-stat">0</td><td class="cell-stat">No self-test in progress</td><td class="cell-stat">16</td><td class="cell-stat">64</td><td class="cell-stat">0</td><td class="cell-stat">95</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">No self-test run in last 30 days [-5]</td></tr></tbody>
                 </table>
             </div>
         </section>
@@ -629,18 +990,21 @@
         });
         try { localStorage.setItem("cdi-report-view", mode); } catch (e) {}
       }
+
       document.querySelectorAll(".mode-btn").forEach(function(btn) {
         btn.addEventListener("click", function() {
           setView(btn.getAttribute("data-view"));
         });
       });
+
       try {
-        var v = localStorage.getItem("cdi-report-view");
-        if (v === "simple" || v === "advanced") setView(v);
+        var savedView = localStorage.getItem("cdi-report-view");
+        if (savedView === "simple" || savedView === "advanced") setView(savedView);
       } catch (e) {}
 
       var tabs = document.querySelectorAll(".nav-tabs .tab-btn");
       var panels = document.querySelectorAll(".tab-panel");
+
       function show(slug) {
         tabs.forEach(function(t) {
           t.classList.toggle("active", t.getAttribute("data-tab") === slug);
@@ -650,20 +1014,24 @@
         });
         try { localStorage.setItem("cdi-report-tab", slug); } catch (e) {}
       }
+
       tabs.forEach(function(btn) {
         btn.addEventListener("click", function(e) {
           e.preventDefault();
           show(btn.getAttribute("data-tab"));
         });
       });
+
       var initial = "sata-hdd";
       try {
-        var saved = localStorage.getItem("cdi-report-tab");
-        if (saved) initial = saved;
+        var savedTab = localStorage.getItem("cdi-report-tab");
+        if (savedTab) initial = savedTab;
       } catch (e) {}
+
       if (!document.querySelector('.tab-panel[data-panel="' + initial + '"]')) {
         initial = "sata-hdd";
       }
+
       show(initial);
     })();
     </script>

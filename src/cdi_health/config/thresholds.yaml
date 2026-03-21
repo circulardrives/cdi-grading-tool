@@ -51,6 +51,11 @@ temperature:
 # Grading Rules
 # Defines what conditions result in each grade
 grading:
+  # SATA/SAS HDD: no deduction at or below this count; linear deduction above until failure threshold
+  hdd_sector_concern_threshold: 2
+  # Max points deducted per metric (reallocated, pending, or grown defects) at failure (10 sectors/defects)
+  hdd_sector_defect_max_deduction_points: 10
+
   # Grade A: Perfect condition
   grade_a:
     smart_status: true
