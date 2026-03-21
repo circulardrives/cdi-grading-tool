@@ -234,8 +234,8 @@ class ReportGenerator:
                 </div>
                 <div class="view-mode-bar" role="toolbar" aria-label="Report layout">
                     <span class="view-mode-label">View</span>
-                    <button type="button" class="mode-btn{self._active_class(dv == 'simple')}" data-view="simple">Simple</button>
-                    <button type="button" class="mode-btn{self._active_class(dv == 'advanced')}" data-view="advanced">Advanced</button>
+                    <button type="button" class="mode-btn{self._active_class(dv == "simple")}" data-view="simple">Simple</button>
+                    <button type="button" class="mode-btn{self._active_class(dv == "advanced")}" data-view="advanced">Advanced</button>
                 </div>
             </div>
         </header>
@@ -287,7 +287,7 @@ class ReportGenerator:
             self._summary_card("At risk", failed, "s-bad"),
         ]
         return f"""        <section class="summary-strip" aria-label="Fleet summary">
-            {''.join(cards)}
+            {"".join(cards)}
         </section>"""
 
     @staticmethod
@@ -649,9 +649,7 @@ class ReportGenerator:
 
     @staticmethod
     def _devices_any_ata_ssd(devices: list[dict]) -> bool:
-        return any(
-            d.get("transport_protocol") == "ATA" and d.get("media_type") == "SSD" for d in devices
-        )
+        return any(d.get("transport_protocol") == "ATA" and d.get("media_type") == "SSD" for d in devices)
 
     def _grading_tail_specs(self) -> list[tuple[str, object]]:
         return [
@@ -766,9 +764,7 @@ class ReportGenerator:
         else:
             rows_simple = "".join(self._generate_row_simple(d) for d in devices)
             specs = self._advanced_column_specs(title, devices)
-            thead_adv = "".join(
-                self._advanced_header_cell_html(h, idx == 0) for idx, (h, _) in enumerate(specs)
-            )
+            thead_adv = "".join(self._advanced_header_cell_html(h, idx == 0) for idx, (h, _) in enumerate(specs))
             rows_adv = "".join(self._generate_row_advanced(d, specs) for d in devices)
             body = self._simple_table_html(rows_simple) + self._advanced_table_html(thead_adv, rows_adv)
 
