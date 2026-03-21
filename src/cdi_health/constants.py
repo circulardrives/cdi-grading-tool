@@ -18,259 +18,102 @@
 #
 
 """
-Circular Drive Initiative - Constants
+Constants and enumerations for CDI Health.
+
+Centralized location for magic numbers, strings, and configuration values.
 """
 
 from __future__ import annotations
 
-# Modules
-import os
-import sys
+from enum import Enum
 
-"""
-APP
-"""
 
-# Set OS Runtime Environment
-os.environ["XDG_RUNTIME_DIR"] = "/run/cdi_grading"
+class Protocol(str, Enum):
+    """Storage device protocols."""
 
-# Application Paths
-application_directory = getattr(sys, "_MEIPASS", os.path.abspath(os.path.dirname(__file__)))
-app_path = os.path.abspath(os.path.join(application_directory))
-config_path = os.path.join(app_path, "config")
-images_path = os.path.join(app_path, "images")
-reports_path = os.path.join(app_path, "reports")
-logs_path = os.path.join(app_path, "logs")
+    ATA = "ata"
+    NVME = "nvme"
+    SCSI = "scsi"
 
-# EULA File
-eula = f"{config_path}/eula.html"
 
-# Configuration File
-configuration_file = f"{config_path}/configuration.ini"
+class HealthGrade(str, Enum):
+    """Health grade levels."""
 
-# Splashscreen Properties
-splashscreen = f"{images_path}/cdi.jpg"
-splashscreen_height = 1440
-splashscreen_width = 1440
+    A = "A"
+    B = "B"
+    C = "C"
+    D = "D"
+    F = "F"
 
-# Brands List
-known_brands_list = [
-    # 2-Power
-    "2-POWER",
-    "2-Power",
-    "2-power",
-    # ADATA
-    "ADATA",
-    "Adata",
-    "adata",
-    # Corsair
-    "CORSAIR",
-    "Corsair",
-    "corsair",
-    # Crucial
-    "CRUCIAL",
-    "Crucial",
-    "crucial",
-    # Fujitsu
-    "FUJITSU",
-    "Fujitsu",
-    "fujitsu",
-    # Gigabyte
-    "GIGABYTE",
-    "Gigabyte",
-    "gigabyte",
-    # Hitachi
-    "HITACHI",
-    "Hitachi",
-    "hitachi",
-    # IBM
-    "IBM-ESXS",
-    "IBM-Esxs",
-    "ibm-esxs",
-    # Intel
-    "INTEL",
-    "Intel",
-    "intel",
-    # Intenso
-    "INTENSO",
-    "Intenso",
-    "intenso",
-    # KingFast
-    "KINGFAST",
-    "Kingfast",
-    "kingfast",
-    # Kingston
-    "KINGSTON",
-    "Kingston",
-    "kingston",
-    # Kioxia
-    "KIOXIA",
-    "Kioxia",
-    "kioxia",
-    # Lexar
-    "LEXAR",
-    "Lexar",
-    "lexar",
-    # Lenovo
-    "LENOVO-X",
-    "Lenovo-X",
-    "lenovo-x",
-    # LITEON
-    "LITEON",
-    "Liteon",
-    "liteon",
-    # Maxtor
-    "MAXTOR",
-    "Maxtor",
-    "maxtor",
-    # Micron
-    "MICRON",
-    "Micron",
-    "micron",
-    # NetApp
-    "NETAPP",
-    "NetApp",
-    "netapp",
-    # Ortial
-    "ORTIAL",
-    "Ortial",
-    "ortial",
-    # Patriot
-    "PATRIOT",
-    "Patriot",
-    "patriot",
-    # Plextor
-    "PLEXTOR",
-    "Plextor",
-    "plextor",
-    # PLIANT
-    "PLIANT",
-    "Pliant",
-    "pliant",
-    # Pioneer
-    "PIONEER",
-    "Pioneer",
-    "pioneer",
-    # SanDisk
-    "SANDISK",
-    "SanDisk",
-    "Sandisk",
-    "sandisk",
-    # Samsung
-    "SAMSUNG",
-    "Samsung",
-    "samsung",
-    # Seagate
-    "SEAGATE",
-    "Seagate",
-    "seagate",
-    # SK Hynix
-    "SK HYNIX",
-    "SK hynix",
-    "sk hynix",
-    # SMI
-    "SMI",
-    "Smi",
-    "smi",
-    # Sony
-    "SONY",
-    "Sony",
-    "sony",
-    # Super Talent
-    "SUPER TALENT",
-    "Super Talent",
-    "SuperTalent",
-    "super talent",
-    # Silicon Power CC
-    "SPCC",
-    "Spcc",
-    "spcc",
-    # Toshiba
-    "TOSHIBA",
-    "Toshiba",
-    "toshiba",
-    # Transcend
-    "TRANSCEND",
-    "Transcend",
-    "transcend",
-    # Western Digital
-    "WESTERN DIGITAL",
-    "Western Digital",
-    "western digital",
-    "WDC",
-    "wdc",
-    "WD",
-    "wd",
-    # Dell
-    "DELL",
-    "Dell",
-    "dell",
-    # EMC
-    "EMC",
-    "Emc",
-    "emc",
-    # HGST
-    "HGST",
-    "Hgst",
-    "hgst",
-    # HPE
-    "HPE",
-    "Hpe",
-    "hpe",
-    # HP
-    "HP",
-    "Hp",
-    "hp",
-    # IBM
-    "IBM",
-    "Ibm",
-    "ibm",
-    # PNY
-    "PNY",
-    "Pny",
-    "pny",
-]
 
-# None
-none = "NONE"
-error = "ERROR"
-passed = "PASS"
-failed = "FAIL"
-ongoing = "ONGOING"
-cancelled = "CANCELLED"
+class HealthStatus(str, Enum):
+    """Health status levels."""
 
-# Grades
-grade_a = "A"
-grade_b = "B"
-grade_c = "C"
-grade_d = "D"
-grade_e = "E"
-grade_f = "F"
-grade_u = "U"
+    EXCELLENT = "Excellent"
+    GOOD = "Good"
+    FAIR = "Fair"
+    POOR = "Poor"
+    FAILED = "Failed"
 
-# Percents
-percent_0 = 0
-percent_25 = 25
-percent_50 = 50
-percent_75 = 75
-percent_100 = 100
 
-# Thresholds
-CDI_EXPECTED_SMART_RESULT = "Pass"
-CDI_EXPECTED_SMART_SELF_TEST_RESULT = "Pass"
-CDI_MAXIMUM_REALLOCATED_SECTORS = 10
-CDI_MAXIMUM_PENDING_SECTORS = 10
-CDI_MAXIMUM_UNCORRECTABLE_ERRORS = 10
-CDI_MAXIMUM_SSD_PERCENTAGE_USED = 100
-CDI_MINIMUM_SSD_AVAILABLE_SPARE = 97
+class Severity(str, Enum):
+    """Severity levels for issues."""
 
-# Commands
-sleep_now = "rtcwake -m mem -s 10".split()
-reboot_now = "reboot now".split()
-shutdown_now = "shutdown now".split()
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
 
-# Debug
-DEBUG = False
 
-# Megabyte
-MEGABYTE = 1048576
+class OutputFormat(str, Enum):
+    """Output format options."""
+
+    TABLE = "table"
+    JSON = "json"
+    CSV = "csv"
+    YAML = "yaml"
+
+
+class ReportFormat(str, Enum):
+    """Report format options."""
+
+    HTML = "html"
+    PDF = "pdf"
+
+
+# Scoring constants
+BASE_SCORE = 100
+SMART_FAILURE_DEDUCTION = 50
+SELFTEST_FAILURE_DEDUCTION = 50
+REALLOCATED_SECTOR_DEDUCTION = 5
+PENDING_SECTOR_DEDUCTION = 5
+UNCORRECTABLE_ERROR_DEDUCTION = 5
+THRESHOLD_EXCEEDED_DEDUCTION = 25
+TEMPERATURE_WARNING_DEDUCTION = 5
+TEMPERATURE_CRITICAL_DEDUCTION = 15
+
+# Grade thresholds
+GRADE_A_MIN = 90
+GRADE_B_MIN = 75
+GRADE_C_MIN = 60
+GRADE_D_MIN = 40
+GRADE_F_MAX = 39
+
+# NVMe self-test constants
+NVME_SELFTEST_LOG_PAGE = 0x06
+NVME_SELFTEST_LOG_LENGTH = 512
+NVME_OACS_SELFTEST_BIT = 0x10  # Bit 4
+NVME_DSTS_SHORT = 0x1
+NVME_DSTS_EXTENDED = 0x2
+NVME_DSTS_ABORT = 0xF
+
+# Terminal width constants
+MIN_TERMINAL_WIDTH = 60
+COMPACT_LAYOUT_THRESHOLD = 100
+MAX_HEADER_WIDTH = 120
+
+# Time constants (in seconds)
+DEFAULT_WATCH_INTERVAL = 60
+SELFTEST_POLL_INTERVAL = 30
+
+# File paths
+DEFAULT_CONFIG_FILE = "thresholds.yaml"
