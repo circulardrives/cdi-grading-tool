@@ -50,8 +50,8 @@ jobs:
 
           pip install --target=build/pkg/opt/cdi-health/lib dist/*.whl
 
-          # Remove __pycache__ dirs to avoid nfpm content collisions
-          find build/pkg -type d -name __pycache__ -exec rm -rf {} +
+          # Remove __pycache__ dirs to avoid bloating the package
+          find build/pkg -type d -name __pycache__ -prune -exec rm -rf {} +
 
           cat > build/pkg/usr/local/bin/cdi-health << 'WRAPPER'
           #!/bin/sh

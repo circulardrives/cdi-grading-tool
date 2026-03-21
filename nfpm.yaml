@@ -28,8 +28,9 @@ recommends:
   - nvme-cli
 
 contents:
-  - src: ./build/pkg/opt/cdi-health/lib/
-    dst: /opt/cdi-health/lib/
+  - src: ./build/pkg/opt/cdi-health/lib
+    dst: /opt/cdi-health/lib
+    type: tree
 
   - src: ./build/pkg/usr/local/bin/cdi-health
     dst: /usr/local/bin/cdi-health
