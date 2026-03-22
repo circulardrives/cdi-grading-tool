@@ -95,7 +95,7 @@ ATA devices can expose:
 #### Health Assessment Criteria
 
 - **SMART Status**: Must pass
-- **HDD sector defects (SATA reallocated / pending)**  
+- **HDD sector defects (SATA reallocated / pending)**
   Use the **HDD sector defect curve** above. Defaults: `grading.hdd_sector_concern_threshold` (**2**), `ata.maximum_reallocated_sectors` / `ata.maximum_pending_sectors` (**10**), `grading.hdd_sector_defect_max_deduction_points` (**10**). **SSDs** use percentage-used and uncorrectable / offline-uncorrectable handling instead of this curve for wear.
 - **Uncorrectable Errors**: Threshold typically 10 errors
 - **Temperature**: Must not exceed maximum operating temperature
@@ -206,7 +206,7 @@ SCSI devices provide an Error Counter Log with:
 
 #### Health Assessment Criteria
 
-- **HDD grown defects (SAS/SCSI HDDs)**  
+- **HDD grown defects (SAS/SCSI HDDs)**
   **Grown defect count** uses the **same HDD sector defect curve** as SATA reallocated/pending (see [HDD sector defect curve (SATA and SAS)](#hdd-sector-defect-curve-sata-and-sas)). Configure **`scsi.maximum_grown_defects`** (default **10**) and the same **`grading.hdd_sector_*`** keys as for SATA.
 - **Uncorrected Errors**: Combined read/write/verify errors, threshold typically 10
 - **SMART Status**: Must pass

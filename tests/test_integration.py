@@ -108,3 +108,31 @@ class TestIntegration:
                 with file.open() as f:
                     data = json.load(f)
                     assert isinstance(data, dict)
+
+    def test_packaged_resources_and_api_entrypoint_are_accessible(self) -> None:
+        """Test package resources and the API entrypoint module can be imported."""
+        import json
+        from importlib.resources import files
+
+        from cdi_health.api.server import create_parser
+
+        thresholds = files("cdi_health.config") / "thresholds.yaml"
+        palette = files("cdi_health.assets") / "cdi_brand_palette.css"
+        logo = files("cdi_health.assets") / "CDILogo-01.svg"
+        healthy_hdd = files("cdi_health.mock_data") / "ata" / "healthy_hdd.json"
+        healthy_nvme = files("cdi_health.mock_data") / "nvme" / "KCD81VUG6T40_healthy.json"
+        healthy_scsi = files("cdi_health.mock_data") / "scsi" / "healthy_sas.json"
+
+        assert thresholds.is_file()
+        assert palette.is_file()
+        assert logo.is_file()
+        assert healthy_hdd.is_file()
+        assert healthy_nvme.is_file()
+        assert healthy_scsi.is_file()
+
+        with healthy_hdd.open() as f:
+            data = json.load(f)
+        assert isinstance(data, dict)
+
+        parser = create_parser()
+        assert parser.prog == "cdi-health-api"

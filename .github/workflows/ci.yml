@@ -117,6 +117,18 @@ jobs:
         run: |
           venv/bin/cdi-health -h
           venv/bin/python -m cdi_health -h
+          venv/bin/cdi-health-api -h
+          venv/bin/python -m cdi_health.api -h
+          venv/bin/python - <<'PY'
+          from importlib.resources import files
+
+          assert (files("cdi_health.config") / "thresholds.yaml").is_file()
+          assert (files("cdi_health.assets") / "cdi_brand_palette.css").is_file()
+          assert (files("cdi_health.assets") / "CDILogo-01.svg").is_file()
+          assert (files("cdi_health.mock_data") / "ata" / "healthy_hdd.json").is_file()
+          assert (files("cdi_health.mock_data") / "nvme" / "KCD81VUG6T40_healthy.json").is_file()
+          assert (files("cdi_health.mock_data") / "scsi" / "healthy_sas.json").is_file()
+          PY
 
   check:
     name: 🚨 Check ${{ matrix.task.name }} - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }}
