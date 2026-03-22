@@ -406,7 +406,7 @@ class ReportGenerator:
         """Format OCP / nested values for table cells."""
         if val is None:
             return "—"
-        if isinstance(val, (dict, list)):
+        if isinstance(val, dict | list):
             try:
                 return json.dumps(val, ensure_ascii=False, default=str)
             except TypeError:

@@ -30,7 +30,7 @@ Supports **ATA/SATA**, **NVMe**, and **SCSI/SAS** on Linux with `smartctl`, `nvm
 
 ## Requirements
 
-- **OS:** Linux (x86_64), privileged access to block devices for real hardware scans  
+- **OS:** Linux (x86_64), privileged access to block devices for real hardware scans
 - **Python:** 3.10+
 
 ### Required tools (typical install)
@@ -43,8 +43,8 @@ sudo apt install smartmontools nvme-cli
 
 **Optional**
 
-- **OCP NVMe extended SMART (C0h):** `nvme-cli` **2.10+** with the OCP plugin (`nvme ocp smart-add-log`).  
-- **ATA extras:** [openSeaChest](https://github.com/Seagate/openSeaChest).  
+- **OCP NVMe extended SMART (C0h):** `nvme-cli` **2.10+** with the OCP plugin (`nvme ocp smart-add-log`).
+- **ATA extras:** [openSeaChest](https://github.com/Seagate/openSeaChest).
 - **PDF reports:** `pip install weasyprint` (or your distro package).
 
 ---
@@ -105,8 +105,8 @@ Default thresholds live in [`src/cdi_health/config/thresholds.yaml`](src/cdi_hea
 
 ## Health scoring (summary)
 
-- **Base:** 100 points; deductions for SMART failures, temperatures, wear, uncorrectables, NVMe critical warnings/media errors, failed self-tests, etc.  
-- **HDDs (SATA / SAS):** Reallocated, pending, and grown defects use a shared **concern → failure** curve (defaults: no deduction **≤2**, failure threshold **10**, up to **10** points deducted per metric at failure). **Defect counts** come from **ATA SMART attributes** / SCSI equivalents; **HDD mechanical/thermal** detail is largely from the **Device Statistics Log** — full detail in the spec.  
+- **Base:** 100 points; deductions for SMART failures, temperatures, wear, uncorrectables, NVMe critical warnings/media errors, failed self-tests, etc.
+- **HDDs (SATA / SAS):** Reallocated, pending, and grown defects use a shared **concern → failure** curve (defaults: no deduction **≤2**, failure threshold **10**, up to **10** points deducted per metric at failure). **Defect counts** come from **ATA SMART attributes** / SCSI equivalents; **HDD mechanical/thermal** detail is largely from the **Device Statistics Log** — full detail in the spec.
 - **SSDs / NVMe:** Wear, media errors, critical warning bits, and related rules are documented in **[CDI Health Specification](docs/CDI_HEALTH_SPEC.md)**.
 
 **Grades:** A 90–100 · B 75–89 · C 60–74 · D 40–59 · F 0–39.
@@ -189,13 +189,13 @@ A Next.js dashboard scaffold lives under `dashboard/` (`npm install && npm run d
 
 ## Features
 
-- Multi-protocol scanning and grading  
-- Configurable YAML thresholds  
-- Mock JSON fixtures for development and CI  
-- NVMe self-test integration  
-- Offline HTML/PDF reports with CDI branding; CSV export with advanced columns  
-- Watch mode and optional REST API  
-- Detailed spec documentation aligned with implementation  
+- Multi-protocol scanning and grading
+- Configurable YAML thresholds
+- Mock JSON fixtures for development and CI
+- NVMe self-test integration
+- Offline HTML/PDF reports with CDI branding; CSV export with advanced columns
+- Watch mode and optional REST API
+- Detailed spec documentation aligned with implementation
 
 ---
 
@@ -219,7 +219,7 @@ Circular Drive Initiative; contributors; **smartmontools**, **nvme-cli**, **open
 
 ## Contact
 
-- Nick Hayhurst — [nick.hayhurst@interactdc.com](mailto:nick.hayhurst@interactdc.com)  
-- Jonmichael Hands — [jm@circulardrives.org](mailto:jm@circulardrives.org)  
+- Nick Hayhurst — [nick.hayhurst@interactdc.com](mailto:nick.hayhurst@interactdc.com)
+- Jonmichael Hands — [jm@circulardrives.org](mailto:jm@circulardrives.org)
 
 **Repository:** [github.com/circulardrives/cdi-grading-tool](https://github.com/circulardrives/cdi-grading-tool)
