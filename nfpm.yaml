@@ -32,6 +32,14 @@ contents:
     dst: /opt/cdi-health/lib
     type: tree
 
+  - src: ./dashboard
+    dst: /opt/cdi-health/dashboard
+    type: tree
+
+  - src: ./deploy
+    dst: /opt/cdi-health/deploy
+    type: tree
+
   - src: ./build/pkg/usr/local/bin/cdi-health
     dst: /usr/local/bin/cdi-health
     file_info:

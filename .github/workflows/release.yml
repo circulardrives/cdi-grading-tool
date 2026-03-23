@@ -78,6 +78,20 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: nfpm pkg --packager deb --target dist/
 
+      - name: Validate deb package contents
+        run: |
+          rm -rf /tmp/cdi-health-deb
+          mkdir -p /tmp/cdi-health-deb
+          dpkg-deb -x dist/*.deb /tmp/cdi-health-deb
+
+          test -f /tmp/cdi-health-deb/opt/cdi-health/dashboard/package.json
+          test -f "/tmp/cdi-health-deb/opt/cdi-health/dashboard/app/(console)/reports/page.tsx"
+          test -f /tmp/cdi-health-deb/opt/cdi-health/deploy/systemd/cdi-health-dashboard.service
+          grep -Fx 'WorkingDirectory=/opt/cdi-health' \
+            /tmp/cdi-health-deb/usr/lib/systemd/system/cdi-health-api.service
+          grep -Fx 'WorkingDirectory=/opt/cdi-health/dashboard' \
+            /tmp/cdi-health-deb/opt/cdi-health/deploy/systemd/cdi-health-dashboard.service
+
       - name: Build rpm package
         env:
           VERSION: ${{ steps.version.outputs.version }}

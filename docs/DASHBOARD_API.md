@@ -49,7 +49,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/cdi-grading-tool
+WorkingDirectory=/opt/cdi-health
 ExecStart=/usr/local/bin/cdi-health-api --host 127.0.0.1 --port 8844
 Restart=on-failure
 Environment=CDI_HEALTH_API_TOKEN=replace-me
