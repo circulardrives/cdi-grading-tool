@@ -7,12 +7,9 @@ This guide sets up CDI for local technician use with:
 
 ## 1. Install Backend
 
-```bash
-cd /opt/cdi-grading-tool
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .[api]
-```
+The deb package installs the backend library under `/opt/cdi-health/lib` and
+the CLI/API entrypoints under `/usr/local/bin`, so no extra Python install step
+is required.
 
 Ensure required device tools are installed:
 
@@ -23,7 +20,7 @@ sudo apt install smartmontools nvme-cli sg3-utils
 ## 2. Install Dashboard
 
 ```bash
-cd /opt/cdi-grading-tool/dashboard
+cd /opt/cdi-health/dashboard
 cp .env.example .env.local
 npm install
 npm run build
@@ -32,15 +29,15 @@ npm run build
 ## 3. Install systemd Services
 
 ```bash
-sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.service /etc/systemd/system/
-sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-dashboard.service /etc/systemd/system/
+sudo cp /opt/cdi-health/deploy/systemd/cdi-health-api.service /etc/systemd/system/
+sudo cp /opt/cdi-health/deploy/systemd/cdi-health-dashboard.service /etc/systemd/system/
 ```
 
 Optional env files:
 
 ```bash
-sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.env.example /etc/default/cdi-health-api
-sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-dashboard.env.example /etc/default/cdi-health-dashboard
+sudo cp /opt/cdi-health/deploy/systemd/cdi-health-api.env.example /etc/default/cdi-health-api
+sudo cp /opt/cdi-health/deploy/systemd/cdi-health-dashboard.env.example /etc/default/cdi-health-dashboard
 ```
 
 Then enable and start:
@@ -65,7 +62,7 @@ Preferred model: run `cdi-health-api` as root via systemd.
 If you must run API as non-root service account, install the optional policy:
 
 ```bash
-sudo cp /opt/cdi-grading-tool/deploy/sudoers/cdi-health-technician /etc/sudoers.d/cdi-health-technician
+sudo cp /opt/cdi-health/deploy/sudoers/cdi-health-technician /etc/sudoers.d/cdi-health-technician
 sudo chmod 440 /etc/sudoers.d/cdi-health-technician
 sudo visudo -cf /etc/sudoers.d/cdi-health-technician
 ```
