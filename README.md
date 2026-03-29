@@ -39,7 +39,7 @@ Supports **ATA/SATA**, **NVMe**, and **SCSI/SAS** on Linux with `smartctl`, `nvm
 sudo apt install smartmontools nvme-cli
 ```
 
-**SCSI/SAS:** also install `sg3-utils` (`sg_map`, `sg_turs`, etc.).
+**SCSI/SAS:** also install `sg3-utils` (e.g. `sg_map26`, `sg_turs`). Mixed NVMe + SAS benches usually install all three packages together.
 
 **Optional**
 
@@ -69,9 +69,24 @@ pip install -e .
 pip install -e .[dev,api]
 ```
 
+**Debian/Ubuntu `.deb` (release builds)**
+
+Prebuilt packages attach to [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases). Install:
+
+```shell
+sudo dpkg -i cdi-health_*_all.deb
+sudo apt-get install -f   # pull in dependencies if dpkg reported any
+```
+
+The package depends on **`python3`** and **recommends** `smartmontools` and `nvme-cli`; **suggests** `sg3-utils` for SAS. Application files live under **`/opt/cdi-health/lib`**; **`cdi-health`** and **`cdi-health-api`** are on **`PATH`** as `/usr/local/bin/...`. Bundled **openSeaChest** binaries (when included in the package) install under `/usr/local/bin`.
+
 ---
 
 ## Quick start
+
+**Real hardware:** run `scan` / `report` / `watch` **without** `--mock-data` or `--mock-file` so the tool probes live block devices (use `sudo` when the account cannot read SMART/NVMe logs).
+
+**Mock / CI:** pass `--mock-data path/to/mock_data` or `--mock-file path/to/fixture.json` so no hardware or elevated access is required.
 
 ```shell
 # Fleet scan — detailed table (default)
@@ -183,7 +198,7 @@ A Next.js dashboard scaffold lives under `dashboard/` (`npm install && npm run d
 | **[Development](DEVELOPMENT.md)** | Style, tests, workflow |
 | **[Testing](README_TESTING.md)** | Mock data and test commands |
 | **[Contributing](CONTRIBUTING.md)** | Contributions |
-| **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)** | systemd, sudoers |
+| **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)** | `.deb` vs git install, systemd, dashboard, sudoers |
 
 ---
 

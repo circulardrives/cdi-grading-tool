@@ -162,6 +162,10 @@ Hooks will automatically:
 python -m build
 ```
 
+### Debian package (`.deb`)
+
+Linux release packages are built in CI (see `.github/workflows/release.yml`) using **nfpm** and `nfpm.yaml`. Artifacts install `cdi-health` / `cdi-health-api` under `/usr/local/bin` and libraries under `/opt/cdi-health/lib`. Local experiments (on a Linux host with nfpm and the packaging script prerequisites) follow the same `nfpm` invocation documented in that workflow.
+
 ### Install in Development Mode
 ```bash
 pip install -e .[dev]
@@ -206,6 +210,14 @@ cdi-health scan --mock-data src/cdi_health/mock_data
 - Run with verbose: `pytest tests/ -v`
 - Check test output for details
 - Ensure mock data exists
+
+### Ruff format check fails after `pip install -e .`
+
+Setuptools-scm generates `src/cdi_health/_version.py` (gitignored) during editable installs. If `ruff format --check` reports that file, run `ruff format src/cdi_health/_version.py` once, or format the whole tree with `ruff format .`.
+
+### `python3 -m venv` fails (ensurepip)
+
+On minimal Ubuntu/Debian images, install **`python3-venv`** (or the versioned package your distro suggests, e.g. `python3.12-venv`) so `venv` can bootstrap pip.
 
 ## Resources
 

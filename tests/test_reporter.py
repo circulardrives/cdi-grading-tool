@@ -83,3 +83,55 @@ def test_nvme_scalar_keys_skip_nested_log_fields() -> None:
     assert "size" in keys
     assert "read" in keys
     assert "table" not in keys
+
+
+def test_nvme_scalar_keys_skip_blob_keys_case_insensitive() -> None:
+    """Array-like log keys are skipped regardless of smartctl key casing."""
+    devices = [
+        {
+            "transport_protocol": "NVMe",
+            "nvme_self_test_log": {
+                "TABLE": [{"x": 1}],
+                "current_self_test_operation": {"value": 0, "string": "Idle"},
+            },
+        }
+    ]
+    keys = ReportGenerator._nvme_scalar_keys_union(devices, "nvme_self_test_log")
+    assert "TABLE" not in keys
+    assert "current_self_test_operation" not in keys
+
+
+def test_nvme_selftest_scalar_field_rejects_jsonish_strings() -> None:
+    """Long JSON-looking strings must not blow up table cells."""
+    blob = '[{"self_test_code": {"value": 1}}]'
+    device = {
+        "transport_protocol": "NVMe",
+        "nvme_self_test_log": {"weird": blob * 50},
+    }
+    cell = ReportGenerator._nvme_selftest_scalar_field(device, "weird")
+    assert cell == "—"
+
+
+def test_format_ocp_smart_value_hi_lo() -> None:
+    assert ReportGenerator._format_ocp_smart_value({"hi": 0, "lo": 42}) == "42"
+    assert ReportGenerator._format_ocp_smart_value({"hi": 1, "lo": 0}) == str(1 << 64)
+
+
+def test_generate_html_includes_ocp_columns_when_present(tmp_path: Path, mock_data_dir: Path) -> None:
+    """NVMe devices with OCP C0h data get per-field columns with readable hi/lo counters."""
+    devices = MockDevices(
+        mock_data_path=str(mock_data_dir),
+        ignore_ata=True,
+        ignore_nvme=False,
+        ignore_scsi=True,
+    ).devices
+    with_ocp = [d for d in devices if isinstance(d.get("ocp_smart_log"), dict) and d["ocp_smart_log"]]
+    if not with_ocp:
+        return
+
+    out = tmp_path / "report.html"
+    ReportGenerator().generate_html(devices, str(out))
+    html_text = out.read_text(encoding="utf-8")
+    assert "OCP SMART — Bad user nand blocks - Normalized" in html_text
+    # FADU fixture: Physical media units read {hi:0, lo:2744719892480} → single 128-bit style integer string
+    assert "2744719892480" in html_text

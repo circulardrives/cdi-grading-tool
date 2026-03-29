@@ -1743,11 +1743,22 @@ class NVMeProtocol:
             current_op = nvme_self_test_log.get("current_self_test_operation", {})
             device.nvme_self_test_current_status = current_op.get("string", "No self-test in progress")
 
-            # Extract entries (self-test history)
-            device.nvme_self_test_history = nvme_self_test_log.get("entries", [])
+            # Extract entries (self-test history); smartctl JSON uses "table" or "entries"
+            hist = nvme_self_test_log.get("entries")
+            if not isinstance(hist, list):
+                hist = nvme_self_test_log.get("table")
+            device.nvme_self_test_history = hist if isinstance(hist, list) else []
 
-            # Count failed tests
-            failed_count = sum(1 for entry in device.nvme_self_test_history if entry.get("result", 0) == 1)
+            # Count failed tests (smartctl uses self_test_result.value; some dumps use result)
+            def _entry_failed(e: dict) -> bool:
+                r = e.get("self_test_result")
+                if isinstance(r, dict) and "value" in r:
+                    return int(r.get("value", 0)) == 1
+                return int(e.get("result", 0)) == 1
+
+            failed_count = sum(
+                1 for entry in device.nvme_self_test_history if isinstance(entry, dict) and _entry_failed(entry)
+            )
             device.nvme_self_test_failed_count = failed_count
         else:
             device.nvme_self_test_log = None

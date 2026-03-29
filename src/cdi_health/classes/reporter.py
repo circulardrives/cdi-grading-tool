@@ -602,17 +602,22 @@ class ReportGenerator:
         return isinstance(val, (dict, list))
 
     @staticmethod
+    def _nvme_log_table_blob_key_casefolds() -> frozenset[str]:
+        """Top-level NVMe log keys that hold row arrays (use row-count + JSON modal, not cells)."""
+        return frozenset(s.casefold() for s in ("table", "entries", "results"))
+
+    @staticmethod
     def _nvme_scalar_keys_union(devices: list[dict], log_attr: str) -> list[str]:
         """Keys in an NVMe log dict whose values are never list/dict across devices (safe table cells)."""
         keys: set[str] = set()
         nested: set[str] = set()
-        skip_root = {"table", "entries"}
+        blob_cf = ReportGenerator._nvme_log_table_blob_key_casefolds()
         for d in devices:
             log = d.get(log_attr)
             if not isinstance(log, dict):
                 continue
             for k, v in log.items():
-                if k in skip_root:
+                if isinstance(k, str) and k.casefold() in blob_cf:
                     nested.add(k)
                     continue
                 keys.add(k)
@@ -621,16 +626,25 @@ class ReportGenerator:
         return sorted(keys - nested)
 
     @staticmethod
+    def _nvme_log_scalar_cell_value(v) -> str:
+        """Single cell for NVMe log scalars; never inline large structures."""
+        if v is None:
+            return "—"
+        if ReportGenerator._nvme_nested_value(v):
+            return "—"
+        if isinstance(v, str) and len(v) > 240:
+            t = v.lstrip()
+            if t.startswith(("[", "{")):
+                return "—"
+        return str(v)
+
+    @staticmethod
     def _nvme_err_log_scalar_field(device: dict, key: str) -> str:
         log = device.get("nvme_error_information_log")
         if not isinstance(log, dict):
             return "—"
         v = log.get(key)
-        if v is None:
-            return "—"
-        if ReportGenerator._nvme_nested_value(v):
-            return "—"
-        return str(v)
+        return ReportGenerator._nvme_log_scalar_cell_value(v)
 
     @staticmethod
     def _nvme_selftest_scalar_field(device: dict, key: str) -> str:
@@ -638,11 +652,7 @@ class ReportGenerator:
         if not isinstance(log, dict):
             return "—"
         v = log.get(key)
-        if v is None:
-            return "—"
-        if ReportGenerator._nvme_nested_value(v):
-            return "—"
-        return str(v)
+        return ReportGenerator._nvme_log_scalar_cell_value(v)
 
     @staticmethod
     def _nvme_error_table_len(device: dict) -> int:
@@ -672,6 +682,49 @@ class ReportGenerator:
         if not isinstance(o, dict) or not o:
             return "—"
         return f"Yes ({len(o)} fields)"
+
+    @staticmethod
+    def _nvme_ocp_keys_union(devices: list[dict]) -> list[str]:
+        """Stable union of OCP SMART log (C0h) field names across NVMe devices."""
+        keys: set[str] = set()
+        for d in devices:
+            o = d.get("ocp_smart_log")
+            if isinstance(o, dict) and o:
+                keys.update(o.keys())
+        return sorted(keys)
+
+    @staticmethod
+    def _format_ocp_smart_value(val) -> str:
+        """Render one OCP field for table/CSV (handles 128-bit hi/lo from nvme-cli JSON)."""
+        if val is None:
+            return "—"
+        if isinstance(val, dict):
+            if "hi" in val and "lo" in val:
+                try:
+                    hi = int(val["hi"]) & 0xFFFFFFFFFFFFFFFF
+                    lo = int(val["lo"]) & 0xFFFFFFFFFFFFFFFF
+                    return str((hi << 64) | lo)
+                except (TypeError, ValueError):
+                    pass
+            try:
+                s = json.dumps(val, ensure_ascii=False, default=str)
+            except TypeError:
+                s = str(val)
+            return s if len(s) <= 200 else s[:197] + "…"
+        if isinstance(val, list):
+            try:
+                s = json.dumps(val, ensure_ascii=False, default=str)
+            except TypeError:
+                s = str(val)
+            return s if len(s) <= 200 else s[:197] + "…"
+        return str(val)
+
+    @staticmethod
+    def _ocp_smart_field_cell(device: dict, key: str) -> str:
+        o = device.get("ocp_smart_log")
+        if not isinstance(o, dict):
+            return "—"
+        return ReportGenerator._format_ocp_smart_value(o.get(key))
 
     @staticmethod
     def _nvme_row_json_base_id(device: dict, row_index: int) -> str:
@@ -874,6 +927,9 @@ class ReportGenerator:
         for k in ReportGenerator._nvme_scalar_keys_union(devices, "nvme_self_test_log"):
             label = f"NVMe self-test log — {k}"
             out.append((label, lambda d, kk=k: ReportGenerator._nvme_selftest_scalar_field(d, kk)))
+        for k in ReportGenerator._nvme_ocp_keys_union(devices):
+            label = f"OCP SMART — {k}"
+            out.append((label, lambda d, kk=k: ReportGenerator._ocp_smart_field_cell(d, kk)))
         out.append((_NVME_HTML_LOGS_HEADER, lambda d: "", "html"))
         return out
 
@@ -1044,6 +1100,8 @@ class ReportGenerator:
             return header.replace("NVMe error log — ", "NVMe err ", 1)
         if header.startswith("NVMe self-test log — "):
             return header.replace("NVMe self-test log — ", "Self-test ", 1)
+        if header.startswith("OCP SMART — "):
+            return "OCP " + header[len("OCP SMART — ") :]
         replacements = {
             "Controller busy time (min)": "Busy min",
             "Warning temp time (min)": "Warn temp min",
@@ -1410,6 +1468,13 @@ class ReportGenerator:
           white-space: pre-wrap;
           vertical-align: top;
           line-height: 1.45;
+        }
+        /* Keep advanced table rows short unless the cell is explicitly multiline (e.g. SMART attrs). */
+        .device-table--wide .cell-stat:not(.cell-stat--is-multiline):not(.cell-nvme-log-btns) {
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 8;
+          overflow: hidden;
         }
         .device-table--wide td:first-child,
         .device-table--wide th:first-child {

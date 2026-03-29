@@ -173,6 +173,10 @@ def test_formatter():
 
 ## Troubleshooting
 
+### Cannot create a venv (`ensurepip` / `python3-venv`)
+
+On some Linux images, `python3 -m venv .venv` fails until you install the venv module, e.g. `sudo apt install python3-venv` (or `python3.12-venv` matching your Python).
+
 ### Tests Fail with Import Errors
 - Ensure package is installed: `pip install -e .[dev]`
 - Check Python version: `python --version` (requires 3.10+)
