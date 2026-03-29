@@ -599,7 +599,7 @@ class ReportGenerator:
 
     @staticmethod
     def _nvme_nested_value(val) -> bool:
-        return isinstance(val, (dict, list))
+        return isinstance(val, dict | list)
 
     @staticmethod
     def _nvme_log_table_blob_key_casefolds() -> frozenset[str]:
