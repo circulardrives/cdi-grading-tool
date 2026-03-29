@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Package can be installed via pip: `pip install cdi-health`
 - Version managed via setuptools-scm from git tags
 
+## [0.8] - 2026-03-29
+
+### Added
+- Mock SMART/NVMe export path for reproducible reports and tests (`mock_export`, expanded mock fixtures).
+- FastAPI health smoke test coverage and `httpx` dev dependency for `TestClient`.
+- HDD sector scoring thresholds and NVMe advanced reporting fields in HTML/PDF output.
+
+### Changed
+- Consolidated GitHub Actions CI (build, pre-commit, pytest matrix with OS tools, dashboard `next build`, wheel smoke, license headers).
+- Technician dashboard: React 19-compatible component types, drive-health and reporting UX updates.
+
 ## [1.0.0] - 2025-02-01
 
 ### Added
@@ -59,5 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Report generation
 - Watch/monitoring mode
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.8...HEAD
+[0.8]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.8
 [1.0.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v1.0.0
