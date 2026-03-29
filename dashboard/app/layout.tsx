@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import "./globals.css";
 
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   description: "Local dashboard for drive scan, NVMe self-test, and health metrics"
 };
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>): JSX.Element {
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>): ReactElement {
   return (
     <html lang="en">
       <body className={`${titleFont.variable} ${monoFont.variable} min-h-screen`}>{children}</body>

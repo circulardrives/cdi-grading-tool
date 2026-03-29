@@ -1,7 +1,7 @@
 "use client";
 
 import { Activity, Ban, PlayCircle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 
 import { useDashboard } from "@/components/dashboard-provider";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,7 @@ function formatDate(value: string | null | undefined): string {
   return parsed.toLocaleString();
 }
 
-export function SelfTestView(): JSX.Element {
+export function SelfTestView(): ReactElement {
   const { jobs, selfTestStatus, runSelfTest, runAbort, refreshSelfTestStatus, refreshJobs, busy, preferences } = useDashboard();
   const [device, setDevice] = useState("");
   const [testType, setTestType] = useState<"short" | "extended">("short");

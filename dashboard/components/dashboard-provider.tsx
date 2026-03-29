@@ -1,6 +1,15 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode
+} from "react";
 
 import {
   abortSelfTest,
@@ -112,7 +121,7 @@ function applyMockDataToReport(payload: ReportPayload): ReportPayload {
   return payload;
 }
 
-export function DashboardProvider({ children }: { children: ReactNode }): JSX.Element {
+export function DashboardProvider({ children }: { children: ReactNode }): ReactElement {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [scan, setScan] = useState<ScanResponse | null>(null);
   const [jobs, setJobs] = useState<JobResponse[]>([]);

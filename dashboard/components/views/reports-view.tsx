@@ -1,7 +1,7 @@
 "use client";
 
 import { FileText, FileType2, FolderOutput, Printer } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 
 import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ function formatDate(value: string | null | undefined): string {
   return parsed.toLocaleString();
 }
 
-export function ReportsView(): JSX.Element {
+export function ReportsView(): ReactElement {
   const { scan, latestReport, reportHistory, runReport, busy, preferences } = useDashboard();
   const [format, setFormat] = useState<"html" | "pdf">("html");
   const [outputPath, setOutputPath] = useState("");

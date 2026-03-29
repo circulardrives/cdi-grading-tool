@@ -1,12 +1,13 @@
 "use client";
 
 import { Cpu, Gauge, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import type { ReactElement } from "react";
 
 import { useDashboard } from "@/components/dashboard-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-export function SettingsView(): JSX.Element {
+export function SettingsView(): ReactElement {
   const { health, useMockData, mockPath, preferences, updatePreferences } = useDashboard();
 
   return (

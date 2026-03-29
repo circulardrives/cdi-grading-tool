@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, AlertTriangle, RefreshCcw, ScanLine } from "lucide-react";
-import { type ReactNode } from "react";
+import { type ReactElement, type ReactNode } from "react";
 
 import { navItems } from "@/components/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ function pathIsActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function DashboardShell({ children }: { children: ReactNode }): JSX.Element {
+export function DashboardShell({ children }: { children: ReactNode }): ReactElement {
   const pathname = usePathname();
   const { health, scan, selfTestStatus, busy, message, error, setMessage, setError, refreshAll, runScan, useMockData, mockPath } = useDashboard();
 
