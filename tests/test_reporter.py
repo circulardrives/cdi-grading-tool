@@ -28,7 +28,7 @@ from cdi_health.classes.reporter import ReportGenerator
 
 
 def test_generate_csv_includes_nvme_columns_and_category(tmp_path: Path, mock_data_dir: Path) -> None:
-    """CSV export unions advanced columns; NVMe drives get split health-log fields."""
+    """CSV export unions advanced columns; NVMe drives get scalar log fields + full JSON columns."""
     devices = MockDevices(
         mock_data_path=str(mock_data_dir),
         ignore_ata=False,
@@ -44,4 +44,42 @@ def test_generate_csv_includes_nvme_columns_and_category(tmp_path: Path, mock_da
     assert "Report category" in text
     assert "NVMe data units read" in text
     assert "NVMe error log —" in text
+    assert "NVMe error log (full JSON)" in text
+    assert "NVMe self-test log (full JSON)" in text
+    assert "OCP SMART C0h (full JSON)" in text
     assert "SMART attr" in text
+
+
+def test_generate_html_includes_nvme_modal_and_log_buttons(tmp_path: Path, mock_data_dir: Path) -> None:
+    """HTML report embeds JSON modal and per-row log buttons for NVMe (no giant table cells)."""
+    devices = MockDevices(
+        mock_data_path=str(mock_data_dir),
+        ignore_ata=False,
+        ignore_nvme=False,
+        ignore_scsi=False,
+    ).devices
+    assert any(d.get("transport_protocol") == "NVMe" for d in devices)
+
+    out = tmp_path / "report.html"
+    ReportGenerator().generate_html(devices, str(out))
+    html_text = out.read_text(encoding="utf-8")
+
+    assert 'id="cdi-json-modal"' in html_text
+    assert "btn-json-log" in html_text
+    assert "cdiJsonModal" in html_text
+    assert "nvme-json-blobs" in html_text
+    assert "OCP C0h" in html_text
+
+
+def test_nvme_scalar_keys_skip_nested_log_fields() -> None:
+    """Union of NVMe error log keys excludes list/dict values (those go to JSON viewers)."""
+    devices = [
+        {
+            "transport_protocol": "NVMe",
+            "nvme_error_information_log": {"size": 256, "read": 1, "table": [{"a": 1}]},
+        }
+    ]
+    keys = ReportGenerator._nvme_scalar_keys_union(devices, "nvme_error_information_log")
+    assert "size" in keys
+    assert "read" in keys
+    assert "table" not in keys

@@ -68,6 +68,9 @@ _REPORT_TABS: tuple[tuple[str, str], ...] = (
     ("NVMe SSD", "nvme-ssd"),
 )
 
+# Advanced NVMe table: HTML column that renders modal trigger buttons (not CSV text).
+_NVME_HTML_LOGS_HEADER = "NVMe · log viewers (OCP C0h)"
+
 
 class ReportGenerator:
     """Generate detailed HTML/PDF health reports."""
@@ -104,7 +107,11 @@ class ReportGenerator:
             specs = self._advanced_column_specs(cat, cat_devices)
             row = {h: "" for h in headers}
             row["Report category"] = str(cat)
-            for h, fn in specs:
+            for spec in specs:
+                h, fn, mode = self._spec_triple(spec)
+                if mode == "html":
+                    row[h] = ""
+                    continue
                 try:
                     val = fn(d)
                 except Exception:
@@ -112,6 +119,12 @@ class ReportGenerator:
                 if val is None:
                     val = ""
                 row[h] = str(val)
+            for h, fn in ReportGenerator._nvme_csv_json_column_fns(cat, cat_devices):
+                if h in row:
+                    try:
+                        row[h] = str(fn(d))
+                    except Exception:
+                        row[h] = ""
             rows.append(row)
         with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=headers, extrasaction="ignore")
@@ -211,6 +224,7 @@ class ReportGenerator:
 <html lang="en">
 {self._render_report_head(timestamp, palette_css)}
 <body data-view="{html.escape(dv)}">
+{self._render_json_log_modal()}
     <aside class="sidebar">
         <div class="brand">
             <div class="brand-logo">{logo_svg}</div>
@@ -256,6 +270,25 @@ class ReportGenerator:
     @staticmethod
     def _active_class(active: bool) -> str:
         return " active" if active else ""
+
+    @staticmethod
+    def _spec_triple(spec: tuple) -> tuple[str, object, str]:
+        if len(spec) >= 3:
+            return spec[0], spec[1], spec[2]
+        return spec[0], spec[1], "text"
+
+    @staticmethod
+    def _render_json_log_modal() -> str:
+        return """    <div id="cdi-json-modal" class="cdi-json-modal" hidden>
+        <div class="cdi-json-modal__backdrop" data-cdi-json-close="1"></div>
+        <div class="cdi-json-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="cdi-json-modal-title">
+            <header class="cdi-json-modal__head">
+                <h3 class="cdi-json-modal__title" id="cdi-json-modal-title">Log</h3>
+                <button type="button" class="cdi-json-modal__close" data-cdi-json-close="1" aria-label="Close">×</button>
+            </header>
+            <pre class="cdi-json-modal__pre"></pre>
+        </div>
+    </div>"""
 
     def _render_report_head(self, timestamp: str, palette_css: str) -> str:
         return f"""<head>
@@ -345,6 +378,42 @@ class ReportGenerator:
       }}
 
       show(initial);
+
+      (function cdiJsonModal() {{
+        var modal = document.getElementById("cdi-json-modal");
+        if (!modal) return;
+        var pre = modal.querySelector(".cdi-json-modal__pre");
+        var titleEl = modal.querySelector(".cdi-json-modal__title");
+        function openModal(jsonId, title) {{
+          var el = document.getElementById(jsonId);
+          if (!el) return;
+          try {{
+            var data = JSON.parse(el.textContent);
+            pre.textContent = JSON.stringify(data, null, 2);
+          }} catch (err) {{
+            pre.textContent = el.textContent;
+          }}
+          titleEl.textContent = title || "Log";
+          modal.hidden = false;
+          document.body.style.overflow = "hidden";
+        }}
+        function closeModal() {{
+          modal.hidden = true;
+          document.body.style.overflow = "";
+        }}
+        document.addEventListener("click", function(e) {{
+          var btn = e.target.closest(".btn-json-log");
+          if (btn) {{
+            e.preventDefault();
+            openModal(btn.getAttribute("data-json-id"), btn.getAttribute("data-title"));
+            return;
+          }}
+          if (e.target.getAttribute("data-cdi-json-close")) closeModal();
+        }});
+        document.addEventListener("keydown", function(e) {{
+          if (e.key === "Escape" && !modal.hidden) closeModal();
+        }});
+      }})();
     }})();
     </script>"""
 
@@ -370,7 +439,7 @@ class ReportGenerator:
         for d in deductions:
             if hasattr(d, "reason") and hasattr(d, "points"):
                 if getattr(d, "threshold", None) is not None:
-                    parts.append(f"{d.reason}: {d.value} (≤{d.threshold}) [-{d.points}]")
+                    parts.append(f"{d.reason}: {d.value} (threshold: {d.threshold}) [-{d.points}]")
                 else:
                     parts.append(f"{d.reason} [-{d.points}]")
             elif isinstance(d, dict):
@@ -412,22 +481,6 @@ class ReportGenerator:
             except TypeError:
                 return str(val)
         return str(val)
-
-    @staticmethod
-    def _ocp_keys_union(devices: list[dict]) -> list[str]:
-        keys: set[str] = set()
-        for d in devices:
-            o = d.get("ocp_smart_log")
-            if isinstance(o, dict):
-                keys.update(o.keys())
-        return sorted(keys)
-
-    @staticmethod
-    def _ocp_field(device: dict, key: str) -> str:
-        o = device.get("ocp_smart_log")
-        if not isinstance(o, dict):
-            return "—"
-        return ReportGenerator._format_nested_cell(o.get(key))
 
     def _nvme_extended_column_specs(self) -> list[tuple[str, object]]:
         """Per-field columns from ``nvme_smart_health_information_log`` (+ self-test status)."""
@@ -545,51 +598,199 @@ class ReportGenerator:
         return ReportGenerator._format_nested_cell(sub.get(key))
 
     @staticmethod
-    def _nvme_err_log_keys_union(devices: list[dict]) -> list[str]:
-        keys: set[str] = set()
-        for d in devices:
-            log = d.get("nvme_error_information_log")
-            if isinstance(log, dict):
-                keys.update(log.keys())
-        return sorted(keys)
+    def _nvme_nested_value(val) -> bool:
+        return isinstance(val, (dict, list))
 
     @staticmethod
-    def _nvme_err_log_field(device: dict, key: str) -> str:
+    def _nvme_scalar_keys_union(devices: list[dict], log_attr: str) -> list[str]:
+        """Keys in an NVMe log dict whose values are never list/dict across devices (safe table cells)."""
+        keys: set[str] = set()
+        nested: set[str] = set()
+        skip_root = {"table", "entries"}
+        for d in devices:
+            log = d.get(log_attr)
+            if not isinstance(log, dict):
+                continue
+            for k, v in log.items():
+                if k in skip_root:
+                    nested.add(k)
+                    continue
+                keys.add(k)
+                if ReportGenerator._nvme_nested_value(v):
+                    nested.add(k)
+        return sorted(keys - nested)
+
+    @staticmethod
+    def _nvme_err_log_scalar_field(device: dict, key: str) -> str:
         log = device.get("nvme_error_information_log")
         if not isinstance(log, dict):
             return "—"
-        return ReportGenerator._format_nested_cell(log.get(key))
+        v = log.get(key)
+        if v is None:
+            return "—"
+        if ReportGenerator._nvme_nested_value(v):
+            return "—"
+        return str(v)
 
     @staticmethod
-    def _nvme_selftest_extra_keys_union(devices: list[dict]) -> list[str]:
-        keys: set[str] = set()
-        for d in devices:
-            log = d.get("nvme_self_test_log")
-            if not isinstance(log, dict):
-                continue
-            for k in log.keys():
-                if k != "current_self_test_operation":
-                    keys.add(k)
-        return sorted(keys)
-
-    @staticmethod
-    def _nvme_selftest_extra_cell(device: dict, key: str) -> str:
+    def _nvme_selftest_scalar_field(device: dict, key: str) -> str:
         log = device.get("nvme_self_test_log")
         if not isinstance(log, dict):
             return "—"
-        val = log.get(key)
-        if val is None:
+        v = log.get(key)
+        if v is None:
             return "—"
-        if key == "entries" and isinstance(val, list):
-            parts: list[str] = []
-            for i, e in enumerate(val):
-                if not isinstance(e, dict):
-                    parts.append(f"{i}: {e!s}")
-                    continue
-                bits = [f"{k}={v}" for k, v in sorted(e.items())]
-                parts.append(f"{i}: " + ", ".join(bits))
-            return "; ".join(parts) if parts else "—"
-        return ReportGenerator._format_nested_cell(val)
+        if ReportGenerator._nvme_nested_value(v):
+            return "—"
+        return str(v)
+
+    @staticmethod
+    def _nvme_error_table_len(device: dict) -> int:
+        log = device.get("nvme_error_information_log")
+        if not isinstance(log, dict):
+            return 0
+        for k in ("table", "entries"):
+            t = log.get(k)
+            if isinstance(t, list):
+                return len(t)
+        return 0
+
+    @staticmethod
+    def _nvme_selftest_table_len(device: dict) -> int:
+        log = device.get("nvme_self_test_log")
+        if not isinstance(log, dict):
+            return 0
+        for k in ("table", "entries"):
+            t = log.get(k)
+            if isinstance(t, list):
+                return len(t)
+        return 0
+
+    @staticmethod
+    def _nvme_ocp_summary(device: dict) -> str:
+        o = device.get("ocp_smart_log")
+        if not isinstance(o, dict) or not o:
+            return "—"
+        return f"Yes ({len(o)} fields)"
+
+    @staticmethod
+    def _nvme_row_json_base_id(device: dict, row_index: int) -> str:
+        serial = ReportGenerator._serial_label(device)
+        safe = "".join(c if c.isalnum() else "_" for c in serial)[:64]
+        if not safe.strip("_"):
+            safe = "unknown"
+        return f"jlog_{row_index}_{safe}"
+
+    @staticmethod
+    def _json_script_tag(element_id: str, obj) -> str:
+        payload = json.dumps(obj, ensure_ascii=False, default=str)
+        payload = payload.replace("<", "\\u003c")
+        return f'<script type="application/json" id="{html.escape(element_id)}">{payload}</script>'
+
+    def _nvme_panel_json_scripts(self, devices: list[dict]) -> str:
+        parts: list[str] = []
+        for idx, d in enumerate(devices):
+            if d.get("transport_protocol") != "NVMe":
+                continue
+            bid = self._nvme_row_json_base_id(d, idx)
+            err = d.get("nvme_error_information_log")
+            if isinstance(err, dict) and err:
+                parts.append(self._json_script_tag(f"{bid}-err", err))
+            st = d.get("nvme_self_test_log")
+            if isinstance(st, dict) and st:
+                parts.append(self._json_script_tag(f"{bid}-st", st))
+            ocp = d.get("ocp_smart_log")
+            if isinstance(ocp, dict) and ocp:
+                parts.append(self._json_script_tag(f"{bid}-ocp", ocp))
+        if not parts:
+            return ""
+        inner = "\n".join(parts)
+        return f'<div class="nvme-json-blobs" aria-hidden="true">\n{inner}\n</div>'
+
+    def _panel_includes_nvme_logs(self, title: str, devices: list[dict]) -> bool:
+        if title == "NVMe SSD":
+            return True
+        return title == "Other" and self._devices_any_proto(devices, "NVMe")
+
+    def _nvme_log_buttons_html(self, device: dict, row_index: int) -> str:
+        if device.get("transport_protocol") != "NVMe":
+            return '<td class="cell-stat cell-nvme-log-btns">—</td>'
+        bid = self._nvme_row_json_base_id(device, row_index)
+        btns: list[str] = []
+        if isinstance(device.get("nvme_error_information_log"), dict) and device["nvme_error_information_log"]:
+            eid = html.escape(f"{bid}-err")
+            btns.append(
+                f'<button type="button" class="btn-json-log" data-json-id="{eid}" '
+                f'data-title="NVMe error information log">Error log</button>'
+            )
+        if isinstance(device.get("nvme_self_test_log"), dict) and device["nvme_self_test_log"]:
+            eid = html.escape(f"{bid}-st")
+            btns.append(
+                f'<button type="button" class="btn-json-log" data-json-id="{eid}" '
+                f'data-title="NVMe self-test log">Self-test log</button>'
+            )
+        if isinstance(device.get("ocp_smart_log"), dict) and device["ocp_smart_log"]:
+            eid = html.escape(f"{bid}-ocp")
+            btns.append(
+                f'<button type="button" class="btn-json-log" data-json-id="{eid}" '
+                f'data-title="OCP SMART extended log (C0h)">OCP C0h</button>'
+            )
+        inner = '<div class="nvme-log-btns">' + "".join(btns) + "</div>" if btns else "—"
+        return f'<td class="cell-stat cell-nvme-log-btns">{inner}</td>'
+
+    @staticmethod
+    def _nvme_csv_json_column_names(cat: str, cat_devices: list[dict]) -> list[str]:
+        if cat == "NVMe SSD":
+            return [
+                "NVMe error log (full JSON)",
+                "NVMe self-test log (full JSON)",
+                "OCP SMART C0h (full JSON)",
+            ]
+        if cat == "Other" and ReportGenerator._devices_any_proto(cat_devices, "NVMe"):
+            return [
+                "NVMe error log (full JSON)",
+                "NVMe self-test log (full JSON)",
+                "OCP SMART C0h (full JSON)",
+            ]
+        return []
+
+    @staticmethod
+    def _nvme_csv_json_column_fns(cat: str, cat_devices: list[dict]) -> list[tuple[str, object]]:
+        names = ReportGenerator._nvme_csv_json_column_names(cat, cat_devices)
+        if not names:
+            return []
+        return [
+            (names[0], ReportGenerator._csv_json_nvme_error_log),
+            (names[1], ReportGenerator._csv_json_nvme_selftest_log),
+            (names[2], ReportGenerator._csv_json_ocp_log),
+        ]
+
+    @staticmethod
+    def _csv_json_nvme_error_log(device: dict) -> str:
+        if device.get("transport_protocol") != "NVMe":
+            return ""
+        log = device.get("nvme_error_information_log")
+        if not isinstance(log, dict) or not log:
+            return ""
+        return json.dumps(log, ensure_ascii=False, default=str)
+
+    @staticmethod
+    def _csv_json_nvme_selftest_log(device: dict) -> str:
+        if device.get("transport_protocol") != "NVMe":
+            return ""
+        log = device.get("nvme_self_test_log")
+        if not isinstance(log, dict) or not log:
+            return ""
+        return json.dumps(log, ensure_ascii=False, default=str)
+
+    @staticmethod
+    def _csv_json_ocp_log(device: dict) -> str:
+        if device.get("transport_protocol") != "NVMe":
+            return ""
+        log = device.get("ocp_smart_log")
+        if not isinstance(log, dict) or not log:
+            return ""
+        return json.dumps(log, ensure_ascii=False, default=str)
 
     def _base_column_specs(self) -> list[tuple[str, object]]:
         """Columns common to every device type (identity, capacity, cross-protocol health)."""
@@ -660,18 +861,20 @@ class ReportGenerator:
             ("Deductions", lambda d: self._format_deductions_short(d.get("health_deductions"))),
         ]
 
-    def _nvme_supplemental_column_specs(self, devices: list[dict]) -> list[tuple[str, object]]:
-        """NVMe-only: error log keys, self-test extras, OCP keys (union over devices on this tab)."""
-        out: list[tuple[str, object]] = []
-        for k in ReportGenerator._nvme_err_log_keys_union(devices):
+    def _nvme_supplemental_column_specs(self, devices: list[dict]) -> list[tuple]:
+        """NVMe-only: compact scalar log fields, row counts, OCP summary, and HTML log viewers."""
+        out: list[tuple] = [
+            ("NVMe error log rows", lambda d: ReportGenerator._nvme_error_table_len(d)),
+            ("NVMe self-test rows", lambda d: ReportGenerator._nvme_selftest_table_len(d)),
+            ("OCP C0h summary", lambda d: ReportGenerator._nvme_ocp_summary(d)),
+        ]
+        for k in ReportGenerator._nvme_scalar_keys_union(devices, "nvme_error_information_log"):
             label = f"NVMe error log — {k}"
-            out.append((label, lambda d, kk=k: ReportGenerator._nvme_err_log_field(d, kk)))
-        for k in ReportGenerator._nvme_selftest_extra_keys_union(devices):
+            out.append((label, lambda d, kk=k: ReportGenerator._nvme_err_log_scalar_field(d, kk)))
+        for k in ReportGenerator._nvme_scalar_keys_union(devices, "nvme_self_test_log"):
             label = f"NVMe self-test log — {k}"
-            out.append((label, lambda d, kk=k: ReportGenerator._nvme_selftest_extra_cell(d, kk)))
-        for k in ReportGenerator._ocp_keys_union(devices):
-            label = f"OCP SMART — {k}"
-            out.append((label, lambda d, kk=k: ReportGenerator._ocp_field(d, kk)))
+            out.append((label, lambda d, kk=k: ReportGenerator._nvme_selftest_scalar_field(d, kk)))
+        out.append((_NVME_HTML_LOGS_HEADER, lambda d: "", "html"))
         return out
 
     def _ata_smart_column_specs(self, devices: list[dict]) -> list[tuple[str, object]]:
@@ -751,7 +954,12 @@ class ReportGenerator:
         seen_h = set(headers)
         for cat in categories:
             cat_devices = [d for d in enriched if d.get("report_category") == cat]
-            for h, _ in self._advanced_column_specs(cat, cat_devices):
+            for spec in self._advanced_column_specs(cat, cat_devices):
+                h = spec[0]
+                if h not in seen_h:
+                    seen_h.add(h)
+                    headers.append(h)
+            for h in ReportGenerator._nvme_csv_json_column_names(cat, cat_devices):
                 if h not in seen_h:
                     seen_h.add(h)
                     headers.append(h)
@@ -764,9 +972,15 @@ class ReportGenerator:
         else:
             rows_simple = "".join(self._generate_row_simple(d) for d in devices)
             specs = self._advanced_column_specs(title, devices)
-            thead_adv = "".join(self._advanced_header_cell_html(h, idx == 0) for idx, (h, _) in enumerate(specs))
-            rows_adv = "".join(self._generate_row_advanced(d, specs) for d in devices)
-            body = self._simple_table_html(rows_simple) + self._advanced_table_html(thead_adv, rows_adv)
+            thead_adv = "".join(
+                self._advanced_header_cell_html(ReportGenerator._spec_triple(s)[0], idx == 0)
+                for idx, s in enumerate(specs)
+            )
+            rows_adv = "".join(self._generate_row_advanced(d, specs, row_index=i) for i, d in enumerate(devices))
+            nvme_scripts = ""
+            if self._panel_includes_nvme_logs(title, devices):
+                nvme_scripts = self._nvme_panel_json_scripts(devices)
+            body = self._simple_table_html(rows_simple) + self._advanced_table_html(thead_adv, rows_adv, nvme_scripts)
 
         return f"""
         <section class="tab-panel{active_class}" data-panel="{html.escape(slug)}" aria-labelledby="hdr-{html.escape(slug)}">
@@ -793,10 +1007,17 @@ class ReportGenerator:
             "</tr>"
         )
 
-    def _generate_row_advanced(self, device: dict, specs: list) -> str:
+    def _generate_row_advanced(self, device: dict, specs: list, row_index: int = 0) -> str:
         """One row: all SMART / statistics columns."""
         cells = []
-        for idx, (header, fn) in enumerate(specs):
+        for idx, spec in enumerate(specs):
+            header, fn, mode = self._spec_triple(spec)
+            if mode == "html":
+                if header == _NVME_HTML_LOGS_HEADER:
+                    cells.append(self._nvme_log_buttons_html(device, row_index))
+                else:
+                    cells.append('<td class="cell-stat">—</td>')
+                continue
             try:
                 raw = fn(device)
             except Exception:
@@ -806,6 +1027,14 @@ class ReportGenerator:
 
     @staticmethod
     def _display_column_label(header: str) -> str:
+        if header == _NVME_HTML_LOGS_HEADER:
+            return "Logs (JSON)"
+        if header == "NVMe error log rows":
+            return "Err rows"
+        if header == "NVMe self-test rows":
+            return "ST rows"
+        if header == "OCP C0h summary":
+            return "OCP C0h"
         if header.startswith("SMART attr "):
             compact = header.replace("SMART attr ", "Attr ", 1)
             return compact.replace("_", " ")
@@ -815,8 +1044,6 @@ class ReportGenerator:
             return header.replace("NVMe error log — ", "NVMe err ", 1)
         if header.startswith("NVMe self-test log — "):
             return header.replace("NVMe self-test log — ", "Self-test ", 1)
-        if header.startswith("OCP SMART — "):
-            return header.replace("OCP SMART — ", "OCP ", 1)
         replacements = {
             "Controller busy time (min)": "Busy min",
             "Warning temp time (min)": "Warn temp min",
@@ -862,8 +1089,6 @@ class ReportGenerator:
             return text, variant
         if header.startswith("SMART attr ") and "; " in text:
             return text.replace("; ", "\n"), "is-multiline"
-        if header.startswith("NVMe self-test log — entries") and "; " in text:
-            return text.replace("; ", "\n"), "is-multiline"
         return text, variant
 
     def _advanced_cell_html(self, header: str, raw, first_col: bool = False) -> str:
@@ -895,13 +1120,14 @@ class ReportGenerator:
             </div>"""
 
     @staticmethod
-    def _advanced_table_html(thead_adv: str, rows_adv: str) -> str:
+    def _advanced_table_html(thead_adv: str, rows_adv: str, after_table: str = "") -> str:
         return f"""
             <div class="table-wrap advanced-only">
                 <table class="device-table device-table--wide">
                     <thead><tr>{thead_adv}</tr></thead>
                     <tbody>{rows_adv}</tbody>
                 </table>
+                {after_table}
             </div>"""
 
     def _format_capacity(self, capacity) -> str:
@@ -1223,6 +1449,102 @@ class ReportGenerator:
         .status-healthy { color: var(--cdi-simply-green); }
         .status-warning { color: var(--warn); }
         .status-failed { color: var(--danger); }
+        .nvme-json-blobs { display: none !important; }
+        .nvme-log-btns {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          align-items: flex-start;
+        }
+        .btn-json-log {
+          padding: 6px 10px;
+          border-radius: 6px;
+          border: 1px solid var(--border);
+          background: var(--bg-card);
+          color: var(--accent);
+          font-size: 11px;
+          font-weight: 600;
+          cursor: pointer;
+          font-family: var(--font);
+        }
+        .btn-json-log:hover {
+          background: var(--accent-soft);
+          border-color: var(--accent);
+        }
+        .cell-nvme-log-btns {
+          max-width: 11rem;
+          white-space: normal;
+          vertical-align: top;
+        }
+        .cdi-json-modal[hidden] { display: none !important; }
+        .cdi-json-modal:not([hidden]) {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .cdi-json-modal__backdrop {
+          position: absolute;
+          inset: 0;
+          background: rgba(26, 36, 32, 0.45);
+        }
+        .cdi-json-modal__dialog {
+          position: relative;
+          z-index: 1;
+          max-width: min(920px, 92vw);
+          max-height: 85vh;
+          width: 100%;
+          background: var(--bg-card);
+          border-radius: var(--radius);
+          border: 1px solid var(--border);
+          box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .cdi-json-modal__head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--border);
+          background: var(--accent-soft);
+        }
+        .cdi-json-modal__title {
+          font-size: 15px;
+          margin: 0;
+          color: var(--accent-secondary);
+          font-family: var(--font);
+        }
+        .cdi-json-modal__close {
+          border: none;
+          background: transparent;
+          font-size: 22px;
+          line-height: 1;
+          cursor: pointer;
+          color: var(--muted);
+          padding: 4px 8px;
+          border-radius: 6px;
+        }
+        .cdi-json-modal__close:hover {
+          background: var(--accent-soft-strong);
+          color: var(--text);
+        }
+        .cdi-json-modal__pre {
+          margin: 0;
+          padding: 16px;
+          overflow: auto;
+          flex: 1;
+          font-family: var(--mono);
+          font-size: 12px;
+          line-height: 1.45;
+          white-space: pre-wrap;
+          word-break: break-word;
+          color: var(--text);
+        }
         """,
             """
         /* Footer and print */

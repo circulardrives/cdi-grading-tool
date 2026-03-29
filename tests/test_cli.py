@@ -29,6 +29,7 @@ import pytest
 from cdi_health.cli import (
     _filter_devices_by_path,
     check_prerequisites,
+    cmd_export_mock,
     cmd_scan,
     create_parser,
     scan_devices_mock,
@@ -144,3 +145,62 @@ class TestCLIParser:
         parser = create_parser()
         with pytest.raises(SystemExit):
             parser.parse_args(["--version"])
+
+    def test_parser_export_mock(self) -> None:
+        """Test export mock subcommand parsing."""
+        parser = create_parser()
+        args = parser.parse_args(["export", "mock", "-o", "/tmp/mock-out"])
+        assert args.command == "export"
+        assert args.export_command == "mock"
+        assert args.output == "/tmp/mock-out"
+        assert args.no_anonymize is False
+
+
+class TestExportMock:
+    """Test export mock command."""
+
+    @patch("cdi_health.classes.mock_export.export_mock_snapshots_to_dir")
+    @patch("cdi_health.cli.scan_devices_real")
+    @patch("cdi_health.cli.check_prerequisites")
+    @patch("cdi_health.cli.setup_logging")
+    def test_cmd_export_mock_writes(
+        self,
+        _setup_logging: MagicMock,
+        mock_prereq: MagicMock,
+        mock_scan: MagicMock,
+        mock_export: MagicMock,
+    ) -> None:
+        """Export mock runs scan and writes snapshots."""
+        from argparse import Namespace
+
+        mock_prereq.return_value = []
+        mock_scan.return_value = [
+            {
+                "dut": "/dev/sda",
+                "transport_protocol": "ata",
+                "model_number": "ModelX",
+                "serial_number": "SECRET",
+                "smart_status": True,
+                "health_grade": "A",
+            },
+        ]
+        mock_export.return_value = (1, 0)
+
+        args = Namespace(
+            mock_data=None,
+            mock_file=None,
+            ignore_ata=False,
+            ignore_nvme=False,
+            ignore_scsi=False,
+            verbose=False,
+            no_color=False,
+            config=None,
+            output="/tmp/x",
+            no_anonymize=False,
+            device=None,
+        )
+
+        assert cmd_export_mock(args) == 0
+        mock_export.assert_called_once()
+        call_kw = mock_export.call_args.kwargs
+        assert call_kw["anonymize"] is True

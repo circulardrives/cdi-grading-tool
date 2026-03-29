@@ -1574,10 +1574,24 @@ class NVMeProtocol:
         )
 
         # Get Capacity Information
-        capacity_info = smartctl.get("user_capacity", dict())
+        capacity_info = smartctl.get("user_capacity")
+        if not isinstance(capacity_info, dict):
+            capacity_info = {}
 
         # Get Capacity in Bytes
-        capacity_in_bytes = int(capacity_info.get("bytes", 0))
+        try:
+            capacity_in_bytes = int(capacity_info.get("bytes") or 0)
+        except (TypeError, ValueError):
+            capacity_in_bytes = 0
+
+        # smartctl NVMe JSON often exposes total size as nvme_total_capacity only
+        if capacity_in_bytes == 0:
+            tc = smartctl.get("nvme_total_capacity")
+            if tc is not None:
+                try:
+                    capacity_in_bytes = int(tc)
+                except (TypeError, ValueError):
+                    capacity_in_bytes = 0
 
         # If Capacity in Bytes
         if capacity_in_bytes != 0:
@@ -1662,31 +1676,35 @@ class NVMeProtocol:
 
         # If Namespaces are 0
         if device.nvme_namespaces == 0:
-            # Get Namespaces
-            get_namespaces = Command(f"/usr/bin/sudo /usr/bin/smartctl -x -j {device.dut}n1")
-
-            # Execute
-            output, errors, return_code = get_namespaces.execute()
-
-            # Decode JSON Output
-            if not output or return_code != 0:
-                # Skip namespace detection if command fails
+            # Exports / some JSON only have nvme_number_of_namespaces; avoid extra smartctl call
+            if smartctl.get("nvme_number_of_namespaces"):
                 device.nvme_namespaces = {}
             else:
-                try:
-                    output = json.loads(output)
-                except json.JSONDecodeError:
+                # Get Namespaces
+                get_namespaces = Command(f"/usr/bin/sudo /usr/bin/smartctl -x -j {device.dut}n1")
+
+                # Execute
+                output, errors, return_code = get_namespaces.execute()
+
+                # Decode JSON Output
+                if not output or return_code != 0:
+                    # Skip namespace detection if command fails
                     device.nvme_namespaces = {}
-                    output = {}
+                else:
+                    try:
+                        output = json.loads(output)
+                    except json.JSONDecodeError:
+                        device.nvme_namespaces = {}
+                        output = {}
 
-            # If Namespaces
-            if "nvme_namespaces" in output:
-                # Get All Namespace Capacities
-                device.nvme_namespaces = output.get("nvme_namespaces", 0)
+                # If Namespaces
+                if "nvme_namespaces" in output:
+                    # Get All Namespace Capacities
+                    device.nvme_namespaces = output.get("nvme_namespaces", 0)
 
-            else:
-                # Get All Namespace Capacities
-                device.nvme_namespaces = {}
+                else:
+                    # Get All Namespace Capacities
+                    device.nvme_namespaces = {}
 
         # Extract NVMe Health Information Log data
         nvme_health = smartctl.get("nvme_smart_health_information_log", {})
@@ -1737,17 +1755,24 @@ class NVMeProtocol:
             device.nvme_self_test_history = []
             device.nvme_self_test_failed_count = 0
 
-        # OCP SMART Additional Log (NVMe log page C0h) — optional; only when drive/firmware supports it
+        # OCP SMART Additional Log (NVMe log page C0h) — optional; mock JSON may embed it
         device.ocp_smart_log = None
-        ns_path = NVMeProtocol.nvme_namespace_block_path(device.dut)
-        ocp_cmd = Command(f"/usr/bin/sudo /usr/sbin/nvme ocp smart-add-log {ns_path} -o json")
-        ocp_out, _ocp_err, ocp_rc = ocp_cmd.execute()
-        if ocp_out and ocp_rc == 0:
+        ocp_embedded = smartctl.get("ocp_smart_log")
+        if isinstance(ocp_embedded, dict) and ocp_embedded:
+            device.ocp_smart_log = ocp_embedded
+        else:
             try:
-                parsed = json.loads(ocp_out)
-                if isinstance(parsed, dict) and parsed:
-                    device.ocp_smart_log = parsed
-            except json.JSONDecodeError:
+                ns_path = NVMeProtocol.nvme_namespace_block_path(device.dut)
+                ocp_cmd = Command(f"/usr/bin/sudo /usr/sbin/nvme ocp smart-add-log {ns_path} -o json")
+                ocp_out, _ocp_err, ocp_rc = ocp_cmd.execute()
+                if ocp_out and ocp_rc == 0:
+                    try:
+                        parsed = json.loads(ocp_out)
+                        if isinstance(parsed, dict) and parsed:
+                            device.ocp_smart_log = parsed
+                    except json.JSONDecodeError:
+                        pass
+            except CommandException:
                 pass
 
         # Set A Grade Default

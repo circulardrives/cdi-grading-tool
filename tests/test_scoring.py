@@ -138,3 +138,59 @@ class TestHealthScoreCalculator:
         result_b = calculator.calculate(device_b)
         assert result_b.score == 96
         assert result_b.grade == "A"
+
+    def test_hdd_reallocated_excess_beyond_failure_threshold(self) -> None:
+        """Large reallocated counts on HDD should deduct beyond the M-at-F cap (CDI_HEALTH_SPEC)."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "ATA",
+            "smart_status": "PASSED",
+            "media_type": "HDD",
+            "reallocated_sectors": 48,
+        }
+        result = calculator.calculate(device)
+        # M=10 + min(40, 38*1) = 48
+        assert result.score == 52
+        assert result.grade == "D"
+        assert any(d.field == "reallocated_sectors" and d.points == 48 for d in result.deductions)
+
+    def test_hdd_pending_excess_with_rotation_rate(self) -> None:
+        """Infer HDD from rotation_rate when media_type is unset (mock-style dicts)."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "ATA",
+            "smart_status": "PASSED",
+            "rotation_rate": 5400,
+            "pending_sectors": 66,
+        }
+        result = calculator.calculate(device)
+        # M=10 + min(40, 56) = 50
+        assert result.score == 50
+        assert result.grade == "D"
+        assert any(d.field == "pending_sectors" and d.points == 50 for d in result.deductions)
+
+    def test_ata_ssd_reallocated_per_sector_not_hdd_curve(self) -> None:
+        """ATA SSDs use per-sector handling for reallocated count, not the HDD sector curve."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "ATA",
+            "smart_status": "PASSED",
+            "media_type": "SSD",
+            "reallocated_sectors": 10,
+        }
+        result = calculator.calculate(device)
+        assert result.score == 50
+        assert any(d.field == "reallocated_sectors" and d.points == 50 for d in result.deductions)
+
+    def test_ata_ssd_inferred_from_rotation_rate_zero(self) -> None:
+        """rotation_rate 0 implies SSD — reallocated uses SSD-style scoring."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "ATA",
+            "smart_status": "PASSED",
+            "rotation_rate": 0,
+            "reallocated_sectors": 4,
+        }
+        result = calculator.calculate(device)
+        assert result.score == 80
+        assert any(d.field == "reallocated_sectors" and d.points == 20 for d in result.deductions)

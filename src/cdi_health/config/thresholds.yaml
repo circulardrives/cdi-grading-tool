@@ -55,6 +55,9 @@ grading:
   hdd_sector_concern_threshold: 2
   # Max points deducted per metric (reallocated, pending, or grown defects) at failure (10 sectors/defects)
   hdd_sector_defect_max_deduction_points: 10
+  # Beyond failure threshold F: extra deduction per sector (capped), so large pending/reallocated counts grade down
+  hdd_sector_excess_points_per_sector: 1
+  hdd_sector_excess_cap: 40
 
   # Grade A: Perfect condition
   grade_a:

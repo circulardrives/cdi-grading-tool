@@ -380,6 +380,12 @@ def create_mock_device(
     if not mock_data:
         raise ValueError("Either json_file or mock_data must be provided")
 
+    mock_data = json.loads(json.dumps(mock_data))
+    nv_cli = mock_data.get("nvme_cli")
+    if isinstance(nv_cli, dict) and isinstance(nv_cli.get("ocp_smart_log"), dict) and nv_cli["ocp_smart_log"]:
+        if not mock_data.get("ocp_smart_log"):
+            mock_data["ocp_smart_log"] = json.loads(json.dumps(nv_cli["ocp_smart_log"]))
+
     # Get device ID from data or use provided one
     if device_id is None:
         device_id = mock_data.get("device", {}).get("name", "/dev/mock0")

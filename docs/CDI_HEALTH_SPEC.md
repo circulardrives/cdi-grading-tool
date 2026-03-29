@@ -30,6 +30,7 @@ Let:
 - **C** = concern threshold (`grading.hdd_sector_concern_threshold`, default **2**): counts **≤ C** incur **no** deduction for that metric.
 - **F** = failure threshold: **10** for `ata.maximum_reallocated_sectors`, `ata.maximum_pending_sectors`, and `scsi.maximum_grown_defects` (defaults).
 - **M** = max deduction points for that metric (`grading.hdd_sector_defect_max_deduction_points`, default **10**).
+- **E** = extra points per sector beyond **F** (`grading.hdd_sector_excess_points_per_sector`, default **1**), capped by **E_cap** (`grading.hdd_sector_excess_cap`, default **40**), so each metric’s deduction is clamped to **50** total (same ceiling style as uncorrectable-sector handling).
 
 **Behavior** (matches the reference implementation):
 
@@ -37,9 +38,9 @@ Let:
 |-------------|----------|-----------------|
 | **≤ C** | — | **0** |
 | **C < count < F** | Warning | **round((count − C) / (F − C) × M)**, then clamp to **\[1, M − 1\]** (so **1–9** with defaults) |
-| **≥ F** | Critical | **M** (e.g. **10**) |
+| **≥ F** | Critical | **min(50, M + min(E_cap, (count − F) × E))** |
 
-**Example (defaults C=2, F=10, M=10):** count **5** → raw **(5−2)/(10−2)×10 ≈ 3.75** → **4** points; count **10** → **10** points, critical.
+**Example (defaults C=2, F=10, M=10, E=1, E_cap=40):** count **5** → raw **(5−2)/(10−2)×10 ≈ 3.75** → **4** points; count **10** → **10** points (no excess yet), critical; count **48** → **10 + min(40, 38) = 48** points, critical.
 
 Other deductions in the same 0–100 model include failed **SMART** status, failed **NVMe self-test**, **temperature** warning/critical bands, **SSD percentage used** over threshold, and **per-error** uncorrectable handling — see `src/cdi_health/classes/scoring.py` and `src/cdi_health/config/thresholds.yaml` for the full ruleset.
 

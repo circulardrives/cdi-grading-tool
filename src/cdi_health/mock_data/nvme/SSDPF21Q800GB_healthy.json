@@ -16,92 +16,68 @@
       "smartctl",
       "--xall",
       "--json=ov",
-      "/dev/nvme1"
+      "/dev/nvme0"
     ],
     "output": [
       "smartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.17.0-8-generic] (local build)",
       "Copyright (C) 2002-23, Bruce Allen, Christian Franke, www.smartmontools.org",
       "",
       "=== START OF INFORMATION SECTION ===",
-      "Model Number:                       INTEL SSDPEK1A118GA",
-      "Serial Number:                      PHO000001",
-      "Firmware Version:                   U5110550",
+      "Model Number:                       INTEL SSDPF21Q800GB",
+      "Serial Number:                      PHA000000",
+      "Firmware Version:                   L0310600",
       "PCI Vendor/Subsystem ID:            0x8086",
       "IEEE OUI Identifier:                0x5cd2e4",
+      "Total NVM Capacity:                 800,166,076,416 [800 GB]",
+      "Unallocated NVM Capacity:           0",
       "Controller ID:                      0",
-      "NVMe Version:                       1.1",
-      "Number of Namespaces:               1",
-      "Namespace 1 Size/Capacity:          118,410,444,800 [118 GB]",
-      "Namespace 1 Formatted LBA Size:     512",
-      "Namespace 1 IEEE EUI-64:            5cd2e4 5c81210100",
+      "NVMe Version:                       1.4",
+      "Number of Namespaces:               128",
       "Local Time is:                      Sun Mar 29 20:52:13 2026 UTC",
-      "Firmware Updates (0x02):            1 Slot",
-      "Optional Admin Commands (0x0016):   Format Frmw_DL Self_Test",
-      "Optional NVM Commands (0x0056):     Wr_Unc DS_Mngmt Sav/Sel_Feat Timestmp",
-      "Log Page Attributes (0x03):         S/H_per_NS Cmd_Eff_Lg",
+      "Firmware Updates (0x18):            4 Slots, no Reset required",
+      "Optional Admin Commands (0x001e):   Format Frmw_DL NS_Mngmt Self_Test",
+      "Optional NVM Commands (0x005e):     Wr_Unc DS_Mngmt Wr_Zero Sav/Sel_Feat Timestmp",
+      "Log Page Attributes (0x1e):         Cmd_Eff_Lg Ext_Get_Lg Telmtry_Lg Pers_Ev_Lg",
       "Maximum Data Transfer Size:         32 Pages",
       "Warning  Comp. Temp. Threshold:     70 Celsius",
       "Critical Comp. Temp. Threshold:     78 Celsius",
       "",
       "Supported Power States",
       "St Op     Max   Active     Idle   RL RT WL WT  Ent_Lat  Ex_Lat",
-      " 0 +     5.50W       -        -    0  0  0  0     1000    4000",
-      " 1 +     4.60W       -        -    0  1  0  1     1000    4000",
-      " 2 +     3.30W       -        -    0  2  0  2     1000    4000",
-      "",
-      "Supported LBA Sizes (NSID 0x1)",
-      "Id Fmt  Data  Metadt  Rel_Perf",
-      " 0 +     512       0         2",
-      " 1 -    4096       0         0",
+      " 0 +    19.00W       -        -    0  0  0  0        0       0",
+      " 1 +    16.00W       -        -    0  1  0  1        0       0",
+      " 2 +    13.00W       -        -    0  2  0  2        0       0",
       "",
       "=== START OF SMART DATA SECTION ===",
       "SMART overall-health self-assessment test result: PASSED",
       "",
       "SMART/Health Information (NVMe Log 0x02)",
       "Critical Warning:                   0x00",
-      "Temperature:                        40 Celsius",
+      "Temperature:                        28 Celsius",
       "Available Spare:                    100%",
       "Available Spare Threshold:          0%",
-      "Percentage Used:                    0%",
-      "Data Units Read:                    566,555 [290 GB]",
-      "Data Units Written:                 1,111,158 [568 GB]",
-      "Host Read Commands:                 7,532,000",
-      "Host Write Commands:                7,372,044",
-      "Controller Busy Time:               16",
-      "Power Cycles:                       76",
-      "Power On Hours:                     24,385",
-      "Unsafe Shutdowns:                   16",
+      "Percentage Used:                    5%",
+      "Data Units Read:                    8,672,248,762 [4.44 PB]",
+      "Data Units Written:                 9,300,569,805 [4.76 PB]",
+      "Host Read Commands:                 48,535,839,093",
+      "Host Write Commands:                44,898,253,167",
+      "Controller Busy Time:               44,449",
+      "Power Cycles:                       201",
+      "Power On Hours:                     22,346",
+      "Unsafe Shutdowns:                   55",
       "Media and Data Integrity Errors:    0",
       "Error Information Log Entries:      0",
-      "Warning  Comp. Temperature Time:    1",
+      "Warning  Comp. Temperature Time:    0",
       "Critical Comp. Temperature Time:    0",
       "",
-      "Error Information (NVMe Log 0x01, 16 of 64 entries)",
+      "Error Information (NVMe Log 0x01, 16 of 256 entries)",
       "No Errors Logged",
       "",
       "Self-test Log (NVMe Log 0x06)",
       "Self-test status: No self-test in progress",
       "Num  Test_Description  Status                       Power_on_Hours  Failing_LBA  NSID Seg SCT Code",
-      " 0   Short             Completed without error               24366            -     -   -   -    -",
-      " 1   Short             Completed without error               24366            -     -   -   -    -",
-      " 2   Short             Completed without error               24366            -     -   -   -    -",
-      " 3   Short             Completed without error               24366            -     -   -   -    -",
-      " 4   Short             Completed without error               24366            -     -   -   -    -",
-      " 5   Short             Completed without error               24366            -     -   -   -    -",
-      " 6   Short             Completed without error               24366            -     -   -   -    -",
-      " 7   Short             Completed without error               24366            -     -   -   -    -",
-      " 8   Short             Completed without error               24366            -     -   -   -    -",
-      " 9   Short             Completed without error               24366            -     -   -   -    -",
-      "10   Short             Completed without error               24366            -     -   -   -    -",
-      "11   Short             Completed without error               24366            -     -   -   -    -",
-      "12   Short             Completed without error               24365            -     -   -   -    -",
-      "13   Short             Completed without error               24365            -     -   -   -    -",
-      "14   Short             Completed without error               24365            -     -   -   -    -",
-      "15   Short             Completed without error               24365            -     -   -   -    -",
-      "16   Short             Completed without error               24365            -     -   -   -    -",
-      "17   Short             Completed without error               24365            -     -   -   -    -",
-      "18   Short             Completed without error               24365            -     -   -   -    -",
-      "19   Short             Completed without error               24365            -     -   -   -    -",
+      " 0   Short             Completed without error                7124            -     -   -   -    -",
+      " 1   Short             Completed without error                7124            -     -   -   -    -",
       ""
     ],
     "uint128_precision_bits": 128,
@@ -112,88 +88,36 @@
     "asctime": "Sun Mar 29 20:52:13 2026 UTC"
   },
   "device": {
-    "name": "/dev/nvme1",
-    "info_name": "/dev/nvme1",
+    "name": "/dev/nvme0",
+    "info_name": "/dev/nvme0",
     "type": "nvme",
     "protocol": "NVMe"
   },
-  "model_name": "INTEL SSDPEK1A118GA",
-  "serial_number": "PHO000001",
-  "firmware_version": "U5110550",
+  "model_name": "INTEL SSDPF21Q800GB",
+  "serial_number": "PHA000000",
+  "firmware_version": "L0310600",
   "nvme_pci_vendor": {
     "id": 32902,
     "subsystem_id": 32902
   },
   "nvme_ieee_oui_identifier": 6083300,
+  "nvme_total_capacity": 800166076416,
+  "nvme_total_capacity_s": "800166076416",
+  "nvme_total_capacity_le": [
+    0,
+    96,
+    157,
+    77,
+    186
+  ],
+  "nvme_unallocated_capacity": 0,
+  "nvme_unallocated_capacity_s": "0",
   "nvme_controller_id": 0,
   "nvme_version": {
-    "string": "1.1",
-    "value": 65792
+    "string": "1.4",
+    "value": 66560
   },
-  "nvme_number_of_namespaces": 1,
-  "nvme_namespaces": [
-    {
-      "id": 1,
-      "size": {
-        "blocks": 231270400,
-        "blocks_s": "231270400",
-        "bytes": 118410444800,
-        "bytes_s": "118410444800",
-        "bytes_le": [
-          0,
-          0,
-          208,
-          145,
-          27
-        ]
-      },
-      "capacity": {
-        "blocks": 231270400,
-        "blocks_s": "231270400",
-        "bytes": 118410444800,
-        "bytes_s": "118410444800",
-        "bytes_le": [
-          0,
-          0,
-          208,
-          145,
-          27
-        ]
-      },
-      "utilization": {
-        "blocks": 231270400,
-        "blocks_s": "231270400",
-        "bytes": 118410444800,
-        "bytes_s": "118410444800",
-        "bytes_le": [
-          0,
-          0,
-          208,
-          145,
-          27
-        ]
-      },
-      "formatted_lba_size": 512,
-      "eui64": {
-        "oui": 6083300,
-        "ext_id": 397303415040
-      }
-    }
-  ],
-  "user_capacity": {
-    "blocks": 231270400,
-    "blocks_s": "231270400",
-    "bytes": 118410444800,
-    "bytes_s": "118410444800",
-    "bytes_le": [
-      0,
-      0,
-      208,
-      145,
-      27
-    ]
-  },
-  "logical_block_size": 512,
+  "nvme_number_of_namespaces": 128,
   "smart_support": {
     "available": true,
     "enabled": true
@@ -206,75 +130,84 @@
   },
   "nvme_smart_health_information_log": {
     "critical_warning": 0,
-    "temperature": 40,
+    "temperature": 28,
     "available_spare": 100,
     "available_spare_threshold": 0,
-    "percentage_used": 0,
-    "data_units_read": 566555,
-    "data_units_read_s": "566555",
+    "percentage_used": 5,
+    "data_units_read": 8672248762,
+    "data_units_read_s": "8672248762",
     "data_units_read_le": [
-      27,
-      165,
-      8
+      186,
+      3,
+      232,
+      4,
+      2
     ],
-    "data_units_written": 1111158,
-    "data_units_written_s": "1111158",
+    "data_units_written": 9300569805,
+    "data_units_written_s": "9300569805",
     "data_units_written_le": [
-      118,
-      244,
-      16
+      205,
+      110,
+      91,
+      42,
+      2
     ],
-    "host_reads": 7532000,
-    "host_reads_s": "7532000",
+    "host_reads": 48535839093,
+    "host_reads_s": "48535839093",
     "host_reads_le": [
-      224,
-      237,
-      114
+      117,
+      33,
+      246,
+      76,
+      11
     ],
-    "host_writes": 7372044,
-    "host_writes_s": "7372044",
+    "host_writes": 44898253167,
+    "host_writes_s": "44898253167",
     "host_writes_le": [
-      12,
-      125,
-      112
+      111,
+      249,
+      36,
+      116,
+      10
     ],
-    "controller_busy_time": 16,
-    "controller_busy_time_s": "16",
+    "controller_busy_time": 44449,
+    "controller_busy_time_s": "44449",
     "controller_busy_time_le": [
-      16
+      161,
+      173
     ],
-    "power_cycles": 76,
-    "power_cycles_s": "76",
+    "power_cycles": 201,
+    "power_cycles_s": "201",
     "power_cycles_le": [
-      76
+      201
     ],
-    "power_on_hours": 24385,
-    "power_on_hours_s": "24385",
+    "power_on_hours": 22346,
+    "power_on_hours_s": "22346",
     "power_on_hours_le": [
-      65,
-      95
+      74,
+      87
     ],
-    "unsafe_shutdowns": 16,
-    "unsafe_shutdowns_s": "16",
+    "unsafe_shutdowns": 55,
+    "unsafe_shutdowns_s": "55",
     "unsafe_shutdowns_le": [
-      16
+      55
     ],
     "media_errors": 0,
     "media_errors_s": "0",
     "num_err_log_entries": 0,
     "num_err_log_entries_s": "0",
-    "warning_temp_time": 1,
+    "warning_temp_time": 0,
     "critical_comp_time": 0
   },
   "temperature": {
-    "current": 40
+    "current": 28
   },
-  "power_cycle_count": 76,
+  "power_cycle_count": 201,
   "power_on_time": {
-    "hours": 24385
+    "hours": 22346
   },
   "nvme_error_information_log": {
-    "size": 64,
+    "size": 256,
     "read": 16,
     "unread": 0
   },
@@ -293,7 +226,7 @@
           "value": 0,
           "string": "Completed without error"
         },
-        "power_on_hours": 24366
+        "power_on_hours": 7124
       },
       {
         "self_test_code": {
@@ -304,205 +237,7 @@
           "value": 0,
           "string": "Completed without error"
         },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24366
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24365
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24365
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24365
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24365
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24365
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24365
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24365
-      },
-      {
-        "self_test_code": {
-          "value": 1,
-          "string": "Short"
-        },
-        "self_test_result": {
-          "value": 0,
-          "string": "Completed without error"
-        },
-        "power_on_hours": 24365
+        "power_on_hours": 7124
       }
     ]
   },
@@ -511,14 +246,14 @@
       "Devices": [
         {
           "NameSpace": 1,
-          "DevicePath": "/dev/nvme1n1",
-          "GenericPath": "/dev/ng1n1",
-          "Firmware": "U5110550",
-          "ModelNumber": "INTEL SSDPEK1A118GA",
-          "SerialNumber": "PHO000001",
-          "UsedBytes": 118410444800,
-          "MaximumLBA": 231270400,
-          "PhysicalSize": 118410444800,
+          "DevicePath": "/dev/nvme0n1",
+          "GenericPath": "/dev/ng0n1",
+          "Firmware": "L0310600",
+          "ModelNumber": "INTEL SSDPF21Q800GB",
+          "SerialNumber": "PHA000000",
+          "UsedBytes": 800166076416,
+          "MaximumLBA": 1562824368,
+          "PhysicalSize": 800166076416,
           "SectorSize": 512
         }
       ]
@@ -526,66 +261,66 @@
     "id_ctrl": {
       "vid": 32902,
       "ssvid": 32902,
-      "sn": "PHO000001    ",
-      "mn": "INTEL SSDPEK1A118GA                     ",
-      "fr": "U5110550",
+      "sn": "PHA000000  ",
+      "mn": "INTEL SSDPF21Q800GB                     ",
+      "fr": "L0310600",
       "rab": 0,
       "ieee": 6083300,
       "cmic": 0,
       "mdts": 5,
       "cntlid": 0,
-      "ver": 65792,
-      "rtd3r": 0,
-      "rtd3e": 0,
-      "oaes": 0,
-      "ctratt": 20,
+      "ver": 66560,
+      "rtd3r": 2000000,
+      "rtd3e": 300000,
+      "oaes": 768,
+      "ctratt": 0,
       "rrls": 0,
       "bpcap": 0,
       "nssl": 0,
       "plsi": 0,
-      "cntrltype": 0,
-      "fguid": "00000000-0000-0000-0000-000000000000",
+      "cntrltype": 1,
+      "fguid": "00000000-0000-0000-5cd2-e43f99725251",
       "crdt1": 0,
       "crdt2": 0,
       "crdt3": 0,
       "crcap": 0,
-      "nvmsr": 0,
+      "nvmsr": 1,
       "vwci": 0,
-      "mec": 0,
-      "oacs": 22,
+      "mec": 1,
+      "oacs": 30,
       "acl": 3,
       "aerl": 3,
-      "frmw": 2,
-      "lpa": 3,
-      "elpe": 63,
+      "frmw": 24,
+      "lpa": 30,
+      "elpe": 255,
       "npss": 2,
       "avscc": 0,
-      "apsta": 1,
+      "apsta": 0,
       "wctemp": 343,
       "cctemp": 351,
-      "mtfa": 0,
+      "mtfa": 50,
       "hmpre": 0,
       "hmmin": 0,
-      "tnvmcap": 0,
+      "tnvmcap": 800166076416,
       "unvmcap": 0,
       "rpmbs": 0,
-      "edstt": 320,
+      "edstt": 30,
       "dsto": 1,
-      "fwug": 0,
+      "fwug": 1,
       "kas": 0,
-      "hctma": 1,
-      "mntmt": 313,
-      "mxtmt": 346,
-      "sanicap": 3,
+      "hctma": 0,
+      "mntmt": 0,
+      "mxtmt": 0,
+      "sanicap": 1610612739,
       "hmminds": 0,
       "hmmaxd": 0,
-      "nsetidmax": 1,
-      "endgidmax": 1,
+      "nsetidmax": 0,
+      "endgidmax": 0,
       "anatt": 0,
       "anacap": 0,
       "anagrpmax": 0,
       "nanagrpid": 0,
-      "pels": 0,
+      "pels": 80,
       "domainid": 0,
       "kpioc": 0,
       "mptfawr": 0,
@@ -595,11 +330,11 @@
       "sqes": 102,
       "cqes": 68,
       "maxcmd": 0,
-      "nn": 1,
-      "oncs": 86,
+      "nn": 128,
+      "oncs": 94,
       "fuses": 0,
-      "fna": 7,
-      "vwc": 0,
+      "fna": 4,
+      "vwc": 6,
       "awun": 0,
       "awupf": 0,
       "icsvscc": 0,
@@ -623,6 +358,7 @@
       "mcmr": 0,
       "nmcmr": 0,
       "mcdqpc": 0,
+      "subnqn": "nqn.2020-07.com.intel:PHA000000  ",
       "ioccsz": 0,
       "iorcsz": 0,
       "icdoff": 0,
@@ -631,11 +367,11 @@
       "ofcs": 0,
       "psds": [
         {
-          "max_power": 550,
+          "max_power": 1900,
           "max_power_scale": 0,
           "non-operational_state": 0,
-          "entry_lat": 1000,
-          "exit_lat": 4000,
+          "entry_lat": 0,
+          "exit_lat": 0,
           "read_tput": 0,
           "read_lat": 0,
           "write_tput": 0,
@@ -653,11 +389,11 @@
           "emerg_power_fail_vault_scale": 0
         },
         {
-          "max_power": 460,
+          "max_power": 1600,
           "max_power_scale": 0,
           "non-operational_state": 0,
-          "entry_lat": 1000,
-          "exit_lat": 4000,
+          "entry_lat": 0,
+          "exit_lat": 0,
           "read_tput": 1,
           "read_lat": 0,
           "write_tput": 1,
@@ -675,11 +411,11 @@
           "emerg_power_fail_vault_scale": 0
         },
         {
-          "max_power": 330,
+          "max_power": 1300,
           "max_power_scale": 0,
           "non-operational_state": 0,
-          "entry_lat": 1000,
-          "exit_lat": 4000,
+          "entry_lat": 0,
+          "exit_lat": 0,
           "read_tput": 2,
           "read_lat": 0,
           "write_tput": 2,
@@ -700,22 +436,22 @@
     },
     "smart_log": {
       "critical_warning": 0,
-      "temperature": 313,
+      "temperature": 301,
       "avail_spare": 100,
       "spare_thresh": 0,
-      "percent_used": 0,
+      "percent_used": 5,
       "endurance_grp_critical_warning_summary": 0,
-      "data_units_read": 566555,
-      "data_units_written": 1111158,
-      "host_read_commands": 7532000,
-      "host_write_commands": 7372044,
-      "controller_busy_time": 16,
-      "power_cycles": 76,
-      "power_on_hours": 24385,
-      "unsafe_shutdowns": 16,
+      "data_units_read": 8672248762,
+      "data_units_written": 9300569805,
+      "host_read_commands": 48535839093,
+      "host_write_commands": 44898253167,
+      "controller_busy_time": 44449,
+      "power_cycles": 201,
+      "power_on_hours": 22346,
+      "unsafe_shutdowns": 55,
       "media_errors": 0,
       "num_err_log_entries": 0,
-      "warning_temp_time": 1,
+      "warning_temp_time": 0,
       "critical_comp_time": 0,
       "thm_temp1_trans_count": 0,
       "thm_temp2_trans_count": 0,
@@ -1622,6 +1358,6 @@
         }
       ]
     },
-    "self_test_log_text": "Device Self Test Log for NVME device:nvme1\nCurrent operation  : 0\nCurrent Completion : 0%\nSelf Test Result[0]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[1]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[2]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[3]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[4]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[5]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[6]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[7]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[8]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[9]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[10]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[11]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2e\n  Vendor Specific              : 0 0\nSelf Test Result[12]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2d\n  Vendor Specific              : 0 0\nSelf Test Result[13]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2d\n  Vendor Specific              : 0 0\nSelf Test Result[14]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2d\n  Vendor Specific              : 0 0\nSelf Test Result[15]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2d\n  Vendor Specific              : 0 0\nSelf Test Result[16]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2d\n  Vendor Specific              : 0 0\nSelf Test Result[17]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2d\n  Vendor Specific              : 0 0\nSelf Test Result[18]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2d\n  Vendor Specific              : 0 0\nSelf Test Result[19]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x5f2d\n  Vendor Specific              : 0 0"
+    "self_test_log_text": "Device Self Test Log for NVME device:nvme0\nCurrent operation  : 0\nCurrent Completion : 0%\nSelf Test Result[0]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x1bd4\n  Vendor Specific              : 0 0\nSelf Test Result[1]:\n  Operation Result             : 0\n  Self Test Code               : 1\n  Valid Diagnostic Information : 0\n  Power on hours (POH)         : 0x1bd4\n  Vendor Specific              : 0 0\nSelf Test Result[2]:\n  Operation Result             : 0xf\nSelf Test Result[3]:\n  Operation Result             : 0xf\nSelf Test Result[4]:\n  Operation Result             : 0xf\nSelf Test Result[5]:\n  Operation Result             : 0xf\nSelf Test Result[6]:\n  Operation Result             : 0xf\nSelf Test Result[7]:\n  Operation Result             : 0xf\nSelf Test Result[8]:\n  Operation Result             : 0xf\nSelf Test Result[9]:\n  Operation Result             : 0xf\nSelf Test Result[10]:\n  Operation Result             : 0xf\nSelf Test Result[11]:\n  Operation Result             : 0xf\nSelf Test Result[12]:\n  Operation Result             : 0xf\nSelf Test Result[13]:\n  Operation Result             : 0xf\nSelf Test Result[14]:\n  Operation Result             : 0xf\nSelf Test Result[15]:\n  Operation Result             : 0xf\nSelf Test Result[16]:\n  Operation Result             : 0xf\nSelf Test Result[17]:\n  Operation Result             : 0xf\nSelf Test Result[18]:\n  Operation Result             : 0xf\nSelf Test Result[19]:\n  Operation Result             : 0xf"
   }
 }

@@ -64,6 +64,8 @@ DEFAULT_THRESHOLDS = {
     "grading": {
         "hdd_sector_concern_threshold": 2,
         "hdd_sector_defect_max_deduction_points": 10,
+        "hdd_sector_excess_points_per_sector": 1,
+        "hdd_sector_excess_cap": 40,
     },
 }
 
@@ -277,6 +279,16 @@ class ThresholdConfig:
     def hdd_sector_defect_max_deduction_points(self) -> int:
         """Maximum score points deducted per defect type at failure threshold (e.g. 10 sectors)."""
         return self.get("grading", "hdd_sector_defect_max_deduction_points", default=10)
+
+    @property
+    def hdd_sector_excess_points_per_sector(self) -> int:
+        """Extra points per sector beyond the failure threshold (HDD reallocated/pending/grown)."""
+        return self.get("grading", "hdd_sector_excess_points_per_sector", default=1)
+
+    @property
+    def hdd_sector_excess_cap(self) -> int:
+        """Maximum extra points from excess sectors (on top of M at failure threshold)."""
+        return self.get("grading", "hdd_sector_excess_cap", default=40)
 
     def to_dict(self) -> dict:
         """

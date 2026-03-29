@@ -1033,7 +1033,75 @@ def cmd_watch(args: Namespace) -> int:
     return 0
 
 
-def add_common_arguments(parser: argparse.ArgumentParser) -> None:
+def cmd_export_mock(args: Namespace) -> int:
+    """
+    Export JSON snapshots for offline mock use (smartctl + NVMe CLI on NVMe).
+
+    Scans live devices (same as ``scan``). Each file includes ``smartctl --xall
+    --json=ov``. NVMe devices also embed an ``nvme_cli`` block (``nvme list``,
+    ``id-ctrl``, ``smart-log``, etc.). Serial numbers and WWN are redacted by default.
+    """
+    from pathlib import Path
+
+    setup_logging(verbose=args.verbose, no_color=args.no_color)
+
+    if args.no_color:
+        Colors.disable()
+    else:
+        Colors.auto_detect()
+
+    missing = check_prerequisites(
+        ignore_ata=args.ignore_ata,
+        ignore_nvme=args.ignore_nvme,
+        ignore_scsi=args.ignore_scsi,
+    )
+    if missing:
+        logger.error("Required tools not found: %s", ", ".join(missing))
+        logger.info("Install smartctl/nvme-cli (and sg utils for SCSI) before exporting.")
+        return 1
+
+    if args.config:
+        from cdi_health.classes.config import configure_thresholds
+
+        configure_thresholds(args.config)
+        logger.info("Loaded configuration from: %s", args.config)
+
+    try:
+        devices = scan_devices_real(
+            ignore_ata=args.ignore_ata,
+            ignore_nvme=args.ignore_nvme,
+            ignore_scsi=args.ignore_scsi,
+        )
+    except Exception as e:
+        logger.error("Error scanning devices: %s", e, exc_info=args.verbose)
+        return 1
+
+    if args.device:
+        devices = [d for d in devices if d.get("dut") == args.device]
+
+    if not devices:
+        logger.warning("No devices to export.")
+        return 1
+
+    output_dir = Path(args.output)
+    anonymize = not args.no_anonymize
+
+    from cdi_health.classes.mock_export import export_mock_snapshots_to_dir
+
+    written, skipped = export_mock_snapshots_to_dir(
+        devices,
+        output_dir,
+        anonymize=anonymize,
+    )
+
+    logger.info("Done. Wrote %d file(s), skipped %d. Output root: %s", written, skipped, output_dir)
+
+    if written == 0:
+        return 1
+    return 0
+
+
+def add_common_arguments(parser: argparse.ArgumentParser, *, include_mock: bool = True) -> None:
     """Add common arguments to a parser."""
     # Global options
     parser.add_argument(
@@ -1054,16 +1122,17 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
     # Mock mode options
-    parser.add_argument(
-        "--mock-data",
-        metavar="PATH",
-        help="Use mock data directory instead of real devices",
-    )
-    parser.add_argument(
-        "--mock-file",
-        metavar="FILE",
-        help="Use specific mock JSON file for single device",
-    )
+    if include_mock:
+        parser.add_argument(
+            "--mock-data",
+            metavar="PATH",
+            help="Use mock data directory instead of real devices",
+        )
+        parser.add_argument(
+            "--mock-file",
+            metavar="FILE",
+            help="Use specific mock JSON file for single device",
+        )
 
     # Device filtering
     parser.add_argument(
@@ -1102,6 +1171,9 @@ Examples:
 
   # Generate HTML report
   cdi-health report --format html --mock-data src/cdi_health/mock_data
+
+  # Export live devices to anonymized smartctl JSON for offline mock use
+  cdi-health export mock -o ./my-mock-bundle
 
   # Continuous monitoring
   cdi-health watch --interval 30
@@ -1214,6 +1286,39 @@ Examples:
         help="Output format (default: table)",
     )
 
+    export_parser = subparsers.add_parser(
+        "export",
+        help="Export snapshots for offline or mock use",
+    )
+    export_subparsers = export_parser.add_subparsers(dest="export_command", required=True)
+    export_mock_parser = export_subparsers.add_parser(
+        "mock",
+        help="Export smartctl (+ nvme-cli for NVMe) JSON per device (default: anonymize serials)",
+        description=(
+            "Run smartctl on each live device and write JSON under <output>/<protocol>/. "
+            "NVMe exports also include nvme-cli JSON under the nvme_cli key. "
+            "By default serial numbers and WWN are redacted."
+        ),
+    )
+    add_common_arguments(export_mock_parser, include_mock=False)
+    export_mock_parser.add_argument(
+        "-o",
+        "--output",
+        default="cdi-mock-export",
+        metavar="DIR",
+        help="Output directory (default: ./cdi-mock-export)",
+    )
+    export_mock_parser.add_argument(
+        "--no-anonymize",
+        action="store_true",
+        help="Keep original serial numbers and WWN in exported JSON",
+    )
+    export_mock_parser.add_argument(
+        "--device",
+        metavar="PATH",
+        help="Export only this device (e.g. /dev/nvme0n1)",
+    )
+
     return parser
 
 
@@ -1248,6 +1353,8 @@ def main() -> int:
         return cmd_watch(args)
     elif args.command == "selftest":
         return cmd_selftest(args)
+    elif args.command == "export":
+        return cmd_export_mock(args)
     else:
         parser.print_help()
         return 0
