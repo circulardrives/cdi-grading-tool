@@ -126,7 +126,6 @@ jobs:
   mypy:
     name: Mypy (non-blocking)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -141,8 +140,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e '.[dev,api]'
 
+      # Full report in logs; job always succeeds so PRs stay mergeable while types are tightened.
       - name: Mypy
-        run: mypy src/cdi_health --ignore-missing-imports
+        run: |
+          if ! mypy src/cdi_health --ignore-missing-imports; then
+            echo "::warning::Mypy reported issues (see log). Tighten incrementally; local: mypy src/cdi_health"
+          fi
 
   dashboard:
     name: Dashboard build
