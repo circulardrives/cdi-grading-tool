@@ -25,6 +25,7 @@ from __future__ import annotations
 
 # Modules
 import json
+import re
 
 # Concurrent Futures
 from concurrent.futures import ThreadPoolExecutor
@@ -133,6 +134,7 @@ class Device:
         self.serial_number: str = "Not Reported"
         self.firmware_revision: str = "Not Reported"
         self.media_type: str = "Not Reported"
+        self.interface_link: str = "Not Reported"
         self.transport_protocol: str = "Not Reported"
         self.transport_version: str = "Not Reported"
         self.transport_revision: str = "Not Reported"
@@ -155,6 +157,15 @@ class Device:
 
         # NVMe Namespaces
         self.nvme_namespaces = None
+
+        # NVMe OCP SMART Additional Log (log page C0h), from nvme-cli when supported
+        self.ocp_smart_log: dict | None = None
+
+        # Full NVMe Health Information Log (smartctl JSON) — for reports / tooling
+        self.nvme_smart_health_information_log: dict | None = None
+
+        # NVMe Error Information Log (smartctl JSON, log page 01h) — for reports / tooling
+        self.nvme_error_information_log: dict | None = None
 
         # NVMe Self-Test
         self.nvme_self_test_log = None
@@ -1081,6 +1092,8 @@ class ATAProtocol:
             smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0"
         )
 
+        device.interface_link = "SATA"
+
         # Capacity
         capacity_info = smartctl.get("user_capacity", dict())
         capacity_in_bytes: int = int(capacity_info.get("bytes", 0))
@@ -1503,9 +1516,21 @@ class NVMeProtocol:
     # Set Helper
     helper: Helper = Helper()
 
+    @staticmethod
+    def nvme_namespace_block_path(dut: str) -> str:
+        """Resolve block device path for nvme-cli (e.g. /dev/nvme0 -> /dev/nvme0n1)."""
+        if re.match(r"^/dev/nvme\d+n\d+$", dut):
+            return dut
+        m = re.match(r"^(/dev/nvme\d+)$", dut)
+        if m:
+            return f"{m.group(1)}n1"
+        return dut
+
     def __init__(self, device: Device, smartctl: dict):
         # Initialize
         super().__init__()
+
+        device.interface_link = "NVMe"
 
         # Set Properties
         model_name = smartctl.get("model_name", "Not Reported")
@@ -1549,10 +1574,24 @@ class NVMeProtocol:
         )
 
         # Get Capacity Information
-        capacity_info = smartctl.get("user_capacity", dict())
+        capacity_info = smartctl.get("user_capacity")
+        if not isinstance(capacity_info, dict):
+            capacity_info = {}
 
         # Get Capacity in Bytes
-        capacity_in_bytes = int(capacity_info.get("bytes", 0))
+        try:
+            capacity_in_bytes = int(capacity_info.get("bytes") or 0)
+        except (TypeError, ValueError):
+            capacity_in_bytes = 0
+
+        # smartctl NVMe JSON often exposes total size as nvme_total_capacity only
+        if capacity_in_bytes == 0:
+            tc = smartctl.get("nvme_total_capacity")
+            if tc is not None:
+                try:
+                    capacity_in_bytes = int(tc)
+                except (TypeError, ValueError):
+                    capacity_in_bytes = 0
 
         # If Capacity in Bytes
         if capacity_in_bytes != 0:
@@ -1637,34 +1676,39 @@ class NVMeProtocol:
 
         # If Namespaces are 0
         if device.nvme_namespaces == 0:
-            # Get Namespaces
-            get_namespaces = Command(f"/usr/bin/sudo /usr/bin/smartctl -x -j {device.dut}n1")
-
-            # Execute
-            output, errors, return_code = get_namespaces.execute()
-
-            # Decode JSON Output
-            if not output or return_code != 0:
-                # Skip namespace detection if command fails
+            # Exports / some JSON only have nvme_number_of_namespaces; avoid extra smartctl call
+            if smartctl.get("nvme_number_of_namespaces"):
                 device.nvme_namespaces = {}
             else:
-                try:
-                    output = json.loads(output)
-                except json.JSONDecodeError:
+                # Get Namespaces
+                get_namespaces = Command(f"/usr/bin/sudo /usr/bin/smartctl -x -j {device.dut}n1")
+
+                # Execute
+                output, errors, return_code = get_namespaces.execute()
+
+                # Decode JSON Output
+                if not output or return_code != 0:
+                    # Skip namespace detection if command fails
                     device.nvme_namespaces = {}
-                    output = {}
+                else:
+                    try:
+                        output = json.loads(output)
+                    except json.JSONDecodeError:
+                        device.nvme_namespaces = {}
+                        output = {}
 
-            # If Namespaces
-            if "nvme_namespaces" in output:
-                # Get All Namespace Capacities
-                device.nvme_namespaces = output.get("nvme_namespaces", 0)
+                # If Namespaces
+                if "nvme_namespaces" in output:
+                    # Get All Namespace Capacities
+                    device.nvme_namespaces = output.get("nvme_namespaces", 0)
 
-            else:
-                # Get All Namespace Capacities
-                device.nvme_namespaces = {}
+                else:
+                    # Get All Namespace Capacities
+                    device.nvme_namespaces = {}
 
         # Extract NVMe Health Information Log data
         nvme_health = smartctl.get("nvme_smart_health_information_log", {})
+        device.nvme_smart_health_information_log = nvme_health if nvme_health else None
         if nvme_health:
             # Percentage Used (endurance indicator)
             device.percentage_used = nvme_health.get("percentage_used")
@@ -1678,6 +1722,9 @@ class NVMeProtocol:
                 # Convert from 512-byte data units to bytes, then to TB
                 device.data_written_bytes = data_units_written * 512 * 1000  # 1000 = multiplier in smartctl
                 device.data_written_tb = device.data_written_bytes / (1000**4)
+
+        nvme_err = smartctl.get("nvme_error_information_log")
+        device.nvme_error_information_log = nvme_err if isinstance(nvme_err, dict) and nvme_err else None
 
         # S.M.A.R.T Support
         device.smart_supported = smartctl.get("smart_support", dict()).get("available", "Not Reported")
@@ -1696,17 +1743,48 @@ class NVMeProtocol:
             current_op = nvme_self_test_log.get("current_self_test_operation", {})
             device.nvme_self_test_current_status = current_op.get("string", "No self-test in progress")
 
-            # Extract entries (self-test history)
-            device.nvme_self_test_history = nvme_self_test_log.get("entries", [])
+            # Extract entries (self-test history); smartctl JSON uses "table" or "entries"
+            hist = nvme_self_test_log.get("entries")
+            if not isinstance(hist, list):
+                hist = nvme_self_test_log.get("table")
+            device.nvme_self_test_history = hist if isinstance(hist, list) else []
 
-            # Count failed tests
-            failed_count = sum(1 for entry in device.nvme_self_test_history if entry.get("result", 0) == 1)
+            # Count failed tests (smartctl uses self_test_result.value; some dumps use result)
+            def _entry_failed(e: dict) -> bool:
+                r = e.get("self_test_result")
+                if isinstance(r, dict) and "value" in r:
+                    return int(r.get("value", 0)) == 1
+                return int(e.get("result", 0)) == 1
+
+            failed_count = sum(
+                1 for entry in device.nvme_self_test_history if isinstance(entry, dict) and _entry_failed(entry)
+            )
             device.nvme_self_test_failed_count = failed_count
         else:
             device.nvme_self_test_log = None
             device.nvme_self_test_current_status = None
             device.nvme_self_test_history = []
             device.nvme_self_test_failed_count = 0
+
+        # OCP SMART Additional Log (NVMe log page C0h) — optional; mock JSON may embed it
+        device.ocp_smart_log = None
+        ocp_embedded = smartctl.get("ocp_smart_log")
+        if isinstance(ocp_embedded, dict) and ocp_embedded:
+            device.ocp_smart_log = ocp_embedded
+        else:
+            try:
+                ns_path = NVMeProtocol.nvme_namespace_block_path(device.dut)
+                ocp_cmd = Command(f"/usr/bin/sudo /usr/sbin/nvme ocp smart-add-log {ns_path} -o json")
+                ocp_out, _ocp_err, ocp_rc = ocp_cmd.execute()
+                if ocp_out and ocp_rc == 0:
+                    try:
+                        parsed = json.loads(ocp_out)
+                        if isinstance(parsed, dict) and parsed:
+                            device.ocp_smart_log = parsed
+                    except json.JSONDecodeError:
+                        pass
+            except CommandException:
+                pass
 
         # Set A Grade Default
         device.cdi_grade = "A"
@@ -1770,6 +1848,15 @@ class SCSIProtocol:
         device.firmware_revision: str = smartctl.get("scsi_revision", "Not Reported")
         device.transport_revision: str = smartctl.get("scsi_version", "Not Reported")
         device.transport_version: str = smartctl.get("scsi_transport_protocol", "Not Reported")
+        _tp = smartctl.get("transport_protocol")
+        if isinstance(_tp, dict):
+            device.interface_link = str(_tp.get("name", "Not Reported")).strip()
+        elif isinstance(_tp, str) and _tp:
+            device.interface_link = _tp
+        elif device.transport_version not in (None, "Not Reported"):
+            device.interface_link = str(device.transport_version)
+        else:
+            device.interface_link = "Not Reported"
         device.form_factor: str = smartctl.get("form_factor", {}).get("name", "Not Reported")
         device.rotation_rate: str = smartctl.get("rotation_rate", "Not Reported")
         device.power_on_hours: str = smartctl.get("power_on_time", {}).get("hours", 0)

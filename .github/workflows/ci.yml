@@ -1,18 +1,18 @@
+# Consolidated CI: build, lint, pytest (matrix), license, optional mypy, dashboard, wheel smoke.
 name: ci
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "**"
+    branches: [main, develop]
+    tags: ["**"]
   pull_request:
-    branches:
-      - "**"
+    branches: ["**"]
 
 concurrency:
-  # only for PRs, cancel a previous run if it's still running
-  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow_ref, github.event.pull_request.number) || github.run_id }}
+  group: >-
+    ${{ github.event_name == 'pull_request'
+    && format('{0}-{1}', github.workflow_ref, github.event.pull_request.number)
+    || github.run_id }}
   cancel-in-progress: true
 
 defaults:
@@ -21,191 +21,215 @@ defaults:
 
 jobs:
   build:
-    name: 📦 Build
+    name: Build sdist & wheel
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
-          # TODO: used if we use dynamic versioning based on git tags
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
 
-      - name: install build tooling
-        run: |
-          python -m pip install build
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build
 
-      - name: build package
-        run: |
-          # specifying neither sdist nor bdist results in the bdist being
-          # built from the sdist.  this tests to verify that the sdist is
-          # valid.
-          python -m build
+      - name: Build package
+        run: python -m build
 
-      - name: workflow upload built packages
-        uses: actions/upload-artifact@v6
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
         with:
           name: packages
           path: dist/*
           if-no-files-found: error
 
+  lint:
+    name: Ruff + pre-commit hooks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: pre-commit/action@v3.0.1
+
   test:
-    name: 🧪 Test ${{ matrix.os.emoji }} Python ${{ matrix.python.major-dot-minor }}
-    runs-on: ${{ matrix.os.runs-on }}
+    name: Pytest Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
     needs: build
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - emoji: 🐧
-            matrix: ubuntu
-            name: Ubuntu
-            runs-on: ubuntu-latest
-        python:
-          - major-dot-minor: "3.10"
-          - major-dot-minor: "3.11"
-          - major-dot-minor: "3.12"
-          - major-dot-minor: "3.13"
-          - major-dot-minor: "3.14"
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - name: workflow download built packages
-        uses: actions/download-artifact@v7
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install OS tools (tests expect nvme/smartctl/sg in PATH)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes nvme-cli smartmontools sg3-utils
+
+      - name: Install package (dev + API for HTTP tests)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,api]'
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v \
+            --override-ini="addopts=--strict-markers --strict-config --cov=cdi_health --cov-report=xml --cov-report=term-missing"
+
+      - name: Upload coverage (Python 3.12 only)
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  license-headers:
+    name: License headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dev tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+
+      - name: Verify license headers
+        run: |
+          licenseheaders --ext py --tmpl license.template --current-year \
+            --owner 'Circular Drive Initiative' --projname 'CDI Health' \
+            --projurl 'https://github.com/circulardrives/cdi-grading-tool/'
+          git diff --exit-code
+
+  mypy:
+    name: Mypy (non-blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,api]'
+
+      # Full report in logs; job always succeeds so PRs stay mergeable while types are tightened.
+      - name: Mypy
+        run: |
+          if ! mypy src/cdi_health --ignore-missing-imports; then
+            echo "::warning::Mypy reported issues (see log). Tighten incrementally; local: mypy src/cdi_health"
+          fi
+
+  dashboard:
+    name: Dashboard build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install & build
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run build
+
+  smoke-wheel:
+    name: Smoke install wheel + mock scan
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
         with:
           name: packages
           path: dist/
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python.major-dot-minor }}
+          python-version: "3.12"
 
-      - name: create venv
+      - name: Install OS tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes nvme-cli smartmontools sg3-utils
+
+      - name: Install wheel only
         run: |
           python -m venv venv
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install dist/*.whl
 
-      - name: install package
+      - name: CLI entrypoints
         run: |
-          venv/bin/python -m pip install dist/*.whl
+          venv/bin/cdi-health --help
+          venv/bin/cdi-health-api --help
 
-      - name: apt install dependencies
+      - name: Mock scan from installed package
         run: |
-          sudo apt-get install --yes wget gcc meson nvme-cli sg3-utils
+          venv/bin/python <<'PY'
+          from importlib.resources import as_file, files
+          import subprocess
+          import sys
 
-      - name: build openSeaChest
-        run: |
-          # duplicated from readme
-          git clone --recurse-submodules --branch develop https://github.com/Seagate/openSeaChest.git openSeaChest-develop
-          cd openSeaChest-develop
-          meson --buildtype=release builddir
-          sudo ninja -C builddir install
-
-      - name: build smartmontools
-        run: |
-          # duplicated from readme
-          wget https://downloads.sourceforge.net/project/smartmontools/smartmontools/7.4/smartmontools-7.4.tar.gz
-          tar zxvf smartmontools-7.4.tar.gz
-          cd smartmontools-7.4
-          ./configure
-          make
-          sudo make install
-          smartctl -h
-
-      - name: test
-        # TODO: tests should not be defined here
-        run: |
-          venv/bin/cdi-health -h
-          venv/bin/python -m cdi_health -h
-
-  check:
-    name: 🚨 Check ${{ matrix.task.name }} - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }}
-    runs-on: ${{ matrix.os.runs-on }}
-    strategy:
-      fail-fast: false
-      matrix:
-        task:
-          - name: License Headers
-            run: |
-              # TODO: would be nice to have all this in a config file, even if we need to use another tool
-              venv/bin/licenseheaders --ext py --tmpl license.template --current-year --owner 'Circular Drive Initiative' --projname 'CDI Health' --projurl 'https://github.com/circulardrives/cdi-grading-tool/'
-              git diff --exit-code
-        os:
-          - name: Linux
-            runs-on: ubuntu-latest
-#          - name: macOS
-#            runs-on: macos-latest
-#          - name: Windows
-#            runs-on: windows-latest
-        python:
-          - major-dot-minor: "3.10"
-          - major-dot-minor: "3.11"
-          - major-dot-minor: "3.12"
-          - major-dot-minor: "3.13"
-          - major-dot-minor: "3.14"
-
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          # TODO: used if we use dynamic versioning based on git tags
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python.major-dot-minor }}
-
-      - name: create venv
-        run: |
-          python -m venv venv
-
-      - name: install
-        run: |
-          venv/bin/pip install -e .[dev]
-
-      - name: check
-        run: ${{ matrix.task.run }}
-
-  pre-commit:
-    name: ⚠️ pre-commit ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }}
-    runs-on: ${{ matrix.os.runs-on }}
-    timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - name: Linux
-            runs-on: ubuntu-latest
-#          - name: macOS
-#            runs-on: macos-latest
-#          - name: Windows
-#            runs-on: windows-latest
-        python:
-          - major-dot-minor: "3.10"
-          - major-dot-minor: "3.11"
-          - major-dot-minor: "3.12"
-          - major-dot-minor: "3.13"
-          - major-dot-minor: "3.14"
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python.major-dot-minor }}
-
-      - uses: pre-commit/action@v3.0.1
+          with as_file(files("cdi_health.mock_data")) as mock_path:
+              subprocess.check_call(
+                  [
+                      "venv/bin/cdi-health",
+                      "scan",
+                      "--mock-data",
+                      str(mock_path),
+                      "-o",
+                      "json",
+                  ],
+                  cwd=".",
+              )
+          print("mock scan ok", file=sys.stderr)
+          PY
 
   required:
     if: always()
+    # Name must match repo ruleset required_status_checks (see GitHub → Settings → Rules).
     name: 🏁 Required
     runs-on: ubuntu-latest
     needs:
       - build
+      - lint
       - test
-      - check
-      - pre-commit
+      - license-headers
+      - dashboard
+      - smoke-wheel
     steps:
       - uses: re-actors/alls-green@release/v1.2
-        id: alls-green
         with:
           jobs: ${{ toJSON(needs) }}

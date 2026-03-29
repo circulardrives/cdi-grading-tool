@@ -1,6 +1,7 @@
 "use client";
 
 import { Activity, AlertTriangle, CheckCircle2, Clock3, HardDrive, ShieldAlert } from "lucide-react";
+import type { ReactElement } from "react";
 
 import { useDashboard } from "@/components/dashboard-provider";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +22,7 @@ function formatDate(value: string | null | undefined): string {
   return parsed.toLocaleString();
 }
 
-export function SummaryView(): JSX.Element {
+export function SummaryView(): ReactElement {
   const { health, scan, jobs, selfTestStatus, busy } = useDashboard();
   const devices = scan?.devices ?? [];
 

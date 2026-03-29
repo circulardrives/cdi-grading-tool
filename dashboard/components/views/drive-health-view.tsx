@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Search, Thermometer, Wrench } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { useDashboard } from "@/components/dashboard-provider";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +23,7 @@ function deviceKey(device: Record<string, unknown>, index: number): string {
   return `${dut}::${serial}::${index}`;
 }
 
-export function DriveHealthView(): JSX.Element {
+export function DriveHealthView(): ReactElement {
   const { scan, runScan, busy, preferences } = useDashboard();
   const [deviceInput, setDeviceInput] = useState("");
   const [searchText, setSearchText] = useState("");

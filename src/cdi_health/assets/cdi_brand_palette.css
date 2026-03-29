@@ -1,0 +1,47 @@
+/*
+ * Circular Drive Initiative (CDI) — brand color tokens
+ * Source: docs/cdi_brand_palette.md
+ * Do not change HEX values without updating the doc and brand guidelines.
+ */
+
+:root {
+  /* —— Primary palette (canonical) —— */
+  --cdi-simply-green: #139c7a;
+  --cdi-simply-green-rgb: 19, 156, 122;
+
+  --cdi-foliage-green: #3b7351;
+  --cdi-foliage-green-rgb: 59, 115, 81;
+
+  --cdi-green-spruce: #5c9279;
+  --cdi-green-spruce-rgb: 92, 146, 121;
+
+  --cdi-lilac-gray: #9298a6;
+  --cdi-lilac-gray-rgb: 146, 153, 166;
+
+  --cdi-real-teal: #3e6071;
+  --cdi-real-teal-rgb: 61, 96, 114;
+
+  /* —— Semantic tokens (CDI Health report / light UI) —— */
+  --bg: #f4f8f6;
+  --bg-card: #ffffff;
+  --text: #1a2420;
+  --muted: #5c6670;
+  --border: rgba(92, 146, 121, 0.35);
+
+  --accent: var(--cdi-simply-green);
+  --accent-secondary: var(--cdi-foliage-green);
+  --accent-tertiary: var(--cdi-green-spruce);
+
+  --accent-soft: rgba(19, 156, 122, 0.1);
+  --accent-soft-strong: rgba(19, 156, 122, 0.16);
+  --surface-sidebar: linear-gradient(180deg, #e8f2ef 0%, var(--bg) 100%);
+
+  --link: var(--cdi-real-teal);
+  --warn: #b8860b;
+  --danger: #b33a3a;
+
+  --font: "DM Sans", system-ui, -apple-system, sans-serif;
+  --mono: "DM Mono", ui-monospace, monospace;
+  --radius: 10px;
+  --sidebar-w: 240px;
+}

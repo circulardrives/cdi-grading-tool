@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CDI Health Report — 2026-03-21 15:22:35</title>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap");
+        /*
+ * Circular Drive Initiative (CDI) — brand color tokens
+ * Source: docs/cdi_brand_palette.md
+ * Do not change HEX values without updating the doc and brand guidelines.
+ */
+
+:root {
+  /* —— Primary palette (canonical) —— */
+  --cdi-simply-green: #139c7a;
+  --cdi-simply-green-rgb: 19, 156, 122;
+
+  --cdi-foliage-green: #3b7351;
+  --cdi-foliage-green-rgb: 59, 115, 81;
+
+  --cdi-green-spruce: #5c9279;
+  --cdi-green-spruce-rgb: 92, 146, 121;
+
+  --cdi-lilac-gray: #9298a6;
+  --cdi-lilac-gray-rgb: 146, 153, 166;
+
+  --cdi-real-teal: #3e6071;
+  --cdi-real-teal-rgb: 61, 96, 114;
+
+  /* —— Semantic tokens (CDI Health report / light UI) —— */
+  --bg: #f4f8f6;
+  --bg-card: #ffffff;
+  --text: #1a2420;
+  --muted: #5c6670;
+  --border: rgba(92, 146, 121, 0.35);
+
+  --accent: var(--cdi-simply-green);
+  --accent-secondary: var(--cdi-foliage-green);
+  --accent-tertiary: var(--cdi-green-spruce);
+
+  --accent-soft: rgba(19, 156, 122, 0.1);
+  --accent-soft-strong: rgba(19, 156, 122, 0.16);
+  --surface-sidebar: linear-gradient(180deg, #e8f2ef 0%, var(--bg) 100%);
+
+  --link: var(--cdi-real-teal);
+  --warn: #b8860b;
+  --danger: #b33a3a;
+
+  --font: "DM Sans", system-ui, -apple-system, sans-serif;
+  --mono: "DM Mono", ui-monospace, monospace;
+  --radius: 10px;
+  --sidebar-w: 240px;
+}
+
+
+        /* Page shell */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: var(--font);
+          background: var(--bg);
+          color: var(--text);
+          display: flex;
+          min-height: 100vh;
+          line-height: 1.5;
+        }
+        .main {
+          flex: 1;
+          padding: 28px 32px 48px;
+          max-width: 1360px;
+        }
+
+
+        /* Sidebar */
+        .sidebar {
+          width: var(--sidebar-w);
+          flex-shrink: 0;
+          background: var(--surface-sidebar);
+          border-right: 1px solid var(--border);
+          display: flex;
+          flex-direction: column;
+          position: sticky;
+          top: 0;
+          align-self: flex-start;
+          min-height: 100vh;
+        }
+        .brand {
+          padding: 20px 16px;
+          border-bottom: 1px solid var(--border);
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+        .brand-logo {
+          width: 100%;
+          max-width: 200px;
+        }
+        .brand-logo-svg {
+          display: block;
+          width: 100%;
+          height: auto;
+        }
+        .brand-text strong { display: block; font-size: 16px; color: var(--accent-secondary); }
+        .brand-text span { font-size: 12px; color: var(--muted); font-weight: 500; }
+        .nav-tabs {
+          display: flex;
+          flex-direction: column;
+          padding: 12px 8px;
+          gap: 4px;
+          flex: 1;
+        }
+        .nav-tabs .tab-btn {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 10px 14px;
+          border-radius: 8px;
+          text-decoration: none;
+          color: var(--muted);
+          font-size: 14px;
+          font-weight: 500;
+          border: 1px solid transparent;
+          transition: background .15s, color .15s, border-color .15s;
+        }
+        .nav-tabs .tab-btn:hover {
+          background: var(--accent-soft);
+          color: var(--text);
+        }
+        .nav-tabs .tab-btn.active {
+          background: var(--bg-card);
+          color: var(--accent);
+          border-color: var(--border);
+          box-shadow: 0 1px 3px rgba(0,0,0,.06);
+        }
+        .tab-title { flex: 1; min-width: 0; }
+        .tab-count {
+          font-family: var(--mono);
+          font-size: 12px;
+          background: var(--accent-soft);
+          color: var(--accent);
+          padding: 2px 8px;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        .nav-tabs .tab-btn.active .tab-count {
+          background: var(--accent);
+          color: #fff;
+        }
+        .sidebar-foot {
+          padding: 16px;
+          font-size: 11px;
+          color: var(--muted);
+          border-top: 1px solid var(--border);
+        }
+
+
+        /* Header and summary */
+        .hero {
+          margin-bottom: 24px;
+        }
+        .hero h1 {
+          font-size: 28px;
+          font-weight: 700;
+          color: var(--accent-secondary);
+          letter-spacing: -0.02em;
+        }
+        .hero-sub { color: var(--muted); margin-top: 6px; font-size: 15px; }
+        .hero-time { font-size: 13px; color: var(--muted); margin-top: 8px; font-family: var(--mono); }
+        .hero-top {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
+        }
+        .view-mode-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .view-mode-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--muted);
+          text-transform: uppercase;
+          letter-spacing: .06em;
+        }
+        .mode-btn {
+          padding: 8px 16px;
+          border-radius: 8px;
+          border: 1px solid var(--border);
+          background: var(--bg-card);
+          color: var(--text);
+          font-family: var(--font);
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .mode-btn:hover {
+          background: var(--accent-soft);
+          border-color: var(--accent);
+        }
+        .mode-btn.active {
+          background: var(--accent);
+          color: #fff;
+          border-color: var(--accent);
+        }
+        body[data-view="simple"] .advanced-only { display: none !important; }
+        body[data-view="advanced"] .simple-only { display: none !important; }
+        .summary-strip {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 12px;
+          margin-bottom: 28px;
+        }
+        .s-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 14px 16px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.03);
+        }
+        .s-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+        .s-val { display: block; font-size: 26px; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
+        .s-ok .s-val { color: var(--accent); }
+        .s-warn .s-val { color: var(--warn); }
+        .s-bad .s-val { color: var(--danger); }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        .cat-head {
+          font-size: 20px;
+          color: var(--accent-secondary);
+          margin-bottom: 4px;
+          padding-bottom: 8px;
+          border-bottom: 2px solid var(--cdi-green-spruce);
+        }
+        .cat-meta { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+        .empty-cat {
+          padding: 24px;
+          background: var(--bg-card);
+          border: 1px dashed var(--border);
+          border-radius: var(--radius);
+          color: var(--muted);
+          text-align: center;
+        }
+
+
+        /* Tables */
+        .table-wrap {
+          overflow-x: auto;
+          background: var(--bg-card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          margin-bottom: 24px;
+          box-shadow: 0 1px 4px rgba(0,0,0,.04);
+        }
+        .device-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 13px;
+          font-family: var(--mono);
+        }
+        .device-table th,
+        .device-table td {
+          padding: 10px 12px;
+          text-align: left;
+          border-bottom: 1px solid var(--border);
+        }
+        .device-table th {
+          background: var(--accent-soft);
+          color: var(--accent);
+          font-weight: 600;
+          font-family: var(--font);
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: .04em;
+        }
+        .device-table tbody tr:nth-child(even) { background: rgba(19, 156, 122, 0.035); }
+        .device-table tbody tr:hover { background: rgba(92, 146, 121, 0.12); }
+        .device-table tbody tr:last-child td { border-bottom: 0; }
+        .device-table .score { font-weight: 700; }
+        .device-table--wide {
+          font-size: 12px;
+          min-width: max-content;
+        }
+        .device-table--wide th {
+          white-space: normal;
+          min-width: 8.5rem;
+          max-width: 12rem;
+          line-height: 1.35;
+          vertical-align: bottom;
+          position: sticky;
+          top: 0;
+          z-index: 2;
+        }
+        .device-table--wide .col-head--key {
+          min-width: 9rem;
+        }
+        .device-table--wide .cell-stat {
+          max-width: 18rem;
+          min-width: 7rem;
+          word-break: break-word;
+          white-space: pre-wrap;
+          vertical-align: top;
+          line-height: 1.45;
+        }
+        .device-table--wide td:first-child,
+        .device-table--wide th:first-child {
+          position: sticky;
+          left: 0;
+          z-index: 1;
+          background: var(--bg-card);
+          box-shadow: 2px 0 4px rgba(0,0,0,.06);
+        }
+        .device-table--wide thead th:first-child {
+          z-index: 3;
+          background: var(--accent-soft);
+        }
+        .cell-stat--is-missing {
+          color: var(--muted);
+          font-style: italic;
+        }
+        .cell-stat--is-bool {
+          font-family: var(--font);
+          font-weight: 600;
+        }
+        .cell-stat--is-multiline {
+          line-height: 1.55;
+        }
+        .cell-deductions {
+          max-width: 24rem;
+          font-size: 12px;
+          word-break: break-word;
+          vertical-align: top;
+        }
+        .col-serial { font-weight: 600; }
+        .grade-a { color: var(--cdi-foliage-green); font-weight: 700; }
+        .grade-b { color: var(--cdi-green-spruce); font-weight: 700; }
+        .grade-c { color: var(--warn); font-weight: 700; }
+        .grade-d { color: #c65f00; font-weight: 700; }
+        .grade-f { color: var(--danger); font-weight: 700; }
+        .status-healthy { color: var(--cdi-simply-green); }
+        .status-warning { color: var(--warn); }
+        .status-failed { color: var(--danger); }
+
+
+        /* Footer and print */
+        .page-foot {
+          margin-top: 40px;
+          padding-top: 20px;
+          border-top: 1px solid var(--border);
+          text-align: center;
+          font-size: 12px;
+          color: var(--muted);
+        }
+        @media print {
+          .sidebar { display: none; }
+          .main { max-width: 100%; padding: 16px; }
+          .tab-panel { display: block !important; page-break-before: always; }
+          .tab-panel:first-of-type { page-break-before: auto; }
+        }
+        @media (max-width: 900px) {
+          body { flex-direction: column; }
+          .sidebar {
+            position: relative;
+            width: 100%;
+            min-height: unset;
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: center;
+          }
+          .nav-tabs { flex-direction: row; flex-wrap: wrap; width: 100%; }
+        }
+
+    </style>
+</head>
+<body data-view="simple">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-logo"><svg class="brand-logo-svg" role="img" aria-label="Circular Drive Initiative logo" id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 576 395.71">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #039f77;
+        fill-rule: evenodd;
+      }
+
+      .cls-1, .cls-2, .cls-3 {
+        stroke-width: 0px;
+      }
+
+      .cls-2 {
+        fill: #111828;
+      }
+
+      .cls-3 {
+        fill: none;
+      }
+    </style>
+  </defs>
+  <path class="cls-1" d="M206.57,79.3c-92.64.16-167.69,75.31-167.69,167.99,0,28.51,7.1,55.36,19.63,78.88l13.49-7.17c-11.39-21.38-17.85-45.79-17.85-71.71,0-84.25,68.23-152.57,152.45-152.72l-.03-15.27Z"/>
+  <path class="cls-1" d="M133.27,364.89c-39.12-24.53-65.12-68.03-65.12-117.6,0-76.27,61.55-138.16,137.68-138.72l.1,15.27c-67.75.49-122.52,55.57-122.52,123.44,0,44.11,23.14,82.82,57.95,104.65l-8.09,12.95Z"/>
+  <path class="cls-1" d="M206.48,137.85c-60.27.21-109.07,49.13-109.07,109.45,0,55.93,41.95,102.06,96.11,108.64l1.86-15.16c-46.6-5.66-82.7-45.35-82.7-93.48,0-51.9,41.98-94,93.85-94.17l-.05-15.27Z"/>
+  <path class="cls-1" d="M206.47,167.12c-44.1.21-79.79,36.03-79.79,80.18s35.9,80.18,80.18,80.18c13.61,0,26.42-3.39,37.65-9.37l-7.17-13.49c-9.09,4.84-19.46,7.59-30.48,7.59-35.85,0-64.9-29.06-64.9-64.9s28.89-64.73,64.59-64.9l-.07-15.27Z"/>
+  <path class="cls-1" d="M206.82,196.39c-28.09.02-50.86,22.81-50.86,50.91s22.79,50.91,50.9,50.91c16.93,0,31.94-8.27,41.19-20.99l-12.35-8.98c-6.48,8.9-16.98,14.69-28.84,14.69-19.68,0-35.63-15.96-35.63-35.63s15.93-35.61,35.59-35.63v-15.27Z"/>
+  <path class="cls-2" d="M246.02,108.88c-6.51,0-11.82-4.77-11.82-11.82s5.31-11.82,11.82-11.82c4.57,0,8.53,2.32,10.47,6.21l11.89-5.57c-3.93-8.06-12.32-12.93-22.36-12.93-14.17,0-24.98,9.67-24.98,24.11s10.81,24.11,24.98,24.11c10.04,0,18.43-4.87,22.36-12.93l-11.89-5.57c-1.94,3.89-5.91,6.21-10.47,6.21M279.4,79.87c3.96,0,7.22-3.29,7.22-7.29s-3.25-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.25,7.29,7.25,7.29M273.08,120.57h12.59v-36.93h-12.59v36.93ZM290.99,83.63v36.93h12.59v-18.46c0-5.27,3.42-8.46,11.35-8.46v-10.61c-5.44,0-9.2,1.41-11.35,4.7l-.57-4.09h-12.02ZM335.28,110.83c-4.33,0-7.89-3.22-7.89-8.73s3.56-8.73,7.89-8.73c3.09,0,5.74,1.61,6.98,5.11l11.52-4.6c-2.95-6.75-10.28-10.84-18.5-10.84-10.95,0-20.45,6.82-20.45,19.07s9.5,19.07,20.45,19.07c8.22,0,15.55-4.1,18.5-10.85l-11.52-4.6c-1.24,3.49-3.9,5.11-6.98,5.11M369.32,83.63h-12.59v18.47c0,11.89,3.59,19.1,14.2,19.1,5.47,0,9.37-1.88,11.15-5.04l.57,4.4h12.02v-36.93h-12.59v18.47c0,5.27-2.32,8.46-6.75,8.46s-6.01-3.05-6.01-8.46v-18.47ZM399.98,120.57h12.59v-50.36h-12.59v50.36ZM433.09,82.99c-9.5,0-16.92,7.69-16.92,19.11s7.42,19.1,16.92,19.1c5.44,0,9.64-1.72,11.42-5.04l.57,4.4h12.02v-36.93h-12.02l-.57,4.4c-1.78-3.16-5.98-5.04-11.42-5.04M436.62,110.56c-4.33,0-7.86-3.22-7.86-8.46s3.53-8.46,7.86-8.46,7.89,3.22,7.89,8.46-3.52,8.46-7.89,8.46M461.72,83.63v36.93h12.59v-18.46c0-5.27,3.43-8.46,11.35-8.46v-10.61c-5.44,0-9.2,1.41-11.35,4.7l-.57-4.09h-12.02ZM243.6,140.35h-21.22v47h21.22c14.13,0,23.84-9.63,23.84-23.5s-9.7-23.5-23.84-23.5M241.92,176.75h-6.11v-25.79h6.11c6.65,0,12.09,4.8,12.09,12.89s-5.44,12.89-12.09,12.89M271.5,150.42v36.93h12.59v-18.46c0-5.27,3.42-8.46,11.35-8.46v-10.61c-5.44,0-9.2,1.41-11.35,4.7l-.57-4.1h-12.02ZM306,146.66c3.96,0,7.22-3.29,7.22-7.29s-3.26-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.26,7.29,7.25,7.29M299.69,187.36h12.59v-36.93h-12.59v36.93ZM345.43,150.42l-7.96,25.76-7.99-25.76h-13.43l12.15,36.93h18.46l12.19-36.93h-13.43ZM378.63,149.79c-10.95,0-20.45,6.85-20.45,19.1s9.5,19.11,20.45,19.11c7.32,0,14.13-3.23,17.73-9.1l-10.71-5.17c-1.54,2.82-3.79,4.43-7.01,4.43-3.39,0-6.35-2.15-7.42-5.88h27.33c1.18-14.47-7.69-22.5-19.91-22.5M378.63,159.62c3.86,0,6.55,2.15,7.49,5.87h-14.98c.97-3.73,3.63-5.87,7.49-5.87M222.38,251.37h13.43v-47.01h-13.43v47.01ZM267.32,251.37h12.56v-18.46c0-11.89-3.59-19.1-14.2-19.1-5.47,0-9.37,1.88-11.15,5.04l-.57-4.4h-12.02v36.93h12.59v-18.46c0-5.27,2.32-8.46,6.78-8.46s6.01,3.02,6.01,8.46v18.46ZM291.53,210.67c3.96,0,7.22-3.29,7.22-7.29s-3.26-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.26,7.29,7.25,7.29M285.21,251.37h12.59v-36.93h-12.59v36.93ZM307.06,206.24v8.19h-4.47v9.77h4.47v13.2c0,9.77,3.62,14.57,13.5,14.57,1.88,0,5.34-.24,7.32-.54v-10.27c-2.15.36-4.16.4-5.74-.17-1.68-.51-2.52-1.82-2.52-4.06v-12.73h8.26v-9.77h-8.26v-8.19h-12.56ZM338.94,210.67c3.96,0,7.22-3.29,7.22-7.29s-3.26-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.26,7.29,7.25,7.29M332.63,251.37h12.59v-36.93h-12.59v36.93ZM366.41,213.8c-9.5,0-16.92,7.69-16.92,19.1s7.42,19.1,16.92,19.1c5.44,0,9.64-1.71,11.42-5.04l.57,4.4h12.02v-36.93h-12.02l-.57,4.4c-1.78-3.16-5.98-5.04-11.42-5.04M369.94,241.36c-4.33,0-7.86-3.22-7.86-8.46s3.53-8.46,7.86-8.46,7.89,3.22,7.89,8.46-3.52,8.46-7.89,8.46M398.84,206.24v8.19h-4.46v9.77h4.46v13.2c0,9.77,3.63,14.57,13.5,14.57,1.88,0,5.34-.24,7.32-.54v-10.27c-2.15.36-4.17.4-5.74-.17-1.68-.51-2.52-1.82-2.52-4.06v-12.73h8.26v-9.77h-8.26v-8.19h-12.56ZM431.24,210.67c3.96,0,7.22-3.29,7.22-7.29s-3.26-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.26,7.29,7.25,7.29M424.93,251.37h12.59v-36.93h-12.59v36.93ZM469.33,214.43l-7.96,25.75-7.99-25.75h-13.43l12.15,36.93h18.47l12.19-36.93h-13.43ZM502.53,213.8c-10.95,0-20.45,6.85-20.45,19.1s9.5,19.1,20.45,19.1c7.32,0,14.13-3.23,17.73-9.1l-10.71-5.17c-1.55,2.82-3.79,4.43-7.02,4.43-3.39,0-6.35-2.15-7.42-5.88h27.33c1.18-14.47-7.69-22.49-19.91-22.49M502.53,223.63c3.86,0,6.55,2.15,7.49,5.87h-14.97c.98-3.73,3.62-5.87,7.49-5.87"/>
+  <rect class="cls-3" x="194.27" y="176.41" width="484.74" height="299.52"/>
+</svg></div>
+            <div class="brand-text">
+                <strong>CDI Health</strong>
+                <span>Circular Drive Initiative</span>
+            </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Device categories">
+            <a href="#" class="tab-btn active" data-tab="sata-hdd" data-label="SATA HDD">
+                <span class="tab-title">SATA HDD</span>
+                <span class="tab-count">5</span>
+            </a>
+            <a href="#" class="tab-btn" data-tab="sas-hdd" data-label="SAS HDD">
+                <span class="tab-title">SAS HDD</span>
+                <span class="tab-count">2</span>
+            </a>
+            <a href="#" class="tab-btn" data-tab="sata-ssd" data-label="SATA SSD">
+                <span class="tab-title">SATA SSD</span>
+                <span class="tab-count">3</span>
+            </a>
+            <a href="#" class="tab-btn" data-tab="sas-ssd" data-label="SAS SSD">
+                <span class="tab-title">SAS SSD</span>
+                <span class="tab-count">0</span>
+            </a>
+            <a href="#" class="tab-btn" data-tab="nvme-ssd" data-label="NVMe SSD">
+                <span class="tab-title">NVMe SSD</span>
+                <span class="tab-count">2</span>
+            </a>
+        </nav>
+        <p class="sidebar-foot">Storage health assessment</p>
+    </aside>
+    <main class="main">
+        <header class="hero">
+            <div class="hero-top">
+                <div>
+                    <h1>CDI Health Report</h1>
+                    <p class="hero-sub">Offline-friendly report · drives identified by serial number only</p>
+                    <p class="hero-time">Generated 2026-03-21 15:22:35</p>
+                </div>
+                <div class="view-mode-bar" role="toolbar" aria-label="Report layout">
+                    <span class="view-mode-label">View</span>
+                    <button type="button" class="mode-btn active" data-view="simple">Simple</button>
+                    <button type="button" class="mode-btn" data-view="advanced">Advanced</button>
+                </div>
+            </div>
+        </header>
+
+        <section class="summary-strip" aria-label="Fleet summary">
+            <div class="s-card"><span class="s-label">Total devices</span><span class="s-val">12</span></div><div class="s-card s-ok"><span class="s-label">Healthy</span><span class="s-val">10</span></div><div class="s-card s-warn"><span class="s-label">Warning</span><span class="s-val">1</span></div><div class="s-card s-bad"><span class="s-label">At risk</span><span class="s-val">1</span></div>
+        </section>
+
+
+        <section class="tab-panel active" data-panel="sata-hdd" aria-labelledby="hdr-sata-hdd">
+            <h2 class="cat-head" id="hdr-sata-hdd">SATA HDD</h2>
+            <p class="cat-meta">5 drive(s) · rows keyed by serial number</p>
+
+            <div class="table-wrap simple-only">
+                <table class="device-table device-table--simple">
+                    <thead>
+                        <tr>
+                            <th>Serial</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Status</th>
+                            <th>Deductions</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td class="col-serial">WD-WMC3T0123456</td><td class="score">50</td><td class="grade-d">D</td><td class="status-warning">Poor</td><td class="cell-deductions">SMART status failed [-50]</td></tr><tr><td class="col-serial">ZFL1ABC1</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr><tr><td class="col-serial">Z8BSGABC</td><td class="score">90</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">Pending sectors: 56 (≤10) [-10]</td></tr><tr><td class="col-serial">WGS1ABC2</td><td class="score">90</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">Reallocated sectors: 48 (≤10) [-10]</td></tr><tr><td class="col-serial">TF6550ABCDEF</td><td class="score">25</td><td class="grade-f">F</td><td class="status-failed">Failed</td><td class="cell-deductions">Offline uncorrectable sectors: 25 (≤10) [-75]</td></tr></tbody>
+                </table>
+            </div>
+            <div class="table-wrap advanced-only">
+                <table class="device-table device-table--wide">
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="SMART attr 1 (Raw_Read_Error_Rate)">Attr 1 (Raw Read Error Rate)</th><th class="col-head" scope="col" title="SMART attr 2 (Throughput_Performance)">Attr 2 (Throughput Performance)</th><th class="col-head" scope="col" title="SMART attr 3 (Spin_Up_Time)">Attr 3 (Spin Up Time)</th><th class="col-head" scope="col" title="SMART attr 4 (Start_Stop_Count)">Attr 4 (Start Stop Count)</th><th class="col-head" scope="col" title="SMART attr 5 (Reallocated_Sector_Ct)">Attr 5 (Reallocated Sector Ct)</th><th class="col-head" scope="col" title="SMART attr 7 (Seek_Error_Rate)">Attr 7 (Seek Error Rate)</th><th class="col-head" scope="col" title="SMART attr 8 (Seek_Time_Performance)">Attr 8 (Seek Time Performance)</th><th class="col-head" scope="col" title="SMART attr 9 (Power_On_Hours)">Attr 9 (Power On Hours)</th><th class="col-head" scope="col" title="SMART attr 10 (Spin_Retry_Count)">Attr 10 (Spin Retry Count)</th><th class="col-head" scope="col" title="SMART attr 12 (Power_Cycle_Count)">Attr 12 (Power Cycle Count)</th><th class="col-head" scope="col" title="SMART attr 184 (End-to-End_Error)">Attr 184 (End-to-End Error)</th><th class="col-head" scope="col" title="SMART attr 187 (Reported_Uncorrect)">Attr 187 (Reported Uncorrect)</th><th class="col-head" scope="col" title="SMART attr 188 (Command_Timeout)">Attr 188 (Command Timeout)</th><th class="col-head" scope="col" title="SMART attr 189 (High_Fly_Writes)">Attr 189 (High Fly Writes)</th><th class="col-head" scope="col" title="SMART attr 190 (Airflow_Temperature_Cel)">Attr 190 (Airflow Temperature Cel)</th><th class="col-head" scope="col" title="SMART attr 191 (G-Sense_Error_Rate)">Attr 191 (G-Sense Error Rate)</th><th class="col-head" scope="col" title="SMART attr 192 (Power-Off_Retract_Count)">Attr 192 (Power-Off Retract Count)</th><th class="col-head" scope="col" title="SMART attr 193 (Load_Cycle_Count)">Attr 193 (Load Cycle Count)</th><th class="col-head" scope="col" title="SMART attr 194 (Temperature_Celsius)">Attr 194 (Temperature Celsius)</th><th class="col-head" scope="col" title="SMART attr 196 (Reallocated_Event_Count)">Attr 196 (Reallocated Event Count)</th><th class="col-head" scope="col" title="SMART attr 197 (Current_Pending_Sector)">Attr 197 (Current Pending Sector)</th><th class="col-head" scope="col" title="SMART attr 198 (Offline_Uncorrectable)">Attr 198 (Offline Uncorrectable)</th><th class="col-head" scope="col" title="SMART attr 199 (UDMA_CRC_Error_Count)">Attr 199 (UDMA CRC Error Count)</th><th class="col-head" scope="col" title="SMART attr 200 (Multi_Zone_Error_Rate)">Attr 200 (Multi Zone Error Rate)</th><th class="col-head" scope="col" title="SMART attr 223 (Load_Retry_Count)">Attr 223 (Load Retry Count)</th><th class="col-head" scope="col" title="SMART attr 240 (Head_Flying_Hours)">Attr 240 (Head Flying Hours)</th><th class="col-head" scope="col" title="SMART attr 241 (Total_LBAs_Written)">Attr 241 (Total LBAs Written)</th><th class="col-head" scope="col" title="SMART attr 242 (Total_LBAs_Read)">Attr 242 (Total LBAs Read)</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial">WD-WMC3T0123456</td><td class="cell-stat">WDC WD10EZEX-00WN4A0</td><td class="cell-stat">WD</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">1.00 TB</td><td class="cell-stat">01.01A01</td><td class="cell-stat">3.5 inches</td><td class="cell-stat">7200</td><td class="cell-stat cell-stat--is-bool">No</td><td class="cell-stat">25000</td><td class="cell-stat">150</td><td class="cell-stat">500</td><td class="cell-stat">150</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=51
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=173
+worst=166
+thresh=21
+raw=2216</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=150</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=140
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=95
+worst=95
+thresh=0
+raw=25000</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=150</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=50</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=500</td><td class="cell-stat cell-stat--is-multiline">value=111
+worst=98
+thresh=0
+raw=39</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">50</td><td class="cell-stat">D</td><td class="cell-stat">Poor</td><td class="cell-stat">No</td><td class="cell-stat">SMART status failed [-50]</td></tr><tr><td class="cell-stat col-serial">ZFL1ABC1</td><td class="cell-stat">ST2000DM008-2FR102</td><td class="cell-stat">SEAGATE</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">2.00 TB</td><td class="cell-stat">0001</td><td class="cell-stat">3.5 inches</td><td class="cell-stat">7200</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">13500</td><td class="cell-stat">25</td><td class="cell-stat">100</td><td class="cell-stat">50</td><td class="cell-stat">35</td><td class="cell-stat">45</td><td class="cell-stat">60</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=80
+worst=63
+thresh=6
+raw=166912512</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=97
+worst=97
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=20
+raw=50</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=10
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=87
+worst=60
+thresh=45
+raw=533035008</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=85
+worst=85
+thresh=0
+raw=13500</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=97
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=20
+raw=25</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=99
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=65
+worst=55
+thresh=40
+raw=35 (Min/Max 20/45)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=100</td><td class="cell-stat cell-stat--is-multiline">value=35
+worst=45
+thresh=0
+raw=35 (Min/Max 20/45)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=253
+thresh=0
+raw=8426h+36m+00.000s</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=253
+thresh=0
+raw=12345678901</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=253
+thresh=0
+raw=98765432109</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr><tr><td class="cell-stat col-serial">Z8BSGABC</td><td class="cell-stat">MQ01ABD100</td><td class="cell-stat">TOSHIBA</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">1.00 TB</td><td class="cell-stat">AX001U</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">5400</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">30000</td><td class="cell-stat">5000</td><td class="cell-stat">250000</td><td class="cell-stat">8500</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">56</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=1
+raw=1591</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=8500</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=50
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=75
+worst=75
+thresh=0
+raw=30000</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=100
+thresh=30
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=5000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=2</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=50</td><td class="cell-stat cell-stat--is-multiline">value=90
+worst=90
+thresh=0
+raw=250000</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=36 (Min/Max 18/55)</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=50
+worst=50
+thresh=0
+raw=56</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=80
+worst=80
+thresh=0
+raw=21000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">90</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">No</td><td class="cell-stat">Pending sectors: 56 (≤10) [-10]</td></tr><tr><td class="cell-stat col-serial">WGS1ABC2</td><td class="cell-stat">ST1000LM048-2E7172</td><td class="cell-stat">SEAGATE</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">1.00 TB</td><td class="cell-stat">0002</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">5400</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">45000</td><td class="cell-stat">1200</td><td class="cell-stat">100000</td><td class="cell-stat">1500</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">48</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=70
+worst=63
+thresh=6
+raw=250000000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=99
+worst=99
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=99
+worst=99
+thresh=0
+raw=1500</td><td class="cell-stat cell-stat--is-multiline">value=80
+worst=80
+thresh=10
+raw=48</td><td class="cell-stat cell-stat--is-multiline">value=80
+worst=60
+thresh=45
+raw=800000000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=60
+worst=60
+thresh=0
+raw=45000</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=97
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=99
+worst=99
+thresh=0
+raw=1200</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=99
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=60
+worst=50
+thresh=45
+raw=40 (Min/Max 22/50)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=90
+worst=90
+thresh=0
+raw=100000</td><td class="cell-stat cell-stat--is-multiline">value=40
+worst=50
+thresh=0
+raw=40 (Min/Max 22/50)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">90</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">No</td><td class="cell-stat">Reallocated sectors: 48 (≤10) [-10]</td></tr><tr><td class="cell-stat col-serial">TF6550ABCDEF</td><td class="cell-stat">HTS725050A7E630</td><td class="cell-stat">HGST</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">HDD</td><td class="cell-stat">500 GB</td><td class="cell-stat">GH2OA420</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">7200</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">20000</td><td class="cell-stat">2000</td><td class="cell-stat">150000</td><td class="cell-stat">2500</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">25</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=62
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=40
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=183
+worst=183
+thresh=33
+raw=1</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=2500</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=5
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=67
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=128
+worst=128
+thresh=40
+raw=18</td><td class="cell-stat cell-stat--is-multiline">value=85
+worst=85
+thresh=0
+raw=20000</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=60
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=2000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=100</td><td class="cell-stat cell-stat--is-multiline">value=90
+worst=90
+thresh=0
+raw=150000</td><td class="cell-stat cell-stat--is-multiline">value=171
+worst=171
+thresh=0
+raw=37 (Min/Max 15/51)</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=50
+worst=50
+thresh=0
+raw=25</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=0
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">25</td><td class="cell-stat">F</td><td class="cell-stat">Failed</td><td class="cell-stat">No</td><td class="cell-stat">Offline uncorrectable sectors: 25 (≤10) [-75]</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="tab-panel" data-panel="sas-hdd" aria-labelledby="hdr-sas-hdd">
+            <h2 class="cat-head" id="hdr-sas-hdd">SAS HDD</h2>
+            <p class="cat-meta">2 drive(s) · rows keyed by serial number</p>
+
+            <div class="table-wrap simple-only">
+                <table class="device-table device-table--simple">
+                    <thead>
+                        <tr>
+                            <th>Serial</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Status</th>
+                            <th>Deductions</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td class="col-serial">S0K1ABC2</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr><tr><td class="col-serial">PDKABC1234</td><td class="score">90</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">Grown defects: 150 (≤10) [-10]</td></tr></tbody>
+                </table>
+            </div>
+            <div class="table-wrap advanced-only">
+                <table class="device-table device-table--wide">
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="SCSI error log — read › correction_algorithm_invocations">SCSI read / correction_algorithm_invocations</th><th class="col-head" scope="col" title="SCSI error log — read › errors_corrected_by_eccdelayed">SCSI read / errors_corrected_by_eccdelayed</th><th class="col-head" scope="col" title="SCSI error log — read › errors_corrected_by_eccfast">SCSI read / errors_corrected_by_eccfast</th><th class="col-head" scope="col" title="SCSI error log — read › errors_corrected_by_rereads_rewrites">SCSI read / errors_corrected_by_rereads_rewrites</th><th class="col-head" scope="col" title="SCSI error log — read › gigabytes_processed">SCSI read / gigabytes_processed</th><th class="col-head" scope="col" title="SCSI error log — read › total_errors_corrected">SCSI read / total_errors_corrected</th><th class="col-head" scope="col" title="SCSI error log — read › total_uncorrected_errors">SCSI read / total_uncorrected_errors</th><th class="col-head" scope="col" title="SCSI error log — verify › correction_algorithm_invocations">SCSI verify / correction_algorithm_invocations</th><th class="col-head" scope="col" title="SCSI error log — verify › errors_corrected_by_eccdelayed">SCSI verify / errors_corrected_by_eccdelayed</th><th class="col-head" scope="col" title="SCSI error log — verify › errors_corrected_by_eccfast">SCSI verify / errors_corrected_by_eccfast</th><th class="col-head" scope="col" title="SCSI error log — verify › errors_corrected_by_rereads_rewrites">SCSI verify / errors_corrected_by_rereads_rewrites</th><th class="col-head" scope="col" title="SCSI error log — verify › gigabytes_processed">SCSI verify / gigabytes_processed</th><th class="col-head" scope="col" title="SCSI error log — verify › total_errors_corrected">SCSI verify / total_errors_corrected</th><th class="col-head" scope="col" title="SCSI error log — verify › total_uncorrected_errors">SCSI verify / total_uncorrected_errors</th><th class="col-head" scope="col" title="SCSI error log — write › correction_algorithm_invocations">SCSI write / correction_algorithm_invocations</th><th class="col-head" scope="col" title="SCSI error log — write › errors_corrected_by_eccdelayed">SCSI write / errors_corrected_by_eccdelayed</th><th class="col-head" scope="col" title="SCSI error log — write › errors_corrected_by_eccfast">SCSI write / errors_corrected_by_eccfast</th><th class="col-head" scope="col" title="SCSI error log — write › errors_corrected_by_rereads_rewrites">SCSI write / errors_corrected_by_rereads_rewrites</th><th class="col-head" scope="col" title="SCSI error log — write › gigabytes_processed">SCSI write / gigabytes_processed</th><th class="col-head" scope="col" title="SCSI error log — write › total_errors_corrected">SCSI write / total_errors_corrected</th><th class="col-head" scope="col" title="SCSI error log — write › total_uncorrected_errors">SCSI write / total_uncorrected_errors</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial">S0K1ABC2</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">SCSI</td><td class="cell-stat">SAS</td><td class="cell-stat">HDD</td><td class="cell-stat">600 GB</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">10000</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">25000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">12345.678</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">1234.567</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">9876.543</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr><tr><td class="cell-stat col-serial">PDKABC1234</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">SCSI</td><td class="cell-stat">SAS</td><td class="cell-stat">HDD</td><td class="cell-stat">1.20 TB</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">10000</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">65000</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">150</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">23</td><td class="cell-stat">1000</td><td class="cell-stat">50</td><td class="cell-stat">100</td><td class="cell-stat">25</td><td class="cell-stat">98765.432</td><td class="cell-stat">175</td><td class="cell-stat">15</td><td class="cell-stat">200</td><td class="cell-stat">5</td><td class="cell-stat">10</td><td class="cell-stat">2</td><td class="cell-stat">5432.109</td><td class="cell-stat">17</td><td class="cell-stat">3</td><td class="cell-stat">500</td><td class="cell-stat">10</td><td class="cell-stat">20</td><td class="cell-stat">5</td><td class="cell-stat">87654.321</td><td class="cell-stat">35</td><td class="cell-stat">5</td><td class="cell-stat">90</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">No</td><td class="cell-stat">Grown defects: 150 (≤10) [-10]</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="tab-panel" data-panel="sata-ssd" aria-labelledby="hdr-sata-ssd">
+            <h2 class="cat-head" id="hdr-sata-ssd">SATA SSD</h2>
+            <p class="cat-meta">3 drive(s) · rows keyed by serial number</p>
+
+            <div class="table-wrap simple-only">
+                <table class="device-table device-table--simple">
+                    <thead>
+                        <tr>
+                            <th>Serial</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Status</th>
+                            <th>Deductions</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td class="col-serial">MOCK000000</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr><tr><td class="col-serial">MOCK000001</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr><tr><td class="col-serial">MOCK000001</td><td class="score">100</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">—</td></tr></tbody>
+                </table>
+            </div>
+            <div class="table-wrap advanced-only">
+                <table class="device-table device-table--wide">
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="SSD % used (ATA)">Percent used</th><th class="col-head" scope="col" title="SMART attr 1 (Raw_Read_Error_Rate)">Attr 1 (Raw Read Error Rate)</th><th class="col-head" scope="col" title="SMART attr 5 (Reallocated_Sector_Ct)">Attr 5 (Reallocated Sector Ct)</th><th class="col-head" scope="col" title="SMART attr 9 (Power_On_Hours)">Attr 9 (Power On Hours)</th><th class="col-head" scope="col" title="SMART attr 12 (Power_Cycle_Count)">Attr 12 (Power Cycle Count)</th><th class="col-head" scope="col" title="SMART attr 165 (Unknown_Attribute)">Attr 165 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 166 (Unknown_Attribute)">Attr 166 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 167 (Unknown_Attribute)">Attr 167 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 168 (Unknown_Attribute)">Attr 168 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 169 (Unknown_Attribute)">Attr 169 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 170 (Unknown_Attribute)">Attr 170 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 171 (Unknown_Attribute)">Attr 171 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 172 (Unknown_Attribute)">Attr 172 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 173 (Unknown_Attribute)">Attr 173 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 174 (Unknown_Attribute)">Attr 174 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 175 (Program_Fail_Count_Chip)">Attr 175 (Program Fail Count Chip)</th><th class="col-head" scope="col" title="SMART attr 180 (Unused_Rsvd_Blk_Cnt_Tot)">Attr 180 (Unused Rsvd Blk Cnt Tot)</th><th class="col-head" scope="col" title="SMART attr 184 (End-to-End_Error)">Attr 184 (End-to-End Error)</th><th class="col-head" scope="col" title="SMART attr 187 (Reported_Uncorrect)">Attr 187 (Reported Uncorrect)</th><th class="col-head" scope="col" title="SMART attr 188 (Command_Timeout)">Attr 188 (Command Timeout)</th><th class="col-head" scope="col" title="SMART attr 194 (Temperature_Celsius)">Attr 194 (Temperature Celsius)</th><th class="col-head" scope="col" title="SMART attr 196 (Reallocated_Event_Count)">Attr 196 (Reallocated Event Count)</th><th class="col-head" scope="col" title="SMART attr 199 (UDMA_CRC_Error_Count)">Attr 199 (UDMA CRC Error Count)</th><th class="col-head" scope="col" title="SMART attr 202 (Unknown_SSD_Attribute)">Attr 202 (Unknown SSD Attribute)</th><th class="col-head" scope="col" title="SMART attr 230 (Unknown_SSD_Attribute)">Attr 230 (Unknown SSD Attribute)</th><th class="col-head" scope="col" title="SMART attr 232 (Available_Reservd_Space)">Attr 232 (Available Reservd Space)</th><th class="col-head" scope="col" title="SMART attr 233 (Media_Wearout_Indicator)">Attr 233 (Media Wearout Indicator)</th><th class="col-head" scope="col" title="SMART attr 234 (Unknown_Attribute)">Attr 234 (Unknown Attribute)</th><th class="col-head" scope="col" title="SMART attr 241 (Total_LBAs_Written)">Attr 241 (Total LBAs Written)</th><th class="col-head" scope="col" title="SMART attr 242 (Total_LBAs_Read)">Attr 242 (Total LBAs Read)</th><th class="col-head" scope="col" title="SMART attr 244 (Unknown_Attribute)">Attr 244 (Unknown Attribute)</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial">MOCK000000</td><td class="cell-stat">MK000960GWSSD</td><td class="cell-stat">HPE</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">SSD</td><td class="cell-stat">960 GB</td><td class="cell-stat">HPG3</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">10645</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">12</td><td class="cell-stat">29</td><td class="cell-stat">60</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=2
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=5
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=97
+worst=97
+thresh=0
+raw=10645</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=99
+worst=99
+thresh=5
+raw=5</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=1
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=200
+worst=200
+thresh=97
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=88
+worst=71
+thresh=0
+raw=12</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=5
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=10
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr><tr><td class="cell-stat col-serial">MOCK000001</td><td class="cell-stat">SANDISK SDSSDH3 512G</td><td class="cell-stat">UNKNOWN</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">SSD</td><td class="cell-stat">512 GB</td><td class="cell-stat">40101000</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">32019</td><td class="cell-stat">19</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">11</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=32019</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=19</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=649410523126</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=87</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=45</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=140</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=384</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=116</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=8</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=77
+worst=46
+raw=23 (Min/Max 16/46)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=24
+worst=24
+raw=26624690755639</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=4
+raw=100</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=58994</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=141517</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=253
+raw=113995</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=253
+raw=97983</td><td class="cell-stat cell-stat--is-multiline">value=0
+worst=100
+raw=0</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr><tr><td class="cell-stat col-serial">MOCK000001</td><td class="cell-stat">SANDISK SDSSDH3 512G</td><td class="cell-stat">UNKNOWN</td><td class="cell-stat">ATA</td><td class="cell-stat">SATA</td><td class="cell-stat">SSD</td><td class="cell-stat">512 GB</td><td class="cell-stat">40101000</td><td class="cell-stat">2.5 inches</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">32019</td><td class="cell-stat">19</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">11</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=32019</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=19</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=649410523126</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=87</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=45</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=140</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=384</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=116</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=8</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-multiline">value=77
+worst=46
+raw=23 (Min/Max 16/46)</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-multiline">value=24
+worst=24
+raw=26624690755639</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+thresh=4
+raw=100</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=58994</td><td class="cell-stat cell-stat--is-multiline">value=100
+worst=100
+raw=141517</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=253
+raw=113995</td><td class="cell-stat cell-stat--is-multiline">value=253
+worst=253
+raw=97983</td><td class="cell-stat cell-stat--is-multiline">value=0
+worst=100
+raw=0</td><td class="cell-stat">100</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat cell-stat--is-missing">—</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="tab-panel" data-panel="sas-ssd" aria-labelledby="hdr-sas-ssd">
+            <h2 class="cat-head" id="hdr-sas-ssd">SAS SSD</h2>
+            <p class="cat-meta">0 drive(s) · rows keyed by serial number</p>
+            <p class="empty-cat">No devices in this category.</p>
+        </section>
+
+        <section class="tab-panel" data-panel="nvme-ssd" aria-labelledby="hdr-nvme-ssd">
+            <h2 class="cat-head" id="hdr-nvme-ssd">NVMe SSD</h2>
+            <p class="cat-meta">2 drive(s) · rows keyed by serial number</p>
+
+            <div class="table-wrap simple-only">
+                <table class="device-table device-table--simple">
+                    <thead>
+                        <tr>
+                            <th>Serial</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Status</th>
+                            <th>Deductions</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td class="col-serial">PHO000002</td><td class="score">95</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">No self-test run in last 30 days [-5]</td></tr><tr><td class="col-serial">PHO000002</td><td class="score">95</td><td class="grade-a">A</td><td class="status-healthy">Excellent</td><td class="cell-deductions">No self-test run in last 30 days [-5]</td></tr></tbody>
+                </table>
+            </div>
+            <div class="table-wrap advanced-only">
+                <table class="device-table device-table--wide">
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="NVMe % used">Percent used</th><th class="col-head" scope="col" title="Avail spare %">Avail spare %</th><th class="col-head" scope="col" title="Critical warning">Critical warning</th><th class="col-head" scope="col" title="Media errors">Media errors</th><th class="col-head" scope="col" title="Data written (TB)">Data written (TB)</th><th class="col-head" scope="col" title="NVMe self-test fails">Self-test fails</th><th class="col-head" scope="col" title="NVMe data units read">Data units read</th><th class="col-head" scope="col" title="NVMe data units written">Data units written</th><th class="col-head" scope="col" title="NVMe host reads">Host reads</th><th class="col-head" scope="col" title="NVMe host writes">Host writes</th><th class="col-head" scope="col" title="Controller busy time (min)">Busy min</th><th class="col-head" scope="col" title="NVMe power cycles (log)">NVMe power cycles</th><th class="col-head" scope="col" title="NVMe POH (log)">NVMe POH</th><th class="col-head" scope="col" title="Unsafe shutdowns">Unsafe shutdowns</th><th class="col-head" scope="col" title="Error log entries">Error log entries</th><th class="col-head" scope="col" title="Warning temp time (min)">Warn temp min</th><th class="col-head" scope="col" title="Critical comp time (min)">Critical temp min</th><th class="col-head" scope="col" title="Self-test current">Self-test current</th><th class="col-head" scope="col" title="NVMe error log — read">NVMe err read</th><th class="col-head" scope="col" title="NVMe error log — size">NVMe err size</th><th class="col-head" scope="col" title="NVMe error log — unread">NVMe err unread</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial">PHO000002</td><td class="cell-stat">SSDPEK1A118GA</td><td class="cell-stat">INTEL</td><td class="cell-stat">NVMe</td><td class="cell-stat">NVMe</td><td class="cell-stat">SSD</td><td class="cell-stat">118 GB</td><td class="cell-stat">U5110550</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">24365</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0.566436864</td><td class="cell-stat">0</td><td class="cell-stat">563941</td><td class="cell-stat">1106322</td><td class="cell-stat">7491917</td><td class="cell-stat">7332148</td><td class="cell-stat">16</td><td class="cell-stat">74</td><td class="cell-stat">24365</td><td class="cell-stat">16</td><td class="cell-stat">0</td><td class="cell-stat">1</td><td class="cell-stat">0</td><td class="cell-stat">No self-test in progress</td><td class="cell-stat">16</td><td class="cell-stat">64</td><td class="cell-stat">0</td><td class="cell-stat">95</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">No self-test run in last 30 days [-5]</td></tr><tr><td class="cell-stat col-serial">PHO000002</td><td class="cell-stat">SSDPEK1A118GA</td><td class="cell-stat">INTEL</td><td class="cell-stat">NVMe</td><td class="cell-stat">NVMe</td><td class="cell-stat">SSD</td><td class="cell-stat">118 GB</td><td class="cell-stat">U5110550</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-bool">Yes</td><td class="cell-stat">24365</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat cell-stat--is-missing">—</td><td class="cell-stat">0</td><td class="cell-stat">0</td><td class="cell-stat">0.56643584</td><td class="cell-stat">0</td><td class="cell-stat">563941</td><td class="cell-stat">1106320</td><td class="cell-stat">7491917</td><td class="cell-stat">7332108</td><td class="cell-stat">16</td><td class="cell-stat">74</td><td class="cell-stat">24365</td><td class="cell-stat">16</td><td class="cell-stat">0</td><td class="cell-stat">1</td><td class="cell-stat">0</td><td class="cell-stat">No self-test in progress</td><td class="cell-stat">16</td><td class="cell-stat">64</td><td class="cell-stat">0</td><td class="cell-stat">95</td><td class="cell-stat">A</td><td class="cell-stat">Excellent</td><td class="cell-stat">Yes</td><td class="cell-stat">No self-test run in last 30 days [-5]</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer class="page-foot">
+            <p>Generated by CDI Health Scanner</p>
+            <p>© 2026 Circular Drive Initiative</p>
+        </footer>
+    </main>
+    <script>
+    (function() {
+      function setView(mode) {
+        if (mode !== "simple" && mode !== "advanced") mode = "simple";
+        document.body.setAttribute("data-view", mode);
+        document.querySelectorAll(".mode-btn").forEach(function(b) {
+          b.classList.toggle("active", b.getAttribute("data-view") === mode);
+        });
+        try { localStorage.setItem("cdi-report-view", mode); } catch (e) {}
+      }
+
+      document.querySelectorAll(".mode-btn").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+          setView(btn.getAttribute("data-view"));
+        });
+      });
+
+      try {
+        var savedView = localStorage.getItem("cdi-report-view");
+        if (savedView === "simple" || savedView === "advanced") setView(savedView);
+      } catch (e) {}
+
+      var tabs = document.querySelectorAll(".nav-tabs .tab-btn");
+      var panels = document.querySelectorAll(".tab-panel");
+
+      function show(slug) {
+        tabs.forEach(function(t) {
+          t.classList.toggle("active", t.getAttribute("data-tab") === slug);
+        });
+        panels.forEach(function(p) {
+          p.classList.toggle("active", p.getAttribute("data-panel") === slug);
+        });
+        try { localStorage.setItem("cdi-report-tab", slug); } catch (e) {}
+      }
+
+      tabs.forEach(function(btn) {
+        btn.addEventListener("click", function(e) {
+          e.preventDefault();
+          show(btn.getAttribute("data-tab"));
+        });
+      });
+
+      var initial = "sata-hdd";
+      try {
+        var savedTab = localStorage.getItem("cdi-report-tab");
+        if (savedTab) initial = savedTab;
+      } catch (e) {}
+
+      if (!document.querySelector('.tab-panel[data-panel="' + initial + '"]')) {
+        initial = "sata-hdd";
+      }
+
+      show(initial);
+    })();
+    </script>
+</body>
+</html>
