@@ -27,6 +27,8 @@ This guide provides information for developers working on CDI Health.
 
 ## Testing
 
+Continuous integration is defined in **`.github/workflows/ci.yml`** (pytest matrix, pre-commit, dashboard `npm run build`, wheel smoke, license headers). Install **`pip install -e '.[dev,api]'`** locally so FastAPI tests (`tests/test_api.py`) collect.
+
 ### Running Tests
 ```bash
 # All tests

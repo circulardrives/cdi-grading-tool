@@ -106,7 +106,7 @@ Tests run automatically on:
 - Pull requests
 - Multiple Python versions (3.10, 3.11, 3.12)
 
-See `.github/workflows/tests.yml` for CI configuration.
+See `.github/workflows/ci.yml` for CI (pytest matrix, pre-commit, dashboard build, wheel smoke).
 
 ## Test Data
 
