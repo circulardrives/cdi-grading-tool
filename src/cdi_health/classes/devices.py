@@ -248,10 +248,15 @@ class Device:
 
         # NVMe-specific attributes
         self.percentage_used = None
+        self.available_spare = None
+        self.available_spare_threshold = None
         self.critical_warning = None
         self.media_errors = None
         self.data_written_bytes = None
         self.data_written_tb = None
+
+        # SCSI/SAS supplemental counters
+        self.non_medium_errors = None
 
         # Temperatures
         self.current_temperature = None
@@ -1712,6 +1717,9 @@ class NVMeProtocol:
         if nvme_health:
             # Percentage Used (endurance indicator)
             device.percentage_used = nvme_health.get("percentage_used")
+            # Spare fields from NVMe SMART / Health Information log page 02h.
+            device.available_spare = nvme_health.get("available_spare")
+            device.available_spare_threshold = nvme_health.get("available_spare_threshold")
             # Critical Warning
             device.critical_warning = nvme_health.get("critical_warning", 0)
             # Media Errors
@@ -1753,8 +1761,13 @@ class NVMeProtocol:
             def _entry_failed(e: dict) -> bool:
                 r = e.get("self_test_result")
                 if isinstance(r, dict) and "value" in r:
-                    return int(r.get("value", 0)) == 1
-                return int(e.get("result", 0)) == 1
+                    value = r.get("value")
+                else:
+                    value = e.get("result")
+                try:
+                    return int(value or 0) == 1
+                except (TypeError, ValueError):
+                    return "fail" in str(value).lower()
 
             failed_count = sum(
                 1 for entry in device.nvme_self_test_history if isinstance(entry, dict) and _entry_failed(entry)
@@ -1802,6 +1815,22 @@ class NVMeProtocol:
         # A failed self-test means the drive cannot reliably store/retrieve data
         if device.nvme_self_test_failed_count > 0:
             # Set F Grade
+            device.cdi_grade = "F"
+            device.cdi_eligible = False
+            device.cdi_certified = False
+
+        # NVMe critical health signals are hard fail-gates.
+        spare_threshold = (
+            device.available_spare_threshold
+            if device.available_spare_threshold is not None
+            else get_config().minimum_ssd_available_spare
+        )
+        if (
+            (device.critical_warning or 0) > 0
+            or (device.media_errors or 0) > 0
+            or (device.available_spare is not None and device.available_spare < spare_threshold)
+        ):
+            device.state = f"Fail"
             device.cdi_grade = "F"
             device.cdi_eligible = False
             device.cdi_certified = False
@@ -1918,6 +1947,7 @@ class SCSIProtocol:
 
         # Set Grown Defects
         device.reallocated_sectors: int = grown_defects
+        device.non_medium_errors = smartctl.get("non_medium_error_count")
 
         # Check for Error Counter Log
         if "scsi_error_counter_log" in smartctl:
