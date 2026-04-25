@@ -8,7 +8,7 @@
 name: cdi-health
 arch: all
 platform: linux
-version: ${VERSION:-0.0.0}
+version: ${VERSION}
 section: utils
 priority: optional
 maintainer: Circular Drive Initiative <nick.hayhurst@interactdc.com>
