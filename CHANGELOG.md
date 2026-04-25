@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved terminal output formatting for better readability on any console size
 - Self-test command now detects and displays existing test results instead of always starting new tests
 - Enhanced error handling for self-test operations
+- Tightened CDI health scoring so critical health deductions are hard fail-gates that produce Grade F / score 0.
+- NVMe health scoring now uses the drive-reported available-spare threshold when present, treats non-zero critical warnings and media/data-integrity errors as failures, and parses smartctl `table[].self_test_result.value` self-test failures.
+- SCSI/SAS scoring now recognizes parser output stored as `offline_uncorrectable_sectors` for combined uncorrected read/write/verify errors.
+- Power-on hours remain report telemetry and no longer create score deductions for missing NVMe self-test history.
+- HTML/CSV reports now surface SCSI/SAS non-medium errors as telemetry for trend review.
+- Reorganized the health specification into drive-class sections for SATA HDD, SAS HDD, SATA SSD, SAS SSD, and NVMe SSD.
+- Added openSeaChest health-check workflow notes to clarify SMART warnings, unavailable SMART checks, DST failure modes, Device Statistics preference, and telemetry-only counters.
+- Updated the README health summary to point to the main-repo CDI health spec and mirror the drive-class grading model.
 
 ### Technical Details
 - Self-test implementation follows NVMe Base Specification 2.3

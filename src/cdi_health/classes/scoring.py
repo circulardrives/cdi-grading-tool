@@ -130,7 +130,12 @@ class HealthScoreCalculator:
         # Get device protocol type
         protocol = device.get("transport_protocol", "").upper()
 
-        # Check SMART status
+        # Check hard fail-gates first: operational state and SMART status.
+        # These conditions mean the drive should not be dispositioned as salvageable.
+        state_deductions = self._check_operational_state(device)
+        deductions.extend(state_deductions)
+        score -= sum(d.points for d in state_deductions)
+
         smart_deductions = self._check_smart_status(device)
         deductions.extend(smart_deductions)
         score -= sum(d.points for d in smart_deductions)
@@ -157,12 +162,13 @@ class HealthScoreCalculator:
         # Clamp score to 0-100
         score = max(0, min(100, score))
 
-        # Check for failed self-test - this is a hard failure, drive is bad
+        # Check for hard failures - critical health conditions are not salvageable grades.
         has_failed_selftest = any("failed" in d.reason.lower() and "self-test" in d.reason.lower() for d in deductions)
+        has_hard_failure = any(d.severity == "critical" for d in deductions)
 
         # Determine grade and status
-        # If self-test failed, Grade F regardless of score
-        if has_failed_selftest:
+        # If a critical health condition exists, Grade F regardless of numeric deductions.
+        if has_failed_selftest or has_hard_failure:
             grade = "F"
             status = "Failed"
             score = 0  # Set score to 0 to reflect complete failure
@@ -170,10 +176,12 @@ class HealthScoreCalculator:
             grade = self.get_grade(score)
             status = self.get_status_text(score)
 
-        # Determine certification (Grade A or B)
-        # Failed self-test = automatic failure, cannot be certified
+        # Determine certification (Grade A or B). Critical health conditions are automatic failures.
         is_certified = (
-            grade in ("A", "B") and not any(d.severity == "critical" for d in deductions) and not has_failed_selftest
+            grade in ("A", "B")
+            and not any(d.severity == "critical" for d in deductions)
+            and not has_failed_selftest
+            and not has_hard_failure
         )
 
         return HealthScore(
@@ -183,6 +191,22 @@ class HealthScoreCalculator:
             deductions=deductions,
             is_certified=is_certified,
         )
+
+    def _check_operational_state(self, device: dict) -> list[ScoreDeduction]:
+        """Check top-level operational state from the scan/disposition path."""
+        state = device.get("state") or device.get("State")
+        if str(state).strip().lower() != "fail":
+            return []
+
+        return [
+            ScoreDeduction(
+                reason="Device operational state failed",
+                points=self.SMART_FAILURE_DEDUCTION,
+                severity="critical",
+                field="state",
+                value=state,
+            )
+        ]
 
     def _check_smart_status(self, device: dict) -> list[ScoreDeduction]:
         """Check SMART status and self-test results."""
@@ -207,7 +231,7 @@ class HealthScoreCalculator:
         # Handle string values
         if smart_status:
             smart_status_lower = str(smart_status).lower()
-            if smart_status_lower not in ("pass", "passed", "ok", "true"):
+            if smart_status_lower in ("fail", "failed", "false", "bad"):
                 deductions.append(
                     ScoreDeduction(
                         reason="SMART status failed",
@@ -485,8 +509,12 @@ class HealthScoreCalculator:
             )
 
         # Available spare
-        spare = device.get("available_spare", 100) or 100
-        threshold = self.config.minimum_ssd_available_spare
+        spare = device.get("available_spare")
+        if spare is None:
+            spare = 100
+        threshold = device.get("available_spare_threshold")
+        if threshold is None:
+            threshold = self.config.minimum_ssd_available_spare
         if spare < threshold:
             deductions.append(
                 ScoreDeduction(
@@ -515,12 +543,11 @@ class HealthScoreCalculator:
         # Media errors
         media_errors = device.get("media_errors", 0) or 0
         if media_errors > 0:
-            points = min(media_errors * self.PER_SECTOR_DEDUCTION, 50)
             deductions.append(
                 ScoreDeduction(
                     reason="Media errors detected",
-                    points=points,
-                    severity="critical" if media_errors > 10 else "warning",
+                    points=self.SMART_FAILURE_DEDUCTION,
+                    severity="critical",
                     field="media_errors",
                     value=media_errors,
                 )
@@ -538,19 +565,20 @@ class HealthScoreCalculator:
 
         # Check for self-test log data
         self_test_log = device.get("nvme_self_test_log")
-        if not self_test_log:
-            # No self-test data available - minor warning if device is older
-            poh = device.get("power_on_hours", 0) or 0
-            if poh > 8760:  # More than 1 year
-                deductions.append(
-                    ScoreDeduction(
-                        reason="No self-test history available",
-                        points=2,
-                        severity="info",
-                        field="nvme_self_test_log",
-                        value=None,
-                    )
+        if (device.get("nvme_self_test_failed_count") or 0) > 0:
+            deductions.append(
+                ScoreDeduction(
+                    reason="Failed NVMe self-test - Drive is failing",
+                    points=self.SMART_FAILURE_DEDUCTION,
+                    severity="critical",
+                    field="nvme_self_test",
+                    value="Failed",
                 )
+            )
+            return deductions
+
+        if not self_test_log:
+            # Absence of self-test history is reported elsewhere; it is not a POH-based score deduction.
             return deductions
 
         # Check current operation
@@ -558,13 +586,16 @@ class HealthScoreCalculator:
         op_value = current_op.get("value", 0)
 
         # Check for failed tests in history
-        entries = self_test_log.get("entries", [])
+        entries = self_test_log.get("entries")
+        if not isinstance(entries, list):
+            entries = self_test_log.get("table")
+        if not isinstance(entries, list):
+            entries = []
         if entries:
             # Check most recent entries for failures
             recent_failures = []
             for entry in entries[:5]:  # Check last 5 tests
-                result = entry.get("result", 0)
-                if result == 1:  # Failed
+                if self._nvme_selftest_entry_failed(entry):
                     recent_failures.append(entry)
 
             if recent_failures:
@@ -595,22 +626,25 @@ class HealthScoreCalculator:
                             )
                         )
 
-        # Check if no recent self-test (warn if device has been used)
-        # This would require timestamp parsing, simplified here
-        if not entries:
-            poh = device.get("power_on_hours", 0) or 0
-            if poh > 720:  # More than 30 days
-                deductions.append(
-                    ScoreDeduction(
-                        reason="No self-test run in last 30 days",
-                        points=5,
-                        severity="warning",
-                        field="nvme_self_test",
-                        value="No tests logged",
-                    )
-                )
-
         return deductions
+
+    @staticmethod
+    def _nvme_selftest_entry_failed(entry: dict) -> bool:
+        """Return True when smartctl/nvme-cli reports a failed NVMe self-test entry."""
+        result = entry.get("self_test_result")
+        if isinstance(result, dict) and "value" in result:
+            return HealthScoreCalculator._nvme_selftest_result_code_failed(result.get("value"))
+        if "result" in entry:
+            return HealthScoreCalculator._nvme_selftest_result_code_failed(entry.get("result"))
+        result_string = str(entry.get("result_string") or entry.get("self_test_result_string") or "").lower()
+        return "fail" in result_string
+
+    @staticmethod
+    def _nvme_selftest_result_code_failed(value: object) -> bool:
+        try:
+            return int(value or 0) == 1
+        except (TypeError, ValueError):
+            return "fail" in str(value).lower()
 
     def _check_scsi_metrics(self, device: dict) -> list[ScoreDeduction]:
         """Check SCSI-specific metrics."""
@@ -639,7 +673,10 @@ class HealthScoreCalculator:
             deductions.append(d)
 
         # Uncorrected errors
-        uncorrected = device.get("uncorrected_errors", 0) or 0
+        uncorrected = device.get("uncorrected_errors")
+        if uncorrected is None:
+            uncorrected = device.get("offline_uncorrectable_sectors")
+        uncorrected = uncorrected or 0
         if uncorrected > 0:
             threshold = self.config.maximum_scsi_uncorrected_errors
             points = min(uncorrected * self.PER_SECTOR_DEDUCTION, 50)

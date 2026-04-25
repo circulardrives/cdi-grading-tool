@@ -6,25 +6,28 @@ Supports **ATA/SATA**, **NVMe**, and **SCSI/SAS** on Linux with `smartctl`, `nvm
 
 #### Operating systems
 
-[![linux](https://img.shields.io/badge/Debian-A81D33?style=flat&logo=debian&logoColor=white)](https://www.debian.com)
-[![linux](https://img.shields.io/badge/Ubuntu-E95420?style=flat&logo=ubuntu&logoColor=white)](https://www.ubuntu.com)
+[linux](https://www.debian.com)
+[linux](https://www.ubuntu.com)
 
 #### Python
 
-[![python](https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
+[python](https://www.python.org)
 
 ---
 
 ## Highlights
 
-| Area | What you get |
-|------|----------------|
-| **Protocols** | ATA/SATA, NVMe, SCSI/SAS; optional `openSeaChest` for extra ATA vendor data |
-| **HDD grading** | Configurable curve for reallocated / pending (SATA) and grown defects (SAS): concern threshold, failure at **10** sectors/defects, max deduction per metric — see [docs/CDI_HEALTH_SPEC.md](docs/CDI_HEALTH_SPEC.md) |
-| **NVMe** | Health from log **02h**; optional **OCP** log **C0h** via `nvme ocp smart-add-log` when the drive supports it ([OCP Datacenter NVMe SSD Specification v2.7 PDF](https://www.opencompute.org/documents/datacenter-nvme-ssd-specification-v2-7-final-pdf-1)) |
-| **Reports** | **HTML** (tabbed by drive class, serial-keyed rows) and **PDF**; **CSV** (`report --format csv`) with the same advanced columns for Excel/sorting; NVMe **Advanced** view splits **health log 02h** into numeric columns plus optional full JSON and **OCP on NVMe tab only** |
-| **CLI** | `scan`, `report`, `watch`, `selftest` (NVMe); YAML thresholds, mock data for CI |
-| **API** | Optional FastAPI backend for technician dashboards (`cdi-health-api`) |
+
+| Area              | What you get                                                                                                                                                                                                                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Drive classes** | Rules and reports are organized by **SATA HDD**, **SAS HDD**, **SATA SSD**, **SAS SSD**, and **NVMe SSD**                                                                                                                                                                     |
+| **Health spec**   | Main repository spec: [docs/CDI_HEALTH_SPEC.md](docs/CDI_HEALTH_SPEC.md), including hard fail-gates, thresholds, telemetry-only fields, and openSeaChest workflow guidance                                                                                                    |
+| **HDD grading**   | Configurable curve for SATA reallocated / pending sectors and SAS grown defects: concern threshold, failure at **10** sectors/defects, and critical results hard-fail to **F / score 0**                                                                                      |
+| **NVMe**          | Health from log **02h**; critical warning, media/data-integrity errors, failed self-tests, percentage used, and spare threshold feed scoring. Optional **OCP** log **C0h** is extended telemetry                                                                              |
+| **Reports**       | **HTML** (tabbed by drive class, serial-keyed rows) and **PDF**; **CSV** (`report --format csv`) with the same advanced columns for Excel/sorting; NVMe **Advanced** view splits **health log 02h** into numeric columns plus optional full JSON and **OCP on NVMe tab only** |
+| **CLI**           | `scan`, `report`, `watch`, `selftest` (NVMe); YAML thresholds, mock data for CI                                                                                                                                                                                               |
+| **API**           | Optional FastAPI backend for technician dashboards (`cdi-health-api`)                                                                                                                                                                                                         |
+
 
 ---
 
@@ -78,7 +81,7 @@ sudo dpkg -i cdi-health_*_all.deb
 sudo apt-get install -f   # pull in dependencies if dpkg reported any
 ```
 
-The package depends on **`python3`** and **recommends** `smartmontools` and `nvme-cli`; **suggests** `sg3-utils` for SAS. Application files live under **`/opt/cdi-health/lib`**; **`cdi-health`** and **`cdi-health-api`** are on **`PATH`** as `/usr/local/bin/...`. Bundled **openSeaChest** binaries (when included in the package) install under `/usr/local/bin`.
+The package depends on `**python3**` and **recommends** `smartmontools` and `nvme-cli`; **suggests** `sg3-utils` for SAS. Application files live under `**/opt/cdi-health/lib`**; `**cdi-health**` and `**cdi-health-api**` are on `**PATH**` as `/usr/local/bin/...`. Bundled **openSeaChest** binaries (when included in the package) install under `/usr/local/bin`.
 
 ---
 
@@ -114,17 +117,21 @@ Custom thresholds:
 sudo cdi-health scan --config /path/to/thresholds.yaml
 ```
 
-Default thresholds live in [`src/cdi_health/config/thresholds.yaml`](src/cdi_health/config/thresholds.yaml).
+Default thresholds live in `[src/cdi_health/config/thresholds.yaml](src/cdi_health/config/thresholds.yaml)`.
 
 ---
 
 ## Health scoring (summary)
 
-- **Base:** 100 points; deductions for SMART failures, temperatures, wear, uncorrectables, NVMe critical warnings/media errors, failed self-tests, etc.
-- **HDDs (SATA / SAS):** Reallocated, pending, and grown defects use a shared **concern → failure** curve (defaults: no deduction **≤2**, failure threshold **10**, up to **10** points deducted per metric at failure). **Defect counts** come from **ATA SMART attributes** / SCSI equivalents; **HDD mechanical/thermal** detail is largely from the **Device Statistics Log** — full detail in the spec.
-- **SSDs / NVMe:** Wear, media errors, critical warning bits, and related rules are documented in **[CDI Health Specification](docs/CDI_HEALTH_SPEC.md)**.
+The source of truth is the main-repo **[CDI Health Specification](docs/CDI_HEALTH_SPEC.md)**. It is organized by drive class:
 
-**Grades:** A 90–100 · B 75–89 · C 60–74 · D 40–59 · F 0–39.
+- **SATA HDD:** SMART status, reallocated sectors, pending sectors, offline uncorrectable sectors, and temperature.
+- **SAS HDD:** SMART status, grown defects, combined uncorrected read/write/verify errors, and temperature.
+- **SATA SSD:** SMART status, normalized wear/percentage-used data when available, uncorrectable errors, and temperature.
+- **SAS SSD:** SMART status, normalized endurance data when available, SCSI uncorrected errors, and temperature.
+- **NVMe SSD:** SMART / Health Information log 02h, including critical warning, percentage used, available spare threshold, media/data-integrity errors, temperature, and self-test results.
+
+**Grades:** A 90–100 · B 75–89 · C 60–74 · D 40–59 · F 0–39. Critical health signals are hard fail-gates and produce **F / score 0** regardless of remaining numeric score. POH, non-medium errors, CRC errors, OCP C0h, and many lifetime counters are reported as telemetry unless the spec defines a direct grading rule.
 
 ---
 
@@ -144,12 +151,14 @@ Reports group drives by **SATA HDD**, **SAS HDD**, **SATA SSD**, **SAS SSD**, **
 
 ## CLI overview
 
-| Command | Purpose |
-|---------|---------|
-| `cdi-health scan` | Table / JSON / CSV / YAML; `--device`, `--details` / `--no-details`, `--ignore-*`, `--mock-data`, `--config` |
-| `cdi-health report` | `--format html`, `pdf`, or `csv`; `--output-file`; same discovery flags as scan |
-| `cdi-health watch` | Periodic rescan (`--interval`) |
-| `cdi-health selftest` | NVMe short/extended tests, `--status`, `--wait`, `--abort` |
+
+| Command               | Purpose                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `cdi-health scan`     | Table / JSON / CSV / YAML; `--device`, `--details` / `--no-details`, `--ignore-`*, `--mock-data`, `--config` |
+| `cdi-health report`   | `--format html`, `pdf`, or `csv`; `--output-file`; same discovery flags as scan                              |
+| `cdi-health watch`    | Periodic rescan (`--interval`)                                                                               |
+| `cdi-health selftest` | NVMe short/extended tests, `--status`, `--wait`, `--abort`                                                   |
+
 
 Full options: `cdi-health --help` and `cdi-health <command> --help`.
 
@@ -191,14 +200,16 @@ A Next.js dashboard scaffold lives under `dashboard/` (`npm install && npm run d
 
 ## Documentation
 
-| Doc | Contents |
-|-----|----------|
-| **[CDI Health Specification](docs/CDI_HEALTH_SPEC.md)** | Scoring, HDD curve, NVMe 02h vs OCP C0h, thresholds, certification, HTML report behavior |
-| **[Datacenter NVMe SSD Specification v2.7](docs/Datacenter%20NVMe%20SSD%20Specification%20v2.7%20Final.md)** | Local copy; authoritative **[OCP PDF](https://www.opencompute.org/documents/datacenter-nvme-ssd-specification-v2-7-final-pdf-1)** |
-| **[Development](DEVELOPMENT.md)** | Style, tests, workflow |
-| **[Testing](README_TESTING.md)** | Mock data and test commands |
-| **[Contributing](CONTRIBUTING.md)** | Contributions |
-| **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)** | `.deb` vs git install, systemd, dashboard, sudoers |
+
+| Doc                                                                                                          | Contents                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[CDI Health Specification](docs/CDI_HEALTH_SPEC.md)**                                                      | Main health spec organized by SATA HDD, SAS HDD, SATA SSD, SAS SSD, and NVMe SSD; includes scoring, hard fail-gates, thresholds, telemetry-only fields, certification, reports, and diagnostic workflow guidance |
+| **[Datacenter NVMe SSD Specification v2.7](docs/Datacenter%20NVMe%20SSD%20Specification%20v2.7%20Final.md)** | Local copy; authoritative **[OCP PDF](https://www.opencompute.org/documents/datacenter-nvme-ssd-specification-v2-7-final-pdf-1)**                                                                                |
+| **[Development](DEVELOPMENT.md)**                                                                            | Style, tests, workflow                                                                                                                                                                                           |
+| **[Testing](README_TESTING.md)**                                                                             | Mock data and test commands                                                                                                                                                                                      |
+| **[Contributing](CONTRIBUTING.md)**                                                                          | Contributions                                                                                                                                                                                                    |
+| **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)**                                                   | `.deb` vs git install, systemd, dashboard, sudoers                                                                                                                                                               |
+
 
 ---
 

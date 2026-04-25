@@ -31,8 +31,10 @@ from cdi_health.classes.nvme_selftest import NVMeSelfTest
 class TestNVMeSelfTest:
     """Test NVMeSelfTest class."""
 
-    def test_initialization(self) -> None:
+    @patch("shutil.which")
+    def test_initialization(self, mock_which: MagicMock) -> None:
         """Test NVMeSelfTest initialization."""
+        mock_which.return_value = "/usr/bin/nvme"
         selftest = NVMeSelfTest("/dev/nvme0")
         assert selftest.device_path == "/dev/nvme0"
         assert selftest.nvme_path is not None
@@ -80,8 +82,10 @@ class TestNVMeSelfTest:
         # Should extract controllers from namespace paths
         assert "/dev/nvme0" in devices or "/dev/nvme1" in devices or len(devices) >= 0
 
-    def test_find_supported_devices(self) -> None:
+    @patch("shutil.which")
+    def test_find_supported_devices(self, mock_which: MagicMock) -> None:
         """Test finding devices that support self-test."""
+        mock_which.return_value = "/usr/bin/nvme"
         with patch.object(NVMeSelfTest, "find_nvme_devices", return_value=["/dev/nvme0"]):
             with patch.object(NVMeSelfTest, "is_supported", return_value=True):
                 devices = NVMeSelfTest.find_supported_devices()

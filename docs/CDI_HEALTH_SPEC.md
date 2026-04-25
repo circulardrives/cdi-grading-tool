@@ -6,6 +6,14 @@ The Circular Drive Initiative (CDI) Health Scanner provides a standardized metho
 
 **Fleet grouping:** Devices are classified for reporting and analysis by **transport** and **media** (for example SATA HDD, SAS HDD, SATA SSD, SAS SSD, NVMe SSD), using `transport_protocol`, `media_type` (HDD vs SSD), and `interface_link` where applicable.
 
+**How to read this spec:** Start with the shared scoring rules, then use the drive-class section that matches the device:
+
+- [SATA HDD](#sata-hdd)
+- [SAS HDD](#sas-hdd)
+- [SATA SSD](#sata-ssd)
+- [SAS SSD](#sas-ssd)
+- [NVMe SSD](#nvme-ssd)
+
 ## Health Scoring System
 
 ### Score Calculation
@@ -18,7 +26,7 @@ Health scores range from **0–100** (starting at 100). The calculator applies d
 - **Grown Defects** (SAS/SCSI): Same **numeric policy** as SATA HDD reallocated/pending (**HDD sector curve** below)
 - **Uncorrectable Errors**: Uncorrectable read/write (ATA) and combined uncorrected errors (SCSI)
 - **Temperature**: Operating temperature vs. maximum rated temperature
-- **Percentage Used**: Wear level (SSDs)
+- **Percentage Used**: Wear level (SATA SSDs and NVMe SSDs; SAS SSDs when normalized endurance data is available)
 - **Critical Warning / Media Errors**: NVMe (log **02h**)
 
 ### HDD sector defect curve (SATA and SAS)
@@ -40,9 +48,9 @@ Let:
 | **C < count < F** | Warning | **round((count − C) / (F − C) × M)**, then clamp to **\[1, M − 1\]** (so **1–9** with defaults) |
 | **≥ F** | Critical | **min(50, M + min(E_cap, (count − F) × E))** |
 
-**Example (defaults C=2, F=10, M=10, E=1, E_cap=40):** count **5** → raw **(5−2)/(10−2)×10 ≈ 3.75** → **4** points; count **10** → **10** points (no excess yet), critical; count **48** → **10 + min(40, 38) = 48** points, critical.
+**Example (defaults C=2, F=10, M=10, E=1, E_cap=40):** count **5** → raw **(5−2)/(10−2)×10 ≈ 3.75** → **4** points; count **10** → **10** points (no excess yet), critical; count **48** → **10 + min(40, 38) = 48** points, critical. Any critical result from this curve is a hard fail-gate and produces **F / score 0**.
 
-Other deductions in the same 0–100 model include failed **SMART** status, failed **NVMe self-test**, **temperature** warning/critical bands, **SSD percentage used** over threshold, and **per-error** uncorrectable handling — see `src/cdi_health/classes/scoring.py` and `src/cdi_health/config/thresholds.yaml` for the full ruleset.
+Other deductions in the same 0–100 model include failed **NVMe self-test**, **temperature** warning/critical bands, **SSD percentage used** over threshold, and **per-error** uncorrectable handling — see `src/cdi_health/classes/scoring.py` and `src/cdi_health/config/thresholds.yaml` for the full ruleset. Critical severity is a disposition-level fail-gate: it sets score **0** and grade **F** regardless of other telemetry. Warning/info deductions remain numeric and can produce A-D grades.
 
 ### Grade Assignment
 
@@ -52,74 +60,201 @@ Other deductions in the same 0–100 model include failed **SMART** status, fail
 - **D (40-59)**: Poor - Significant issues detected
 - **F (0-39)**: Failed - Drive should not be reused
 
-## Protocol-Specific Implementation
+Hard fail-gates override numeric deductions and always produce **F / score 0**:
 
-### ATA/SATA Devices
+- SMART explicitly reports failure (`false`, `failed`, `bad`, etc.)
+- The scan/disposition path marks the device operational state as **Fail**
+- NVMe self-test history contains a failed self-test
+- NVMe critical warning is non-zero
+- NVMe media/data-integrity error count is non-zero
+- NVMe available spare is below the drive-reported threshold (or CDI configured fallback when no drive threshold is reported)
+- SSD percentage used exceeds the CDI threshold
+- HDD/SAS defect counts reach the configured failure threshold, uncorrectable errors exceed limit, or temperature exceeds operating maximum
 
-ATA/SATA devices use the SMART (Self-Monitoring, Analysis, and Reporting Technology) standard for health monitoring.
+Unknown or unavailable SMART data alone is not a hard fail unless paired with failed operational state evidence. For example, an unresponsive/DOA device reported as **State=Fail** with unknown SMART is **F**, while a device with missing SMART data but no failed-state evidence is left to other telemetry and policy.
 
-#### Key SMART Attributes
+**Power-on hours (POH):** POH is collected and reported for ATA, NVMe, and SCSI/SAS devices. It is contextual telemetry, not currently a direct grade threshold or certification criterion. HDD age may correlate with mechanical wear, but CDI grading should use explicit failure/defect indicators unless a future spec revision defines an age-based policy. For SSDs, endurance indicators such as **Percentage Used** are the grading signal rather than POH.
 
-- **Attribute 5**: Reallocated Sectors Count
-- **Attribute 197**: Current Pending Sector Count
-- **Attribute 198**: Offline Uncorrectable Sector Count
-- **Attribute 4**: Start/Stop Count
-- **Attribute 12**: Power Cycle Count
-- **Attribute 193**: Load Cycle Count
+## Drive-Class Health Rules
 
-**HDDs: SMART attributes vs Device Statistics Log**
+Use these sections as the primary grading reference. The report uses the same five classes: **SATA HDD**, **SAS HDD**, **SATA SSD**, **SAS SSD**, and **NVMe SSD**.
 
-- **Sector defect counts** used for **grading** (reallocated, pending, offline uncorrectable) come from the **ATA SMART attribute table** (`ata_smart_attributes` / standard SMART IDs above), not from the Device Statistics Log.
-- **HDD-specific operational telemetry** (mechanical behavior and thermal context) is taken primarily from the **Device Statistics Log** — in particular **Rotating Media Statistics** (e.g. spin-up, seek errors, seek time) and **Temperature Statistics** (current, min/max, specified operating limits), plus **General Statistics** where present. CDI parses these from `ata_device_statistics` in the `smartctl -x -j` JSON.
+### Shared Rules
 
-#### Percentage Used (Wear Level) - Vendor Specific
+These rules apply to every drive class:
 
-SATA SSDs report wear level through vendor-specific SMART attributes:
+- **SMART status must pass.** Explicit failure (`false`, `failed`, `bad`, etc.) is a hard fail-gate.
+- **Operational State must not be Fail.** A failed scan/disposition state is a hard fail-gate even when SMART is unavailable or unknown.
+- **Temperature must remain within operating range.** Exceeding the maximum operating temperature is a hard fail-gate; warning temperature is a warning deduction.
+- **Power-on hours are telemetry.** POH is collected and reported, but it is not currently a direct grade threshold or certification criterion.
+- **Unknown SMART alone is not failure.** Missing or unavailable SMART data does not hard-fail a device unless paired with failed-state evidence or another critical health signal.
+- **SMART warning is not always SMART failure.** A warning means some vendor threshold or advisory condition needs inspection; CDI hard-fails only explicit SMART failure or another critical health signal.
 
-- **Attribute 231**: Wear Leveling Count (some vendors report percentage used directly)
-- **Attribute 177**: Wear Leveling Count (Samsung - reports remaining life, calculate: 100 - value)
-- **Attribute 169**: Remaining Life (some vendors - calculate: 100 - value)
-- **Attribute 202**: Percentage Used (some vendors - direct percentage)
-- **Attribute 232**: Available Reserved Space (Intel - indicates wear indirectly)
+### SATA HDD
 
-The tool attempts to extract percentage used from these attributes, falling back to "-" if not available.
+SATA HDDs use ATA SMART plus ATA Device Statistics. CDI treats sector defects and uncorrectable media errors as the primary health signals; mechanical age and usage counters are context.
 
-#### Device Statistics Log
+**Collected health data:**
 
-The Device Statistics Log complements the SMART attribute table. For **SSDs**, CDI also uses the **Solid State Device Statistics** page (e.g. percentage-used endurance) when available. For **HDDs**, the emphasis is **rotating media** and **temperature** pages as above.
+- ATA SMART status.
+- SMART Attribute **5**: Reallocated Sectors Count.
+- SMART Attribute **197**: Current Pending Sector Count.
+- SMART Attribute **198**: Offline Uncorrectable Sector Count.
+- SMART Attribute **188**: Command Timeout, for trend/diagnostic review.
+- SMART Attribute **199**: UDMA CRC Error Count, usually cable/controller/transport related.
+- Device Statistics Log, especially rotating-media statistics, temperature statistics, power cycles, load cycles, and POH.
 
-ATA devices can expose:
-- **Rotating Media Statistics**: For HDDs (spin-up time, seek errors, etc.)
-- **Temperature Statistics**: Current, average, min/max temperatures
-- **General Statistics**: Power-on hours, power cycles, etc.
+**Affects score:**
 
-#### Health Assessment Criteria
+- Reallocated sectors use the **HDD sector defect curve**.
+- Pending sectors use the **HDD sector defect curve**.
+- Offline uncorrectable sectors use per-error uncorrectable handling.
+- Temperature warning/critical bands apply.
 
-- **SMART Status**: Must pass
-- **HDD sector defects (SATA reallocated / pending)**
-  Use the **HDD sector defect curve** above. Defaults: `grading.hdd_sector_concern_threshold` (**2**), `ata.maximum_reallocated_sectors` / `ata.maximum_pending_sectors` (**10**), `grading.hdd_sector_defect_max_deduction_points` (**10**). **SSDs** use percentage-used and uncorrectable / offline-uncorrectable handling instead of this curve for wear.
-- **Uncorrectable Errors**: Threshold typically 10 errors
-- **Temperature**: Must not exceed maximum operating temperature
-- **Percentage Used**: Threshold typically 100% (varies by vendor)
+**Hard-fails:**
 
-### NVMe Devices
+- SMART failure.
+- Operational State=Fail.
+- Reallocated sectors or pending sectors at/above the configured failure threshold.
+- Offline uncorrectable sectors above the configured uncorrectable-error limit.
+- Temperature above maximum operating temperature.
 
-NVMe devices use the **SMART / Health Information** log page (**log identifier 02h**) from `smartctl` / the NVMe specification for baseline health. **Optional** **OCP** log page **C0h** (extended) is described below and in the OCP Datacenter NVMe SSD Specification.
+**Telemetry only:**
 
-#### Key Health Metrics (log page 02h)
+- POH, power cycles, load cycles, start/stop count, spin-up/seek statistics, command timeouts, CRC errors, and other mechanical/transport context unless a future spec revision defines explicit thresholds. CRC growth should prompt cable/controller investigation, not automatic drive failure.
 
-- **Critical Warning**: Bit flags indicating critical conditions
-  - Bit 0: Available spare below threshold
-  - Bit 1: Temperature exceeds threshold
-  - Bit 2: Reliability degraded
-  - Bit 3: Read-only mode
-  - Bit 4: Volatile memory backup device failed
-- **Percentage Used**: Endurance indicator (0-100%)
-- **Media Errors**: Count of media and data integrity errors
-- **Power On Hours**: Total power-on time
-- **Data Units Written**: Total data written (for wear calculation)
+### SAS HDD
 
-#### OCP SMART / Health Information Extended (log page C0h)
+SAS HDDs use SCSI/SAS SMART data, SCSI grown-defect information, and SCSI error counters. CDI maps grown defects to the same HDD defect policy used for SATA HDD sector defects.
+
+**Collected health data:**
+
+- SCSI/SAS SMART status.
+- Grown defect count.
+- SCSI Error Counter Log: total uncorrected read, write, and verify errors.
+- Corrected read/write error counters, for trend review.
+- Non-medium error count.
+- Temperature and POH where reported.
+
+**Affects score:**
+
+- Grown defects use the **HDD sector defect curve**.
+- Combined uncorrected read/write/verify errors use per-error uncorrectable handling.
+- Temperature warning/critical bands apply.
+
+**Hard-fails:**
+
+- SMART failure.
+- Operational State=Fail.
+- Grown defects at/above the configured failure threshold.
+- Combined uncorrected read/write/verify errors above the configured SCSI uncorrected-error limit.
+- Temperature above maximum operating temperature.
+
+**Telemetry only:**
+
+- Non-medium errors, corrected-error trends, POH, and other transport/controller/path counters are collected and reported for trend review, but are not currently direct grade thresholds.
+
+### SATA SSD
+
+SATA SSDs use ATA SMART, vendor-specific wear indicators, and ATA Device Statistics where available. CDI does not use the HDD sector defect curve for SATA SSD wear.
+
+**Collected health data:**
+
+- ATA SMART status.
+- SMART Attribute **198**: Offline Uncorrectable Sector Count.
+- SMART Attribute **199**: UDMA CRC Error Count, usually cable/controller/transport related.
+- Vendor-specific wear indicators, including attributes such as **231**, **177**, **169**, **202**, and **232** when present.
+- Solid State Device Statistics percentage-used endurance when available.
+- Temperature and POH.
+
+**Affects score:**
+
+- SSD percentage used / endurance drives wear scoring when normalized data is available.
+- Reallocated or pending defect counts, when present, use SSD-style per-sector handling rather than the HDD sector defect curve.
+- Offline uncorrectable sectors use per-error uncorrectable handling.
+- Temperature warning/critical bands apply.
+
+**Hard-fails:**
+
+- SMART failure.
+- Operational State=Fail.
+- SSD percentage used exceeds the CDI threshold.
+- Uncorrectable errors above the configured limit.
+- Temperature above maximum operating temperature.
+
+**Telemetry only:**
+
+- POH, power cycles, CRC errors, vendor-specific raw SMART values that cannot be normalized, and general device statistics not mapped to explicit health policy.
+
+### SAS SSD
+
+SAS SSDs use SCSI/SAS SMART data, SCSI error counters, and any SSD endurance fields reported by the device. CDI treats media/error signals as health inputs and keeps non-medium errors as telemetry until an explicit threshold is defined.
+
+**Collected health data:**
+
+- SCSI/SAS SMART status.
+- SCSI Error Counter Log: total uncorrected read, write, and verify errors.
+- Corrected read/write error counters, for trend review.
+- SSD endurance / percentage-used data when available.
+- Non-medium error count.
+- Temperature and POH.
+
+**Affects score:**
+
+- SSD percentage used / endurance drives wear scoring when normalized data is available.
+- Combined uncorrected read/write/verify errors use per-error uncorrectable handling.
+- Grown defects, if reported for an SSD, use SSD-style per-defect handling rather than the HDD defect curve.
+- Temperature warning/critical bands apply.
+
+**Hard-fails:**
+
+- SMART failure.
+- Operational State=Fail.
+- SSD percentage used exceeds the CDI threshold when normalized data is available.
+- Combined uncorrected read/write/verify errors above the configured SCSI uncorrected-error limit.
+- Temperature above maximum operating temperature.
+
+**Telemetry only:**
+
+- Non-medium errors, corrected-error trends, POH, and controller/transport counters unless a future spec revision defines direct thresholds.
+
+### NVMe SSD
+
+NVMe SSDs use the standard **SMART / Health Information** log page (**log identifier 02h**) for grading. Optional **OCP** log page **C0h** adds datacenter telemetry but is not required for grading.
+
+**Collected health data from log 02h:**
+
+- Critical warning bitfield.
+- Percentage used.
+- Available spare and available spare threshold.
+- Media and data-integrity errors.
+- Temperature.
+- Data units read/written, host reads/writes, power cycles, unsafe shutdowns, error log entries, and POH.
+- NVMe self-test log when present.
+
+**Affects score:**
+
+- Percentage used / endurance.
+- Available spare compared to the drive-reported threshold; CDI uses its configured fallback only when the drive does not report a threshold.
+- Temperature warning/critical bands.
+- NVMe self-test result.
+
+**Hard-fails:**
+
+- SMART failure.
+- Operational State=Fail.
+- Critical warning is non-zero.
+- Media/data-integrity error count is non-zero.
+- Available spare is below threshold.
+- Percentage used exceeds the CDI threshold.
+- Any reported failed NVMe self-test. CDI accepts both `entries[].result` and smartctl `table[].self_test_result.value` shapes.
+- Temperature above maximum operating temperature.
+
+**Telemetry only:**
+
+- POH, data units read/written, host reads/writes, controller busy time, unsafe shutdowns, error-log entry count, and OCP C0h fields unless mapped to an explicit grading rule.
+
+#### NVMe OCP C0h Extended Telemetry
 
 For **datacenter-class NVMe SSDs**, the **OCP Datacenter NVMe SSD Specification** defines the **SMART / Health Information Extended** log page (**log identifier C0h**, 512-byte page) in **Section 4.8.6**. The authoritative source is the OCP publication; a Markdown copy is kept in-repo for convenience:
 
@@ -128,7 +263,7 @@ For **datacenter-class NVMe SSDs**, the **OCP Datacenter NVMe SSD Specification*
 
 CDI Health reads this page when the drive and `nvme-cli` OCP plugin support it (`nvme ocp smart-add-log` → `ocp_smart_log` on NVMe devices; surfaced in the HTML report **Advanced** view on the **NVMe SSD** tab only).
 
-**Summary of critical C0 attributes** (requirement IDs per Section 4.8.6 — see the spec for units, normalization rules, and reserved ranges):
+**Summary of useful C0 attributes** (requirement IDs per Section 4.8.6 — see the spec for units, normalization rules, and reserved ranges):
 
 | ID | Field (short name) |
 |----|---------------------|
@@ -152,66 +287,7 @@ CDI Health reads this page when the drive and `nvme-cli` OCP plugin support it (
 | SMART-21 | Unaligned I/O count |
 | SMART-30 | Proactive bad die retirement count |
 
-Additional C0 fields in Section 4.8.6 include NVM Express and transport **errata** bytes (**SMART-20**, **SMART-32**, **SMART-34**, **SMART-35**), **NUSE**, endurance estimate, power-state counters, and other vendor-telemetry slots — see the full table in the specification.
-
-**Baseline vs extended:** Log **02h** (*SMART / Health Information*) is the standard health page used for grading (critical warning, percentage used, media errors, etc.). Log **C0h** adds extended datacenter telemetry; absence of C0h does not imply failure.
-
-#### Health Information Log Structure (log page 02h)
-
-The full parsed structure is stored on the device record as **`nvme_smart_health_information_log`** (for reporting and HTML exports) in addition to the scalar fields used for grading.
-
-```json
-{
-  "critical_warning": 0,
-  "temperature": 35,
-  "available_spare": 100,
-  "available_spare_threshold": 10,
-  "percentage_used": 4,
-  "data_units_read": 123456789,
-  "data_units_written": 987654321,
-  "host_reads": 123456,
-  "host_writes": 987654,
-  "media_errors": 0,
-  "num_err_log_entries": 0
-}
-```
-
-#### Health Assessment Criteria
-
-These criteria apply to **log 02h** (and derived fields), not to **C0h**.
-
-- **Critical Warning**: Must be 0
-- **Percentage Used**: Threshold typically 100%
-- **Media Errors**: Threshold typically 0 (any errors are concerning)
-- **Available Spare**: Must be above threshold
-- **Temperature**: Must not exceed warning threshold
-
-### SCSI/SAS Devices
-
-SCSI/SAS devices use the SCSI Log Pages and SMART data for health monitoring.
-
-#### Key Metrics
-
-- **Grown Defects**: Count of grown defects (similar to reallocated sectors)
-- **Read Errors**: Uncorrected read errors
-- **Write Errors**: Uncorrected write errors
-- **Verify Errors**: Uncorrected verify errors
-- **Power On Hours**: Total power-on time
-
-#### Error Counter Log
-
-SCSI devices provide an Error Counter Log with:
-- **Read Errors**: Total uncorrected read errors
-- **Write Errors**: Total uncorrected write errors
-- **Verify Errors**: Total uncorrected verify errors
-
-#### Health Assessment Criteria
-
-- **HDD grown defects (SAS/SCSI HDDs)**
-  **Grown defect count** uses the **same HDD sector defect curve** as SATA reallocated/pending (see [HDD sector defect curve (SATA and SAS)](#hdd-sector-defect-curve-sata-and-sas)). Configure **`scsi.maximum_grown_defects`** (default **10**) and the same **`grading.hdd_sector_*`** keys as for SATA.
-- **Uncorrected Errors**: Combined read/write/verify errors, threshold typically 10
-- **SMART Status**: Must pass
-- **Temperature**: Must not exceed maximum operating temperature
+Additional C0 fields in Section 4.8.6 include NVM Express and transport **errata** bytes (**SMART-20**, **SMART-32**, **SMART-34**, **SMART-35**), **NUSE**, endurance estimate, power-state counters, and other vendor-telemetry slots. Absence of C0h does not imply failure.
 
 ## HTML Report (Offline)
 
@@ -261,13 +337,40 @@ The OCP plugin (for example **nvme-cli** 2.10+) must be available for decoding; 
 
 ### openSeaChest (Optional)
 
-Enhanced tool for ATA/SATA devices, provides additional vendor-specific information.
+Enhanced tool for drive health checks and vendor-specific information. CDI primarily parses `smartctl` JSON today, but openSeaChest guidance is useful for validating interpretation:
+
+- Use `--smartCheck` as a quick pass/fail check.
+- Prefer `--deviceStatistics` for SATA drives when available because the counters are standardized and vendor-agnostic.
+- Use SMART attributes when Device Statistics are unavailable or for broadly understood legacy attributes.
+- Use `--showNvmeHealth` for NVMe SMART / Health Information log review.
+- Use SCSI/SAS Device Statistics for SAS drives.
 
 **Usage:**
 ```bash
 openSeaChest_Basics --deviceInfo --device /dev/sda
 openSeaChest_SMART --deviceInfo --device /dev/sda
 ```
+
+## Diagnostic Workflow Guidance
+
+The grading policy above is about the device's current disposition. When diagnosing a live device, use a conservative workflow:
+
+1. Run a quick SMART check.
+2. Inspect standardized health data where possible: Device Statistics for SATA/SAS, NVMe health log 02h for NVMe.
+3. Review SMART attributes for ATA/SATA, especially when Device Statistics are unavailable.
+4. Run short DST/self-test when a device shows symptoms or before important reuse decisions.
+5. Run long DST/self-test when earlier checks show issues or a more thorough surface/device test is needed.
+6. Re-scan after remediation attempts such as pending-sector cleanup.
+
+Interpretation notes from openSeaChest:
+
+- **SMART failed** means the drive exceeded manufacturer failure criteria and is a CDI hard fail-gate.
+- **SMART warning** requires inspection, but is not automatically a hard fail because some warning thresholds represent lifetime counters or advisory states.
+- **Unable to run SMART** is an unknown/unsupported/permission/interface condition, not a health failure by itself.
+- **Pending sectors / offline uncorrectable sectors** indicate active media issues. Operational workflows may attempt cleanup/reallocation, but CDI should grade the current post-scan state; persistent or recurring defects remain health concerns.
+- **DST/self-test failures** should be interpreted by failure mode. Mechanical, electrical, servo, handling-damage, or unknown hardware failures mean replace the drive. Read-element failures may correspond to media defects that can sometimes be remapped, but they still require immediate backup, remediation, and re-scan before reuse.
+- **CRC errors** are often cable/controller/connection issues rather than drive media failure; use them as investigation telemetry unless a future spec revision defines a direct threshold.
+- **SCSI/SAS non-medium errors and corrected-error counts** are useful trend signals. Rapid growth should trigger investigation, but CDI does not currently hard-fail on these counters alone.
 
 ## Device Statistics Log
 
@@ -293,49 +396,48 @@ Device statistics are automatically collected via `smartctl -x` and parsed from 
 
 ## Critical Health Indicators
 
-### Universal Indicators (All Protocols)
+The class sections above are authoritative. This summary is a quick checklist:
 
-1. **SMART Status**: Must pass
-2. **HDD sector-equivalent defects** (SATA reallocated/pending, SAS grown defects): **≤ concern threshold** is acceptable for grading; **at or above failure threshold** is critical (see **HDD sector defect curve**)
-3. **Uncorrectable Errors**: Should be zero (within configured thresholds)
-4. **Temperature**: Within operating range
-
-### Protocol-Specific Indicators
-
-#### ATA/SATA
-- **Pending Sectors**: Sectors waiting for reallocation (HDD: graded with reallocated)
-- **Percentage Used**: Wear level for SSDs (vendor-specific)
-
-#### NVMe
-- **Critical Warning Flags** (log **02h**): Multiple warning conditions
-- **Percentage Used** (log **02h**): Standardized wear level indicator
-- **Media Errors** (log **02h**): Data integrity errors
-- **C0h (optional)**: Extended OCP metrics — see the **OCP SMART / Health Information Extended (log page C0h)** subsection under NVMe and **Section 4.8.6** in the [OCP Datacenter NVMe SSD Specification v2.7 PDF](https://www.opencompute.org/documents/datacenter-nvme-ssd-specification-v2-7-final-pdf-1)
-
-#### SCSI/SAS
-- **Grown Defects**: HDD equivalent of reallocated sectors (same curve as SATA HDD)
-- **Error Counter Log**: Detailed read/write/verify errors
+- **All classes:** SMART failure, Operational State=Fail, and temperature above maximum operating temperature are hard fail-gates.
+- **SATA HDD:** Reallocated/pending sectors at the HDD failure threshold and uncorrectable/offline-uncorrectable errors above limit are hard fail-gates.
+- **SAS HDD:** Grown defects at the HDD failure threshold and combined uncorrected read/write/verify errors above limit are hard fail-gates.
+- **SATA SSD:** Percentage used over threshold and uncorrectable/offline-uncorrectable errors above limit are hard fail-gates.
+- **SAS SSD:** Percentage used over threshold, when normalized data is available, and combined uncorrected read/write/verify errors above limit are hard fail-gates.
+- **NVMe SSD:** Non-zero critical warning, non-zero media/data-integrity errors, available spare below threshold, percentage used over threshold, and any failed self-test are hard fail-gates.
+- **Telemetry-only unless otherwise specified:** POH, power cycles, load cycles, data units read/written, unsafe shutdown count, non-medium errors, and OCP C0h extended fields.
 
 ## Thresholds and Limits
 
 Default thresholds (configurable via `src/cdi_health/config/thresholds.yaml`):
 
-### ATA Devices
-- **Maximum Reallocated Sectors (HDD failure threshold)**: 10 (`ata.maximum_reallocated_sectors`)
-- **Maximum Pending Sectors (HDD failure threshold)**: 10 (`ata.maximum_pending_sectors`)
-- **HDD sector grading**: concern threshold **2**, max deduction per metric **10** (`grading.hdd_sector_concern_threshold`, `grading.hdd_sector_defect_max_deduction_points`)
-- Maximum Uncorrectable Errors: 10
-- Maximum SSD Percentage Used: 100%
+### SATA HDD
+- Maximum reallocated sectors: **10** (`ata.maximum_reallocated_sectors`)
+- Maximum pending sectors: **10** (`ata.maximum_pending_sectors`)
+- HDD sector grading: concern threshold **2**, max deduction per metric **10** (`grading.hdd_sector_concern_threshold`, `grading.hdd_sector_defect_max_deduction_points`)
+- Maximum uncorrectable/offline-uncorrectable errors: **10**
 
-### NVMe Devices
-- Maximum Percentage Used: 100%
-- Maximum Media Errors: 0 (any errors are concerning)
-- Critical Warning: Must be 0
+### SAS HDD
+- Maximum grown defects: **10** (`scsi.maximum_grown_defects`)
+- HDD sector grading: same concern/excess curve as SATA HDD
+- Maximum combined uncorrected read/write/verify errors: **10** (`scsi.maximum_uncorrected_errors`)
+
+### SATA SSD
+- Maximum SSD percentage used: **100%**
+- Maximum uncorrectable/offline-uncorrectable errors: **10**
+- Reallocated/pending counts use SSD-style per-defect handling, not the HDD sector curve
+
+### SAS SSD
+- Maximum SSD percentage used: **100%**
+- Maximum combined uncorrected read/write/verify errors: **10** (`scsi.maximum_uncorrected_errors`)
+- Grown defects, if reported for an SSD, use SSD-style per-defect handling
+
+### NVMe SSD
+- Maximum percentage used: **100%**
+- Maximum media/data-integrity errors: **0**
+- Critical warning: must be **0**
+- Available spare: must be at or above the drive-reported threshold, or CDI fallback threshold when no drive threshold is reported
+- Failed self-test count: must be **0**
 - **OCP C0h** (optional): When present, see **Section 4.8.6** in the [OCP Datacenter NVMe SSD Specification v2.7 PDF](https://www.opencompute.org/documents/datacenter-nvme-ssd-specification-v2-7-final-pdf-1) (or the [local Markdown copy](./Datacenter%20NVMe%20SSD%20Specification%20v2.7%20Final.md)) for field definitions; CDI stores raw JSON in `ocp_smart_log`
-
-### SCSI Devices
-- **Maximum Grown Defects (HDD failure threshold)**: 10 (`scsi.maximum_grown_defects`), with the same **0–2 / 3–9 / 10** HDD grading curve as ATA reallocated/pending
-- Maximum Uncorrected Errors: 10
 
 ## Certification Criteria
 
@@ -343,9 +445,12 @@ A device is considered **CDI Certified** (suitable for reuse) if:
 
 1. Health Score ≥ 75 (Grade B or better)
 2. SMART Status: Pass
-3. No critical errors (HDD reallocated/pending/grown-defect counts below failure thresholds; uncorrectable errors within limits)
-4. Temperature within operating range
-5. Percentage Used < 100% (for SSDs)
+3. Operational State is not **Fail**
+4. No critical errors (HDD reallocated/pending/grown-defect counts below failure thresholds; uncorrectable errors within limits; NVMe critical warning and media errors clear)
+5. Temperature within operating range
+6. Percentage Used < 100% (for SSDs)
+7. NVMe available spare is at or above the drive-reported threshold when available
+8. No failed NVMe self-test is reported
 
 ## References
 
@@ -354,5 +459,7 @@ A device is considered **CDI Certified** (suitable for reuse) if:
 - [SMART Standard](https://en.wikipedia.org/wiki/S.M.A.R.T.)
 - [NVMe Specification](https://nvmexpress.org/specifications/)
 - [SCSI Standards](https://www.t10.org/)
+- [openSeaChest Drive Health and SMART](https://github.com/Seagate/openSeaChest/wiki/Drive-Health-and-SMART)
+- [openSeaChest How To Check Drive Health](https://github.com/Seagate/openSeaChest/wiki/How-To-Check-Drive-Health)
 - [openSeaChest Documentation](https://github.com/Seagate/openSeaChest/wiki)
 - [smartmontools Documentation](https://www.smartmontools.org/)

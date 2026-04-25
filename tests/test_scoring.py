@@ -60,13 +60,83 @@ class TestHealthScoreCalculator:
 
         result = calculator.calculate(device)
 
-        # Failed SMART deducts 50 points, so score is 50 (not 0)
-        # But it should still be Grade D or F due to critical failure
-        assert result.score == 50  # 100 - 50 = 50
-        assert result.grade in ("D", "F")  # Grade D (50 points)
+        # Failed SMART is a hard fail-gate, not a salvageable D grade.
+        assert result.score == 0
+        assert result.grade == "F"
+        assert result.status == "Failed"
         assert result.is_certified is False
         assert any(d.severity == "critical" for d in result.deductions)
         assert any("SMART status failed" in d.reason for d in result.deductions)
+
+    @pytest.mark.parametrize("smart_status", [False, "FAILED", "failed", "false", "bad"])
+    def test_smart_fail_gate_forces_grade_f(self, smart_status: bool | str) -> None:
+        """Partner 600-drive run: explicit SMART failures must be disposition failures."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "SCSI",
+            "smart_supported": True,
+            "smart_status": smart_status,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 0
+        assert result.grade == "F"
+        assert result.status == "Failed"
+        assert result.is_certified is False
+        assert any(d.field == "smart_status" and d.severity == "critical" for d in result.deductions)
+
+    def test_failed_operational_state_forces_grade_f_even_when_smart_passes(self) -> None:
+        """Partner 600-drive run: State=Fail with SMART passing is still a failed drive."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "SCSI",
+            "state": "Fail",
+            "smart_supported": True,
+            "smart_status": "PASSED",
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 0
+        assert result.grade == "F"
+        assert result.status == "Failed"
+        assert result.is_certified is False
+        assert any(d.field == "state" and d.severity == "critical" for d in result.deductions)
+
+    def test_unresponsive_failed_state_forces_grade_f(self) -> None:
+        """Partner 600-drive run: DOA/unresponsive drives should not become Grade D."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "SCSI",
+            "state": "Fail",
+            "smart_supported": False,
+            "smart_status": "UNKNOWN",
+            "capacity": 0,
+            "power_on_hours": 0,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 0
+        assert result.grade == "F"
+        assert result.status == "Failed"
+        assert result.is_certified is False
+        assert any(d.field == "state" and d.severity == "critical" for d in result.deductions)
+
+    def test_unknown_smart_without_failed_state_is_not_a_hard_fail(self) -> None:
+        """Missing/unknown SMART alone should not hard-fail a drive without failed state evidence."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "SCSI",
+            "smart_supported": False,
+            "smart_status": "UNKNOWN",
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 100
+        assert result.grade == "A"
 
     def test_calculate_failed_selftest(self) -> None:
         """Test scoring for device with failed self-test."""
@@ -110,8 +180,9 @@ class TestHealthScoreCalculator:
 
         result = calculator.calculate(device)
 
-        # 10 sectors => max defect deduction (10 pts), critical
-        assert result.score == 90
+        # At the failure threshold, this is a critical health condition and hard-fails.
+        assert result.score == 0
+        assert result.grade == "F"
         assert any("reallocated" in d.reason.lower() for d in result.deductions)
         assert any(d.severity == "critical" and d.points == 10 for d in result.deductions)
 
@@ -150,8 +221,8 @@ class TestHealthScoreCalculator:
         }
         result = calculator.calculate(device)
         # M=10 + min(40, 38*1) = 48
-        assert result.score == 52
-        assert result.grade == "D"
+        assert result.score == 0
+        assert result.grade == "F"
         assert any(d.field == "reallocated_sectors" and d.points == 48 for d in result.deductions)
 
     def test_hdd_pending_excess_with_rotation_rate(self) -> None:
@@ -165,8 +236,8 @@ class TestHealthScoreCalculator:
         }
         result = calculator.calculate(device)
         # M=10 + min(40, 56) = 50
-        assert result.score == 50
-        assert result.grade == "D"
+        assert result.score == 0
+        assert result.grade == "F"
         assert any(d.field == "pending_sectors" and d.points == 50 for d in result.deductions)
 
     def test_ata_ssd_reallocated_per_sector_not_hdd_curve(self) -> None:
@@ -194,3 +265,124 @@ class TestHealthScoreCalculator:
         result = calculator.calculate(device)
         assert result.score == 80
         assert any(d.field == "reallocated_sectors" and d.points == 20 for d in result.deductions)
+
+    def test_critical_nvme_warning_forces_grade_f(self) -> None:
+        """NVMe SMART critical warning bits are a hard fail-gate."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "critical_warning": 1,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 0
+        assert result.grade == "F"
+        assert result.is_certified is False
+        assert any(d.field == "critical_warning" and d.severity == "critical" for d in result.deductions)
+
+    def test_nvme_available_spare_uses_device_threshold(self) -> None:
+        """NVMe available spare should use the drive-reported threshold when present."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "available_spare": 12,
+            "available_spare_threshold": 10,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 100
+        assert result.grade == "A"
+
+        device["available_spare"] = 9
+        result = calculator.calculate(device)
+
+        assert result.score == 0
+        assert result.grade == "F"
+        assert any(d.field == "available_spare" and d.threshold == 10 for d in result.deductions)
+
+    def test_nvme_media_errors_are_hard_failures(self) -> None:
+        """NVMe media/data-integrity errors are critical, even when count is low."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "media_errors": 1,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 0
+        assert result.grade == "F"
+        assert any(d.field == "media_errors" and d.severity == "critical" for d in result.deductions)
+
+    def test_nvme_selftest_table_result_value_failure_forces_grade_f(self) -> None:
+        """smartctl NVMe self-test JSON uses table[].self_test_result.value for failures."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "nvme_self_test_log": {
+                "current_self_test_operation": {"value": 0, "string": "No test in progress"},
+                "table": [
+                    {
+                        "self_test_result": {"value": 1, "string": "The segment failed"},
+                        "self_test_code": {"value": 2, "string": "Extended"},
+                    }
+                ],
+            },
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 0
+        assert result.grade == "F"
+        assert any(d.field == "nvme_self_test" and d.severity == "critical" for d in result.deductions)
+
+    def test_nvme_failed_count_forces_grade_f_without_log_shape(self) -> None:
+        """Device parsing can precompute failed self-test count from alternate log shapes."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "nvme_self_test_failed_count": 1,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 0
+        assert result.grade == "F"
+        assert any(d.field == "nvme_self_test" and d.severity == "critical" for d in result.deductions)
+
+    def test_nvme_missing_selftest_history_does_not_use_poh_as_score_input(self) -> None:
+        """POH is telemetry; missing self-test history should not deduct from health score."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "power_on_hours": 20000,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 100
+        assert result.grade == "A"
+        assert not any(d.field in {"nvme_self_test", "nvme_self_test_log"} for d in result.deductions)
+
+    def test_scsi_offline_uncorrectable_alias_is_scored(self) -> None:
+        """SCSI parser stores total uncorrected errors under offline_uncorrectable_sectors."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "SCSI",
+            "smart_status": "PASSED",
+            "offline_uncorrectable_sectors": 11,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.score == 0
+        assert result.grade == "F"
+        assert any(d.field == "uncorrected_errors" and d.severity == "critical" for d in result.deductions)

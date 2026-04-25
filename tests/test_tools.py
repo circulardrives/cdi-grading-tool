@@ -22,11 +22,18 @@
 from __future__ import annotations
 
 import os
+import shlex
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from cdi_health.classes.tools import Command, SeaTools, SG3Utils, Smartctl
+
+
+def _python_cmd(code: str) -> str:
+    """Return a cross-platform command for Command's shell-free execution path."""
+    return f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}"
 
 
 class TestCommand:
@@ -39,26 +46,26 @@ class TestCommand:
 
     def test_command_execution_success(self) -> None:
         """Test successful command execution."""
-        cmd = Command("echo test")
+        cmd = Command(_python_cmd("print('test')"))
         cmd.run()
         assert cmd.return_code == 0
         assert b"test" in cmd.output
 
     def test_command_execution_failure(self) -> None:
         """Test failed command execution."""
-        cmd = Command("false")
+        cmd = Command(_python_cmd("import sys; sys.exit(1)"))
         cmd.run()
         assert cmd.return_code != 0
 
     def test_get_return_code(self) -> None:
         """Test get_return_code method."""
-        cmd = Command("true")
+        cmd = Command(_python_cmd("import sys; sys.exit(0)"))
         cmd.run()
         assert cmd.get_return_code() == 0
 
     def test_has_errors(self) -> None:
         """Test has_errors method."""
-        cmd = Command("false")
+        cmd = Command(_python_cmd("import sys; sys.exit(1)"))
         cmd.run()
         # false command may or may not have stderr output
         assert isinstance(cmd.has_errors(), bool)

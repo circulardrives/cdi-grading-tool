@@ -881,6 +881,7 @@ class ReportGenerator:
             ("Pending sectors", pending),
             ("Uncorrectable errors", lambda d: d.get("uncorrectable_errors", "—")),
             ("Offline uncorrectable", lambda d: d.get("offline_uncorrectable_sectors", "—")),
+            ("Non-medium errors", lambda d: d.get("non_medium_errors", "—")),
         ]
 
     @staticmethod
