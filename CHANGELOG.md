@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added openSeaChest health-check workflow notes to clarify SMART warnings, unavailable SMART checks, DST failure modes, Device Statistics preference, and telemetry-only counters.
 - Updated the README health summary to point to the main-repo CDI health spec and mirror the drive-class grading model.
 - Fixed release packaging so `.deb` and `.rpm` package versions come from the pushed git tag.
+- Accounted for nFPM's normalized SemVer package filenames, e.g. tag `v0.9` produces OS packages named `0.9.0`.
 
 ### Technical Details
 - Self-test implementation follows NVMe Base Specification 2.3
