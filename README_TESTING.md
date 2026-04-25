@@ -209,4 +209,3 @@ On some Linux images, `python3 -m venv .venv` fails until you install the venv m
 - Check that tests actually execute the code
 - Verify coverage configuration in `pyproject.toml`
 - Run with `--cov-report=html` to see detailed coverage
-
