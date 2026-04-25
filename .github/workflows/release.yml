@@ -83,6 +83,16 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: nfpm pkg --packager rpm --target dist/
 
+      - name: Verify OS package versions
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ls -lah dist/
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            test -f "dist/cdi-health_${VERSION}_all.deb"
+            test -f "dist/cdi-health-${VERSION}-1.noarch.rpm"
+          fi
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
