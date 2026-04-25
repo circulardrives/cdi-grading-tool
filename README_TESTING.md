@@ -5,26 +5,31 @@ This document provides comprehensive information about testing the CDI Health pr
 ## Running Tests
 
 ### Run All Tests
+
 ```bash
 pytest tests/
 ```
 
 ### Run with Coverage
+
 ```bash
 pytest tests/ --cov=cdi_health --cov-report=term-missing
 ```
 
 ### Run Specific Test File
+
 ```bash
 pytest tests/test_scoring.py
 ```
 
 ### Run Specific Test
+
 ```bash
 pytest tests/test_scoring.py::TestHealthScoreCalculator::test_calculate_perfect_device
 ```
 
 ### Run with Verbose Output
+
 ```bash
 pytest tests/ -v
 ```
@@ -49,6 +54,7 @@ Tests are organized by component:
 Current test coverage: **~39%**
 
 Key areas with good coverage:
+
 - Constants (100%)
 - Logger (97%)
 - Colors (90%)
@@ -56,6 +62,7 @@ Key areas with good coverage:
 - Scoring (65%)
 
 Areas needing more coverage:
+
 - CLI commands (20%)
 - Device detection (1%)
 - Mock data handling (33%)
@@ -63,11 +70,13 @@ Areas needing more coverage:
 ## Writing New Tests
 
 ### Test Naming Convention
+
 - Test files: `test_*.py`
-- Test classes: `Test*`
+- Test classes: `Test`*
 - Test methods: `test_*`
 
 ### Example Test Structure
+
 ```python
 import pytest
 from cdi_health.classes.scoring import HealthScoreCalculator
@@ -83,6 +92,7 @@ class TestMyFeature:
 ```
 
 ### Using Fixtures
+
 ```python
 def test_with_mock_device(sample_nvme_device: dict) -> None:
     """Test using mock device fixture."""
@@ -90,6 +100,7 @@ def test_with_mock_device(sample_nvme_device: dict) -> None:
 ```
 
 ### Mocking External Dependencies
+
 ```python
 from unittest.mock import patch, MagicMock
 
@@ -102,6 +113,7 @@ def test_path_detection(mock_which: MagicMock) -> None:
 ## Continuous Integration
 
 Tests run automatically on:
+
 - Push to main/develop branches
 - Pull requests
 - Multiple Python versions (3.10, 3.11, 3.12)
@@ -111,6 +123,7 @@ See `.github/workflows/ci.yml` for CI (pytest matrix, pre-commit, dashboard buil
 ## Test Data
 
 Mock data is located in `src/cdi_health/mock_data/`:
+
 - `ata/` - ATA/SATA device mock data
 - `nvme/` - NVMe device mock data
 - `scsi/` - SCSI/SAS device mock data
@@ -119,6 +132,7 @@ Mock data is located in `src/cdi_health/mock_data/`:
 ## Common Test Scenarios
 
 ### Testing Scoring Logic
+
 ```python
 def test_scoring_scenario():
     calculator = HealthScoreCalculator()
@@ -132,6 +146,7 @@ def test_scoring_scenario():
 ```
 
 ### Testing Path Detection
+
 ```python
 @patch("shutil.which")
 def test_tool_detection(mock_which):
@@ -140,6 +155,7 @@ def test_tool_detection(mock_which):
 ```
 
 ### Testing Formatters
+
 ```python
 def test_formatter():
     formatter = TableFormatter()
@@ -178,15 +194,19 @@ def test_formatter():
 On some Linux images, `python3 -m venv .venv` fails until you install the venv module, e.g. `sudo apt install python3-venv` (or `python3.12-venv` matching your Python).
 
 ### Tests Fail with Import Errors
+
 - Ensure package is installed: `pip install -e .[dev]`
 - Check Python version: `python --version` (requires 3.10+)
 
 ### Mock Data Not Found
+
 - Verify mock data directory exists
 - Check path in test fixtures
 - Ensure JSON files are valid
 
 ### Coverage Not Increasing
+
 - Check that tests actually execute the code
 - Verify coverage configuration in `pyproject.toml`
 - Run with `--cov-report=html` to see detailed coverage
+
