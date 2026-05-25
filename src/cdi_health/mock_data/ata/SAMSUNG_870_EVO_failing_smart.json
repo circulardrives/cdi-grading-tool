@@ -1,0 +1,1346 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      5
+    ],
+    "pre_release": false,
+    "svn_revision": "5714",
+    "platform_info": "x86_64-linux-7.0.0-15-generic",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--xall",
+      "--json=ov",
+      "/dev/sda"
+    ],
+    "output": [
+      "smartctl 7.5 2025-04-30 r5714 [x86_64-linux-7.0.0-15-generic] (local build)",
+      "Copyright (C) 2002-25, Bruce Allen, Christian Franke, www.smartmontools.org",
+      "",
+      "=== START OF INFORMATION SECTION ===",
+      "Model Family:     Samsung based SSDs",
+      "Device Model:     Samsung SSD 870 EVO 500GB",
+      "Serial Number:    S62ANJ0R9000001",
+      "LU WWN Device Id: 5 002538 f31184949",
+      "Firmware Version: SVT01B6Q",
+      "User Capacity:    500,107,862,016 bytes [500 GB]",
+      "Sector Size:      512 bytes logical/physical",
+      "Rotation Rate:    Solid State Device",
+      "Form Factor:      2.5 inches",
+      "TRIM Command:     Available, deterministic, zeroed",
+      "Device is:        In smartctl database 7.5/5706",
+      "ATA Version is:   ACS-4 T13/BSR INCITS 529 revision 5",
+      "SATA Version is:  SATA 3.3, 6.0 Gb/s (current: 6.0 Gb/s)",
+      "Local Time is:    Mon May 25 04:33:49 2026 UTC",
+      "SMART support is: Available - device has SMART capability.",
+      "SMART support is: Enabled",
+      "AAM feature is:   Unavailable",
+      "APM feature is:   Unavailable",
+      "Rd look-ahead is: Enabled",
+      "Write cache is:   Enabled",
+      "DSN feature is:   Unavailable",
+      "ATA Security is:  Disabled, NOT FROZEN [SEC1]",
+      "",
+      "Read SMART Data failed: scsi error aborted command",
+      "",
+      "=== START OF READ SMART DATA SECTION ===",
+      "SMART Status command failed: scsi error aborted command",
+      "SMART overall-health self-assessment test result: UNKNOWN!",
+      "SMART Status, Attributes and Thresholds cannot be read.",
+      "",
+      "Read SMART Log Directory failed: scsi error aborted command",
+      "",
+      "General Purpose Log Directory Version 1",
+      "Address    Access  R/W   Size  Description",
+      "0x00       GPL     R/O      1  Log Directory",
+      "0x03       GPL     R/O      1  Ext. Comprehensive SMART error log",
+      "0x04       GPL     R/O      8  Device Statistics log",
+      "0x07       GPL     R/O      1  Extended self-test log",
+      "0x10       GPL     R/O      1  NCQ Command Error log",
+      "0x11       GPL     R/O      1  SATA Phy Event Counters log",
+      "0x13       GPL     R/O      1  SATA NCQ Send and Receive log",
+      "0x30       GPL     R/O      9  IDENTIFY DEVICE data log",
+      "0x80-0x9f  GPL     R/W     16  Host vendor specific log",
+      "0xe0       GPL     R/W      1  SCT Command/Status",
+      "0xe1       GPL     R/W      1  SCT Data Transfer",
+      "",
+      "SMART Extended Comprehensive Error Log Version: 1 (1 sectors)",
+      "Device Error Count: 6 (device log contains only the most recent 4 errors)",
+      "\tCR     = Command Register",
+      "\tFEATR  = Features Register",
+      "\tCOUNT  = Count (was: Sector Count) Register",
+      "\tLBA_48 = Upper bytes of LBA High/Mid/Low Registers ]  ATA-8",
+      "\tLH     = LBA High (was: Cylinder High) Register    ]   LBA",
+      "\tLM     = LBA Mid (was: Cylinder Low) Register      ] Register",
+      "\tLL     = LBA Low (was: Sector Number) Register     ]",
+      "\tDV     = Device (was: Device/Head) Register",
+      "\tDC     = Device Control Register",
+      "\tER     = Error register",
+      "\tST     = Status register",
+      "Powered_Up_Time is measured from power on, and printed as",
+      "DDd+hh:mm:SS.sss where DD=days, hh=hours, mm=minutes,",
+      "SS=sec, and sss=millisec. It \"wraps\" after 49.710 days.",
+      "",
+      "Error 6 [1] occurred at disk power-on lifetime: 13885 hours (578 days + 13 hours)",
+      "  When the command that caused the error occurred, the device was active or idle.",
+      "",
+      "  After command completion occurred, registers were:",
+      "  ER -- ST COUNT  LBA_48  LH LM LL DV DC",
+      "  -- -- -- == -- == == == -- -- -- -- --",
+      "  40 -- 51 00 98 00 00 2f 31 fc d0 40 00  Error: WP at LBA = 0x2f31fcd0 = 791805136",
+      "",
+      "  Commands leading to the command that caused the error were:",
+      "  CR FEATR COUNT  LBA_48  LH LM LL DV DC  Powered_Up_Time  Command/Feature_Name",
+      "  -- == -- == -- == == == -- -- -- -- --  ---------------  --------------------",
+      "  61 00 10 00 98 00 00 2f 31 fc d0 40 13 20d+11:04:36.686  WRITE FPDMA QUEUED",
+      "  60 00 18 00 90 00 00 00 8a 6b c0 40 12 20d+11:04:36.686  READ FPDMA QUEUED",
+      "  60 00 18 00 88 00 00 00 ee f4 a0 40 11 20d+11:04:36.686  READ FPDMA QUEUED",
+      "  60 00 10 00 80 00 00 00 f8 f2 a0 40 10 20d+11:04:36.686  READ FPDMA QUEUED",
+      "  60 00 20 00 78 00 00 00 ee f4 80 40 0f 20d+11:04:36.686  READ FPDMA QUEUED",
+      "",
+      "Error 5 [0] occurred at disk power-on lifetime: 13885 hours (578 days + 13 hours)",
+      "  When the command that caused the error occurred, the device was active or idle.",
+      "",
+      "  After command completion occurred, registers were:",
+      "  ER -- ST COUNT  LBA_48  LH LM LL DV DC",
+      "  -- -- -- == -- == == == -- -- -- -- --",
+      "  40 -- 51 00 f8 00 00 00 8a 6c 00 40 00  Error: UNC at LBA = 0x008a6c00 = 9071616",
+      "",
+      "  Commands leading to the command that caused the error were:",
+      "  CR FEATR COUNT  LBA_48  LH LM LL DV DC  Powered_Up_Time  Command/Feature_Name",
+      "  -- == -- == -- == == == -- -- -- -- --  ---------------  --------------------",
+      "  60 00 20 00 f8 00 00 00 8a 6c 00 40 1f 20d+11:04:36.001  READ FPDMA QUEUED",
+      "  60 00 20 00 b8 00 00 00 da f6 20 40 17 20d+11:04:36.001  READ FPDMA QUEUED",
+      "  60 00 20 00 b0 00 00 00 da f6 00 40 16 20d+11:04:36.001  READ FPDMA QUEUED",
+      "  60 00 10 00 a8 00 00 00 da f5 f0 40 15 20d+11:04:36.001  READ FPDMA QUEUED",
+      "  60 00 10 00 a0 00 00 00 c6 b0 60 40 14 20d+11:04:36.001  READ FPDMA QUEUED",
+      "",
+      "Error 4 [3] occurred at disk power-on lifetime: 13885 hours (578 days + 13 hours)",
+      "  When the command that caused the error occurred, the device was active or idle.",
+      "",
+      "  After command completion occurred, registers were:",
+      "  ER -- ST COUNT  LBA_48  LH LM LL DV DC",
+      "  -- -- -- == -- == == == -- -- -- -- --",
+      "  40 -- 51 00 58 00 00 01 02 e1 98 40 00  Error: UNC at LBA = 0x0102e198 = 16966040",
+      "",
+      "  Commands leading to the command that caused the error were:",
+      "  CR FEATR COUNT  LBA_48  LH LM LL DV DC  Powered_Up_Time  Command/Feature_Name",
+      "  -- == -- == -- == == == -- -- -- -- --  ---------------  --------------------",
+      "  60 00 08 00 58 00 00 01 02 e1 98 40 0b 20d+11:03:50.868  READ FPDMA QUEUED",
+      "  61 00 08 00 50 00 00 2a 57 cf d0 40 0a 20d+11:03:50.868  WRITE FPDMA QUEUED",
+      "  61 00 10 00 48 00 00 2f 18 65 90 40 09 20d+11:03:50.868  WRITE FPDMA QUEUED",
+      "  61 00 08 00 40 00 00 2f 0e 10 88 40 08 20d+11:03:50.868  WRITE FPDMA QUEUED",
+      "  61 00 08 00 38 00 00 2f 0e 06 20 40 07 20d+11:03:50.868  WRITE FPDMA QUEUED",
+      "",
+      "Error 3 [2] occurred at disk power-on lifetime: 10932 hours (455 days + 12 hours)",
+      "  When the command that caused the error occurred, the device was active or idle.",
+      "",
+      "  After command completion occurred, registers were:",
+      "  ER -- ST COUNT  LBA_48  LH LM LL DV DC",
+      "  -- -- -- == -- == == == -- -- -- -- --",
+      "  40 -- 51 00 88 00 00 01 04 9b 88 40 00  Error: UNC at LBA = 0x01049b88 = 17079176",
+      "",
+      "  Commands leading to the command that caused the error were:",
+      "  CR FEATR COUNT  LBA_48  LH LM LL DV DC  Powered_Up_Time  Command/Feature_Name",
+      "  -- == -- == -- == == == -- -- -- -- --  ---------------  --------------------",
+      "  60 00 08 00 88 00 00 01 04 9b 88 40 11 46d+13:26:33.062  READ FPDMA QUEUED",
+      "  60 00 08 00 80 00 00 00 57 a2 88 40 10 46d+13:26:33.062  READ FPDMA QUEUED",
+      "  61 00 08 00 70 00 00 00 49 de 30 40 0e 46d+13:26:33.062  WRITE FPDMA QUEUED",
+      "  61 00 08 00 28 00 00 23 10 0a 78 40 05 46d+13:26:33.062  WRITE FPDMA QUEUED",
+      "  61 00 08 00 20 00 00 23 10 09 c8 40 04 46d+13:26:33.062  WRITE FPDMA QUEUED",
+      "",
+      "SMART Extended Self-test Log Version: 1 (1 sectors)",
+      "No self-tests have been logged.  [To run self-tests, use: smartctl -t]",
+      "",
+      "Selective Self-tests/Logging not supported",
+      "",
+      "Read SCT Status failed: scsi error aborted command",
+      "",
+      "Read SCT Status failed: scsi error aborted command",
+      "SCT (Get) Error Recovery Control command failed",
+      "",
+      "Device Statistics (GP Log 0x04)",
+      "Page  Offset Size        Value Flags Description",
+      "0x01  =====  =               =  ===  == General Statistics (rev 1) ==",
+      "0x01  0x008  4              24  ---  Lifetime Power-On Resets",
+      "0x01  0x010  4           23172  ---  Power-on Hours",
+      "0x01  0x018  6    254187468066  ---  Logical Sectors Written",
+      "0x01  0x020  6      6002809605  ---  Number of Write Commands",
+      "0x01  0x028  6    254442929802  ---  Logical Sectors Read",
+      "0x01  0x030  6      9408234256  ---  Number of Read Commands",
+      "0x01  0x038  6          736000  ---  Date and Time TimeStamp",
+      "0x04  =====  =               =  ===  == General Errors Statistics (rev 1) ==",
+      "0x04  0x008  4               6  ---  Number of Reported Uncorrectable Errors",
+      "0x04  0x010  4               0  ---  Resets Between Cmd Acceptance and Completion",
+      "0x05  =====  =               =  ===  == Temperature Statistics (rev 1) ==",
+      "0x05  0x008  1              41  ---  Current Temperature",
+      "0x05  0x020  1              46  ---  Highest Temperature",
+      "0x05  0x028  1              16  ---  Lowest Temperature",
+      "0x05  0x058  1              70  ---  Specified Maximum Operating Temperature",
+      "0x06  =====  =               =  ===  == Transport Statistics (rev 1) ==",
+      "0x06  0x008  4              63  ---  Number of Hardware Resets",
+      "0x06  0x010  4               0  ---  Number of ASR Events",
+      "0x06  0x018  4               0  ---  Number of Interface CRC Errors",
+      "0x07  =====  =               =  ===  == Solid State Device Statistics (rev 1) ==",
+      "0x07  0x008  1              10  N--  Percentage Used Endurance Indicator",
+      "                                |||_ C monitored condition met",
+      "                                ||__ D supports DSN",
+      "                                |___ N normalized value",
+      "",
+      "Pending Defects log (GP Log 0x0c) not supported",
+      "",
+      "SATA Phy Event Counters (GP Log 0x11)",
+      "ID      Size     Value  Description",
+      "0x0001  2            0  Command failed due to ICRC error",
+      "0x0002  2            0  R_ERR response for data FIS",
+      "0x0003  2            0  R_ERR response for device-to-host data FIS",
+      "0x0004  2            0  R_ERR response for host-to-device data FIS",
+      "0x0005  2            0  R_ERR response for non-data FIS",
+      "0x0006  2            0  R_ERR response for device-to-host non-data FIS",
+      "0x0007  2            0  R_ERR response for host-to-device non-data FIS",
+      "0x0008  2            0  Device-to-host non-data FIS retries",
+      "0x0009  2            2  Transition from drive PhyRdy to drive PhyNRdy",
+      "0x000a  2            2  Device-to-host register FISes sent due to a COMRESET",
+      "0x000b  2            0  CRC errors within host-to-device FIS",
+      "0x000d  2            0  Non-CRC errors within host-to-device FIS",
+      "0x000f  2            0  R_ERR response for host-to-device data FIS, CRC",
+      "0x0010  2            0  R_ERR response for host-to-device data FIS, non-CRC",
+      "0x0012  2            0  R_ERR response for host-to-device non-data FIS, CRC",
+      "0x0013  2            0  R_ERR response for host-to-device non-data FIS, non-CRC",
+      ""
+    ],
+    "drive_database_version": {
+      "string": "7.5/5706"
+    },
+    "exit_status": 68
+  },
+  "local_time": {
+    "time_t": 1706400000,
+    "asctime": "Mon Jan 28 00:00:00 2026 UTC"
+  },
+  "device": {
+    "name": "/dev/sda",
+    "info_name": "/dev/sda [SAT]",
+    "type": "sat",
+    "protocol": "ATA"
+  },
+  "model_family": "Samsung based SSDs",
+  "model_name": "Samsung SSD 870 EVO 500GB",
+  "serial_number": "S62ANJ0R9000001",
+  "wwn": {
+    "naa": 5,
+    "oui": 9528,
+    "id": 65248184649
+  },
+  "firmware_version": "SVT01B6Q",
+  "user_capacity": {
+    "blocks": 976773168,
+    "blocks_s": "976773168",
+    "bytes": 500107862016,
+    "bytes_s": "500107862016"
+  },
+  "logical_block_size": 512,
+  "physical_block_size": 512,
+  "rotation_rate": 0,
+  "form_factor": {
+    "ata_value": 3,
+    "name": "2.5 inches"
+  },
+  "trim": {
+    "supported": true,
+    "deterministic": true,
+    "zeroed": true
+  },
+  "in_smartctl_database": true,
+  "ata_version": {
+    "string": "ACS-4 T13/BSR INCITS 529 revision 5",
+    "major_value": 2556,
+    "minor_value": 94
+  },
+  "sata_version": {
+    "string": "SATA 3.3",
+    "value": 511
+  },
+  "interface_speed": {
+    "max": {
+      "sata_value": 14,
+      "string": "6.0 Gb/s",
+      "units_per_second": 60,
+      "bits_per_unit": 100000000
+    },
+    "current": {
+      "sata_value": 3,
+      "string": "6.0 Gb/s",
+      "units_per_second": 60,
+      "bits_per_unit": 100000000
+    }
+  },
+  "smart_support": {
+    "available": true,
+    "enabled": true
+  },
+  "read_lookahead": {
+    "enabled": true
+  },
+  "write_cache": {
+    "enabled": true
+  },
+  "ata_security": {
+    "state": 33,
+    "string": "Disabled, NOT FROZEN [SEC1]",
+    "enabled": false,
+    "frozen": false,
+    "master_password_id": 65534
+  },
+  "ata_log_directory": {
+    "gp_dir_version": 1,
+    "table": [
+      {
+        "address": 0,
+        "name": "Log Directory",
+        "read": true,
+        "write": false,
+        "gp_sectors": 1
+      },
+      {
+        "address": 3,
+        "name": "Ext. Comprehensive SMART error log",
+        "read": true,
+        "write": false,
+        "gp_sectors": 1
+      },
+      {
+        "address": 4,
+        "name": "Device Statistics log",
+        "read": true,
+        "write": false,
+        "gp_sectors": 8
+      },
+      {
+        "address": 7,
+        "name": "Extended self-test log",
+        "read": true,
+        "write": false,
+        "gp_sectors": 1
+      },
+      {
+        "address": 16,
+        "name": "NCQ Command Error log",
+        "read": true,
+        "write": false,
+        "gp_sectors": 1
+      },
+      {
+        "address": 17,
+        "name": "SATA Phy Event Counters log",
+        "read": true,
+        "write": false,
+        "gp_sectors": 1
+      },
+      {
+        "address": 19,
+        "name": "SATA NCQ Send and Receive log",
+        "read": true,
+        "write": false,
+        "gp_sectors": 1
+      },
+      {
+        "address": 48,
+        "name": "IDENTIFY DEVICE data log",
+        "read": true,
+        "write": false,
+        "gp_sectors": 9
+      },
+      {
+        "address": 128,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 129,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 130,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 131,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 132,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 133,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 134,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 135,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 136,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 137,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 138,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 139,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 140,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 141,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 142,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 143,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 144,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 145,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 146,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 147,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 148,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 149,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 150,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 151,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 152,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 153,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 154,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 155,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 156,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 157,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 158,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 159,
+        "name": "Host vendor specific log",
+        "read": true,
+        "write": true,
+        "gp_sectors": 16
+      },
+      {
+        "address": 224,
+        "name": "SCT Command/Status",
+        "read": true,
+        "write": true,
+        "gp_sectors": 1
+      },
+      {
+        "address": 225,
+        "name": "SCT Data Transfer",
+        "read": true,
+        "write": true,
+        "gp_sectors": 1
+      }
+    ]
+  },
+  "ata_smart_error_log": {
+    "extended": {
+      "revision": 1,
+      "sectors": 1,
+      "count": 6,
+      "logged_count": 4,
+      "table": [
+        {
+          "error_number": 6,
+          "log_index": 1,
+          "lifetime_hours": 13885,
+          "device_state": {
+            "value": 3,
+            "string": "active or idle"
+          },
+          "completion_registers": {
+            "error": 64,
+            "status": 81,
+            "count": 152,
+            "lba": 791805136,
+            "device": 64,
+            "device_control": 0
+          },
+          "error_description": "Error: WP at LBA = 0x2f31fcd0 = 791805136",
+          "previous_commands": [
+            {
+              "registers": {
+                "command": 97,
+                "features": 16,
+                "count": 152,
+                "lba": 791805136,
+                "device": 64,
+                "device_control": 19
+              },
+              "powerup_milliseconds": 1767876686,
+              "command_name": "WRITE FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 96,
+                "features": 24,
+                "count": 144,
+                "lba": 9071552,
+                "device": 64,
+                "device_control": 18
+              },
+              "powerup_milliseconds": 1767876686,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 96,
+                "features": 24,
+                "count": 136,
+                "lba": 15660192,
+                "device": 64,
+                "device_control": 17
+              },
+              "powerup_milliseconds": 1767876686,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 96,
+                "features": 16,
+                "count": 128,
+                "lba": 16315040,
+                "device": 64,
+                "device_control": 16
+              },
+              "powerup_milliseconds": 1767876686,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 96,
+                "features": 32,
+                "count": 120,
+                "lba": 15660160,
+                "device": 64,
+                "device_control": 15
+              },
+              "powerup_milliseconds": 1767876686,
+              "command_name": "READ FPDMA QUEUED"
+            }
+          ]
+        },
+        {
+          "error_number": 5,
+          "log_index": 0,
+          "lifetime_hours": 13885,
+          "device_state": {
+            "value": 3,
+            "string": "active or idle"
+          },
+          "completion_registers": {
+            "error": 64,
+            "status": 81,
+            "count": 248,
+            "lba": 9071616,
+            "device": 64,
+            "device_control": 0
+          },
+          "error_description": "Error: UNC at LBA = 0x008a6c00 = 9071616",
+          "previous_commands": [
+            {
+              "registers": {
+                "command": 96,
+                "features": 32,
+                "count": 248,
+                "lba": 9071616,
+                "device": 64,
+                "device_control": 31
+              },
+              "powerup_milliseconds": 1767876001,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 96,
+                "features": 32,
+                "count": 184,
+                "lba": 14349856,
+                "device": 64,
+                "device_control": 23
+              },
+              "powerup_milliseconds": 1767876001,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 96,
+                "features": 32,
+                "count": 176,
+                "lba": 14349824,
+                "device": 64,
+                "device_control": 22
+              },
+              "powerup_milliseconds": 1767876001,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 96,
+                "features": 16,
+                "count": 168,
+                "lba": 14349808,
+                "device": 64,
+                "device_control": 21
+              },
+              "powerup_milliseconds": 1767876001,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 96,
+                "features": 16,
+                "count": 160,
+                "lba": 13021280,
+                "device": 64,
+                "device_control": 20
+              },
+              "powerup_milliseconds": 1767876001,
+              "command_name": "READ FPDMA QUEUED"
+            }
+          ]
+        },
+        {
+          "error_number": 4,
+          "log_index": 3,
+          "lifetime_hours": 13885,
+          "device_state": {
+            "value": 3,
+            "string": "active or idle"
+          },
+          "completion_registers": {
+            "error": 64,
+            "status": 81,
+            "count": 88,
+            "lba": 16966040,
+            "device": 64,
+            "device_control": 0
+          },
+          "error_description": "Error: UNC at LBA = 0x0102e198 = 16966040",
+          "previous_commands": [
+            {
+              "registers": {
+                "command": 96,
+                "features": 8,
+                "count": 88,
+                "lba": 16966040,
+                "device": 64,
+                "device_control": 11
+              },
+              "powerup_milliseconds": 1767830868,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 97,
+                "features": 8,
+                "count": 80,
+                "lba": 710397904,
+                "device": 64,
+                "device_control": 10
+              },
+              "powerup_milliseconds": 1767830868,
+              "command_name": "WRITE FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 97,
+                "features": 16,
+                "count": 72,
+                "lba": 790128016,
+                "device": 64,
+                "device_control": 9
+              },
+              "powerup_milliseconds": 1767830868,
+              "command_name": "WRITE FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 97,
+                "features": 8,
+                "count": 64,
+                "lba": 789450888,
+                "device": 64,
+                "device_control": 8
+              },
+              "powerup_milliseconds": 1767830868,
+              "command_name": "WRITE FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 97,
+                "features": 8,
+                "count": 56,
+                "lba": 789448224,
+                "device": 64,
+                "device_control": 7
+              },
+              "powerup_milliseconds": 1767830868,
+              "command_name": "WRITE FPDMA QUEUED"
+            }
+          ]
+        },
+        {
+          "error_number": 3,
+          "log_index": 2,
+          "lifetime_hours": 10932,
+          "device_state": {
+            "value": 3,
+            "string": "active or idle"
+          },
+          "completion_registers": {
+            "error": 64,
+            "status": 81,
+            "count": 136,
+            "lba": 17079176,
+            "device": 64,
+            "device_control": 0
+          },
+          "error_description": "Error: UNC at LBA = 0x01049b88 = 17079176",
+          "previous_commands": [
+            {
+              "registers": {
+                "command": 96,
+                "features": 8,
+                "count": 136,
+                "lba": 17079176,
+                "device": 64,
+                "device_control": 17
+              },
+              "powerup_milliseconds": 4022793062,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 96,
+                "features": 8,
+                "count": 128,
+                "lba": 5743240,
+                "device": 64,
+                "device_control": 16
+              },
+              "powerup_milliseconds": 4022793062,
+              "command_name": "READ FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 97,
+                "features": 8,
+                "count": 112,
+                "lba": 4841008,
+                "device": 64,
+                "device_control": 14
+              },
+              "powerup_milliseconds": 4022793062,
+              "command_name": "WRITE FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 97,
+                "features": 8,
+                "count": 40,
+                "lba": 588253816,
+                "device": 64,
+                "device_control": 5
+              },
+              "powerup_milliseconds": 4022793062,
+              "command_name": "WRITE FPDMA QUEUED"
+            },
+            {
+              "registers": {
+                "command": 97,
+                "features": 8,
+                "count": 32,
+                "lba": 588253640,
+                "device": 64,
+                "device_control": 4
+              },
+              "powerup_milliseconds": 4022793062,
+              "command_name": "WRITE FPDMA QUEUED"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "ata_smart_self_test_log": {
+    "extended": {
+      "revision": 1,
+      "sectors": 1,
+      "count": 0
+    }
+  },
+  "ata_device_statistics": {
+    "pages": [
+      {
+        "number": 1,
+        "name": "General Statistics",
+        "revision": 1,
+        "table": [
+          {
+            "offset": 8,
+            "name": "Lifetime Power-On Resets",
+            "size": 4,
+            "value": 24,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 16,
+            "name": "Power-on Hours",
+            "size": 4,
+            "value": 23172,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 24,
+            "name": "Logical Sectors Written",
+            "size": 6,
+            "value": 254187468066,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 32,
+            "name": "Number of Write Commands",
+            "size": 6,
+            "value": 6002809605,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 40,
+            "name": "Logical Sectors Read",
+            "size": 6,
+            "value": 254442929802,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 48,
+            "name": "Number of Read Commands",
+            "size": 6,
+            "value": 9408234256,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 56,
+            "name": "Date and Time TimeStamp",
+            "size": 6,
+            "value": 736000,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          }
+        ]
+      },
+      {
+        "number": 4,
+        "name": "General Errors Statistics",
+        "revision": 1,
+        "table": [
+          {
+            "offset": 8,
+            "name": "Number of Reported Uncorrectable Errors",
+            "size": 4,
+            "value": 6,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 16,
+            "name": "Resets Between Cmd Acceptance and Completion",
+            "size": 4,
+            "value": 0,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          }
+        ]
+      },
+      {
+        "number": 5,
+        "name": "Temperature Statistics",
+        "revision": 1,
+        "table": [
+          {
+            "offset": 8,
+            "name": "Current Temperature",
+            "size": 1,
+            "value": 41,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 32,
+            "name": "Highest Temperature",
+            "size": 1,
+            "value": 46,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 40,
+            "name": "Lowest Temperature",
+            "size": 1,
+            "value": 16,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 88,
+            "name": "Specified Maximum Operating Temperature",
+            "size": 1,
+            "value": 70,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          }
+        ]
+      },
+      {
+        "number": 6,
+        "name": "Transport Statistics",
+        "revision": 1,
+        "table": [
+          {
+            "offset": 8,
+            "name": "Number of Hardware Resets",
+            "size": 4,
+            "value": 63,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 16,
+            "name": "Number of ASR Events",
+            "size": 4,
+            "value": 0,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          },
+          {
+            "offset": 24,
+            "name": "Number of Interface CRC Errors",
+            "size": 4,
+            "value": 0,
+            "flags": {
+              "value": 192,
+              "string": "V--- ",
+              "valid": true,
+              "normalized": false,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          }
+        ]
+      },
+      {
+        "number": 7,
+        "name": "Solid State Device Statistics",
+        "revision": 1,
+        "table": [
+          {
+            "offset": 8,
+            "name": "Percentage Used Endurance Indicator",
+            "size": 1,
+            "value": 10,
+            "flags": {
+              "value": 224,
+              "string": "VN-- ",
+              "valid": true,
+              "normalized": true,
+              "supports_dsn": false,
+              "monitored_condition_met": false
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "power_cycle_count": 24,
+  "power_on_time": {
+    "hours": 23172
+  },
+  "temperature": {
+    "current": 41,
+    "lifetime_max": 46,
+    "lifetime_min": 16,
+    "op_limit_max": 70
+  },
+  "endurance_used": {
+    "current_percent": 10
+  },
+  "sata_phy_event_counters": {
+    "table": [
+      {
+        "id": 1,
+        "name": "Command failed due to ICRC error",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 2,
+        "name": "R_ERR response for data FIS",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 3,
+        "name": "R_ERR response for device-to-host data FIS",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 4,
+        "name": "R_ERR response for host-to-device data FIS",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 5,
+        "name": "R_ERR response for non-data FIS",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 6,
+        "name": "R_ERR response for device-to-host non-data FIS",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 7,
+        "name": "R_ERR response for host-to-device non-data FIS",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 8,
+        "name": "Device-to-host non-data FIS retries",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 9,
+        "name": "Transition from drive PhyRdy to drive PhyNRdy",
+        "size": 2,
+        "value": 2,
+        "overflow": false
+      },
+      {
+        "id": 10,
+        "name": "Device-to-host register FISes sent due to a COMRESET",
+        "size": 2,
+        "value": 2,
+        "overflow": false
+      },
+      {
+        "id": 11,
+        "name": "CRC errors within host-to-device FIS",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 13,
+        "name": "Non-CRC errors within host-to-device FIS",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 15,
+        "name": "R_ERR response for host-to-device data FIS, CRC",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 16,
+        "name": "R_ERR response for host-to-device data FIS, non-CRC",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 18,
+        "name": "R_ERR response for host-to-device non-data FIS, CRC",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      },
+      {
+        "id": 19,
+        "name": "R_ERR response for host-to-device non-data FIS, non-CRC",
+        "size": 2,
+        "value": 0,
+        "overflow": false
+      }
+    ],
+    "reset": false
+  },
+  "seagate_farm_log": {
+    "supported": false
+  }
+}

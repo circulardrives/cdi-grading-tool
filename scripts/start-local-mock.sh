@@ -25,7 +25,7 @@ Options:
   --mock-data             Run dashboard/API in mock-data mode (default)
   --real-data             Run dashboard/API against real device scan
   --mock-path PATH        Mock data directory (default: src/cdi_health/mock_data)
-  --skip-install          Skip pip/npm installs
+  --skip-install          Skip pip/bun installs
   --kill-existing         Kill existing listeners on API/dashboard ports
   -h, --help              Show this help
 

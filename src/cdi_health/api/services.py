@@ -240,14 +240,47 @@ def _supported_nvme_targets(device: str | None = None) -> list[dict[str, Any]]:
     return NVMeSelfTest.find_supported_devices()
 
 
-def _read_latest_selftest_result(handler: NVMeSelfTest) -> dict[str, bool]:
-    """Get latest pass/fail/abort state from self-test results."""
-    outcome = {"passed": False, "failed": False, "aborted": False}
+def _serialize_selftest_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one NVMe self-test log entry for API responses."""
+    result_code = entry.get("result")
+    type_code = entry.get("type")
+    return {
+        "result_code": result_code,
+        "result": entry.get("result_string") or NVMeSelfTest._result_to_string(result_code or 0),
+        "test_type_code": type_code,
+        "test_type": entry.get("type_string") or NVMeSelfTest._type_to_string(type_code or 0),
+        "completion_time": entry.get("completion_time", 0),
+    }
+
+
+def _read_selftest_outcome(handler: NVMeSelfTest) -> dict[str, Any]:
+    """Get pass/fail state and detailed self-test log data from nvme self-test-log."""
+    outcome: dict[str, Any] = {
+        "passed": False,
+        "failed": False,
+        "aborted": False,
+        "latest_result": None,
+        "recent_results": [],
+        "current_completion": None,
+        "current_operation": None,
+        "logs_message": None,
+    }
     try:
         results = handler.get_results()
+        current_op = results.get("current_self_test_operation", {})
+        op_value = current_op.get("value", 0)
+        outcome["current_completion"] = results.get("current_self_test_completion")
+        outcome["current_operation"] = current_op.get("string") or current_op.get("value")
+
         entries = results.get("entries", [])
         valid_entries = [e for e in entries if e.get("result") in (0, 1, 2) and e.get("type") in (1, 2)]
+        outcome["recent_results"] = [_serialize_selftest_entry(entry) for entry in valid_entries[:5]]
+
         if not valid_entries:
+            if op_value in (1, 2):
+                outcome["logs_message"] = "Self-test in progress; NVMe Log Page 0x06 entries appear after completion."
+            else:
+                outcome["logs_message"] = "No completed self-test entries in NVMe Log Page 0x06."
             return outcome
 
         latest = valid_entries[0]
@@ -258,7 +291,10 @@ def _read_latest_selftest_result(handler: NVMeSelfTest) -> dict[str, bool]:
             outcome["failed"] = True
         elif result == 2:
             outcome["aborted"] = True
-    except Exception:
+
+        outcome["latest_result"] = _serialize_selftest_entry(latest)
+    except Exception as exc:
+        outcome["logs_message"] = f"Could not read NVMe self-test log: {exc}"
         return outcome
     return outcome
 
@@ -346,7 +382,7 @@ def run_selftest_start(request: SelfTestStartRequest) -> dict[str, Any]:
 
                     result["completed"] = True
                     pending.discard(device_path)
-                    outcome = _read_latest_selftest_result(handler)
+                    outcome = _read_selftest_outcome(handler)
                     result.update(outcome)
                     last_test = handler.get_last_test_date()
                     if last_test:
@@ -409,7 +445,9 @@ def get_selftest_status(device: str | None = None) -> dict[str, Any]:
             current = handler.get_current_status()
             status_entry["status"] = current.get("status", "unknown")
             status_entry["in_progress"] = bool(current.get("in_progress", False))
-            status_entry.update(_read_latest_selftest_result(handler))
+            if status_entry["in_progress"]:
+                status_entry["progress_percent"] = current.get("percent")
+            status_entry.update(_read_selftest_outcome(handler))
             last_test = handler.get_last_test_date()
             if last_test:
                 status_entry["last_test_date"] = last_test.isoformat()

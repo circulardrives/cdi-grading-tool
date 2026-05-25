@@ -3,6 +3,8 @@ import {
   FileOutputIcon,
   HardDriveIcon,
   LayoutDashboardIcon,
+  RadarIcon,
+  ScanSearchIcon,
   ServerIcon,
   TestTubeDiagonalIcon,
 } from "lucide-react"
@@ -34,16 +36,28 @@ const navItems = [
     description: "Host readiness and fleet counts",
   },
   {
+    to: "/hosts",
+    label: "Hosts",
+    icon: ServerIcon,
+    description: "Fleet registry and active host context",
+  },
+  {
+    to: "/discover",
+    label: "Discover",
+    icon: RadarIcon,
+    description: "Find CDI APIs on your LAN",
+  },
+  {
+    to: "/scan",
+    label: "Scan",
+    icon: ScanSearchIcon,
+    description: "Run drive grading scans",
+  },
+  {
     to: "/drives",
     label: "Drive Health",
     icon: HardDriveIcon,
     description: "Simple and detailed drive tables",
-  },
-  {
-    to: "/machines",
-    label: "Hosts & Scans",
-    icon: ServerIcon,
-    description: "Register racks and run drive scans",
   },
   {
     to: "/reports",
@@ -67,13 +81,18 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="Circular Drive Initiative">
+            <SidebarMenuButton
+              size="lg"
+              asChild
+              tooltip="Circular Drive Initiative"
+              className="!h-auto min-h-[6.5rem] py-3 [&_svg]:!size-auto"
+            >
               <Link
                 to="/"
                 className="group-data-[collapsible=icon]:justify-center"
               >
-                <CdiLogoMark className="hidden group-data-[collapsible=icon]:block" />
-                <CdiLogo className="max-w-[180px] group-data-[collapsible=icon]:hidden" />
+                <CdiLogoMark className="hidden size-8 group-data-[collapsible=icon]:block" />
+                <CdiLogo className="max-h-[96px] group-data-[collapsible=icon]:hidden" />
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

@@ -115,7 +115,13 @@ def test_api_devices_returns_cached_scan(api_client: TestClient) -> None:
     refreshed = api_client.get("/api/v1/devices?refresh=true")
     assert refreshed.status_code == 200
     refreshed_body = refreshed.json()
-    assert refreshed_body["summary"]["total"] == 20
+
+    full_scan = api_client.post(
+        "/api/v1/scan",
+        json={"mock_data": str(MOCK_DATA_PATH)},
+    )
+    assert full_scan.status_code == 200
+    assert refreshed_body["summary"]["total"] == full_scan.json()["summary"]["total"]
 
 
 def test_api_scan_device_filter_nvme_alias(api_client: TestClient) -> None:
@@ -267,6 +273,24 @@ def test_api_selftest_job_lifecycle(api_client: TestClient) -> None:
     assert any(job["job_id"] == job_id for job in jobs.json())
 
 
+def test_api_selftest_status_includes_result_details(api_client: TestClient) -> None:
+    response = api_client.get("/api/v1/selftests/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert "devices" in body
+    assert isinstance(body["devices"], list)
+
+    for device in body["devices"]:
+        assert "latest_result" in device
+        assert "recent_results" in device
+        assert "logs_message" in device
+        assert isinstance(device["recent_results"], list)
+        if device.get("latest_result"):
+            assert "result_code" in device["latest_result"]
+            assert "result" in device["latest_result"]
+            assert "test_type" in device["latest_result"]
+
+
 def test_api_selftest_abort_requires_nvme_path(api_client: TestClient) -> None:
     response = api_client.post(
         "/api/v1/selftests/abort",
@@ -365,3 +389,131 @@ def test_api_machines_require_token(token_client: TestClient) -> None:
         headers={"X-API-Token": "test-token"},
     )
     assert allowed.status_code == 200
+
+
+def test_discovery_rejects_oversized_subnet(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/api/v1/discover",
+        json={"subnet": "10.0.0.0/8"},
+    )
+    assert response.status_code == 400
+    assert "too large" in response.json()["detail"].lower()
+
+
+def test_discovery_requires_token(token_client: TestClient) -> None:
+    denied = token_client.post("/api/v1/discover", json={"subnet": "192.168.0.0/24"})
+    assert denied.status_code == 401
+
+    allowed = token_client.post(
+        "/api/v1/discover",
+        json={"subnet": "192.168.0.0/24"},
+        headers={"X-API-Token": "test-token"},
+    )
+    assert allowed.status_code in {200, 400}
+
+
+def test_discovery_finds_mocked_api(api_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import discovery
+
+    def fake_is_port_open(ip: str, port: int, timeout_seconds: float) -> bool:
+        return ip == "192.168.0.1" and port == 8844
+
+    def fake_probe_cdi_health(
+        ip: str,
+        port: int,
+        *,
+        probe_token: str | None,
+        timeout_seconds: float,
+    ) -> dict:
+        if ip == "192.168.0.1":
+            return {"status": "ok", "is_root": True, "api_token_enabled": False}
+        return None
+
+    monkeypatch.setattr(discovery, "is_port_open", fake_is_port_open)
+    monkeypatch.setattr(discovery, "probe_cdi_health", fake_probe_cdi_health)
+    monkeypatch.setattr(discovery, "reverse_hostname", lambda ip: "grading-01.local")
+
+    response = api_client.post(
+        "/api/v1/discover",
+        json={"subnet": "192.168.0.0/30", "timeout_seconds": 0.5},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scanned_subnets"] == ["192.168.0.0/30"]
+    assert body["found"]
+    host = body["found"][0]
+    assert host["address"] == "192.168.0.1:8844"
+    assert host["hostname"] == "grading-01.local"
+    assert host["cdi_api"] is True
+    assert host["already_registered"] is False
+
+
+def test_discovery_marks_registered_hosts(api_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import discovery
+
+    created = api_client.post(
+        "/api/v1/machines",
+        json={
+            "name": "Existing Host",
+            "hostname": "192.168.1.1",
+            "address": "192.168.1.1:8844",
+        },
+    )
+    assert created.status_code == 200
+
+    monkeypatch.setattr(
+        discovery,
+        "is_port_open",
+        lambda ip, port, timeout_seconds: ip == "192.168.1.1",
+    )
+    monkeypatch.setattr(
+        discovery,
+        "probe_cdi_health",
+        lambda ip, port, *, probe_token, timeout_seconds: {"status": "ok", "is_root": True},
+    )
+
+    response = api_client.post(
+        "/api/v1/discover",
+        json={"subnet": "192.168.1.0/30", "timeout_seconds": 0.5},
+    )
+    assert response.status_code == 200
+    matches = [item for item in response.json()["found"] if item["ip"] == "192.168.1.1"]
+    assert matches
+    assert matches[0]["already_registered"] is True
+
+
+def test_discovery_rate_limited(api_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import discovery
+
+    monkeypatch.setattr(discovery, "resolve_subnets", lambda subnet, subnets: ["192.168.2.0/30"])
+    monkeypatch.setattr(discovery, "parse_subnet", discovery.parse_subnet)
+    monkeypatch.setattr(discovery, "is_port_open", lambda ip, port, timeout_seconds: False)
+
+    first = api_client.post(
+        "/api/v1/discover",
+        json={"subnet": "192.168.2.0/30", "timeout_seconds": 0.5},
+    )
+    assert first.status_code == 200
+
+    second = api_client.post(
+        "/api/v1/discover",
+        json={"subnet": "192.168.2.0/30", "timeout_seconds": 0.5},
+    )
+    assert second.status_code == 429
+
+
+def test_discovery_unit_helpers() -> None:
+    from cdi_health.api.discovery import (
+        is_already_registered,
+        iter_host_addresses,
+        parse_subnet,
+    )
+
+    network = parse_subnet("192.168.0.0/30")
+    hosts = iter_host_addresses(network)
+    assert "192.168.0.1" in hosts
+    assert "192.168.0.2" in hosts
+
+    machines = [{"address": "192.168.0.5:8844", "hostname": "rack-a"}]
+    assert is_already_registered("192.168.0.5", 8844, machines) is True
+    assert is_already_registered("192.168.0.6", 8844, machines) is False

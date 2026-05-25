@@ -159,3 +159,46 @@ class MachineResponse(BaseModel):
     last_scan_summary: MachineScanSummary | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class DiscoverRequest(BaseModel):
+    """LAN discovery scan parameters."""
+
+    subnet: str | None = Field(
+        default=None,
+        description="Single CIDR subnet to scan, e.g. 192.168.0.0/24.",
+    )
+    subnets: list[str] | None = Field(
+        default=None,
+        description="Optional list of CIDR subnets (max 4).",
+    )
+    port: int = Field(default=8844, ge=1, le=65535, description="CDI API port to probe.")
+    timeout_seconds: float = Field(
+        default=1.5,
+        ge=0.5,
+        le=5.0,
+        description="Per-host TCP/HTTP timeout in seconds.",
+    )
+    probe_token: str | None = Field(
+        default=None,
+        description="Optional X-API-Token sent when probing remote CDI APIs.",
+    )
+
+
+class DiscoveredHost(BaseModel):
+    address: str
+    ip: str
+    port: int
+    hostname: str | None = None
+    health: dict[str, Any] | None = None
+    cdi_api: bool = False
+    already_registered: bool = False
+
+
+class DiscoverResponse(BaseModel):
+    scanned_subnets: list[str]
+    port: int
+    hosts_scanned: int
+    open_ports: int
+    found: list[DiscoveredHost]
+    duration_ms: int

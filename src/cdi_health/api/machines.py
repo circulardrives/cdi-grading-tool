@@ -91,10 +91,13 @@ class MachineStore:
 
     def list_machines(self) -> list[dict[str, Any]]:
         with self.lock:
-            return [dict(entry) for entry in sorted(
-                self._machines.values(),
-                key=lambda item: item.get("name", "").lower(),
-            )]
+            return [
+                dict(entry)
+                for entry in sorted(
+                    self._machines.values(),
+                    key=lambda item: item.get("name", "").lower(),
+                )
+            ]
 
     def get_machine(self, machine_id: str) -> dict[str, Any] | None:
         with self.lock:

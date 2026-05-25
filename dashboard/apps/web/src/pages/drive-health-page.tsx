@@ -111,7 +111,7 @@ export function DriveHealthPage() {
 
   const runScan = async () => {
     if (!selectedHostId) {
-      toast.error("Select a host on Hosts & Scans before running a scan")
+      toast.error("Select a host on the Hosts page before running a scan")
       return
     }
 
@@ -200,10 +200,10 @@ export function DriveHealthPage() {
           <AlertDescription className="flex flex-col gap-2">
             <span>
               Drive scans are associated with a registered host. Choose one here or register hosts
-              on the Hosts & Scans page.
+              on the Hosts page.
             </span>
             <Button variant="outline" className="w-fit" asChild>
-              <Link to="/machines">Open Hosts & Scans</Link>
+              <Link to="/hosts">Open Hosts</Link>
             </Button>
           </AlertDescription>
         </Alert>
@@ -271,8 +271,8 @@ export function DriveHealthPage() {
                 </EmptyMedia>
                 <EmptyTitle>No drives graded yet</EmptyTitle>
                 <EmptyDescription>
-                  Run a scan for the selected host from this page or from Hosts & Scans to inventory
-                  attached SATA, SAS, and NVMe drives.
+                  Run a scan for the selected host from this page or from Scan to inventory attached
+                  SATA, SAS, and NVMe drives.
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="flex flex-wrap gap-2">
@@ -281,7 +281,7 @@ export function DriveHealthPage() {
                   Run scan
                 </Button>
                 <Button variant="outline" asChild>
-                  <Link to="/machines">Open Hosts & Scans</Link>
+                  <Link to="/scan">Open Scan</Link>
                 </Button>
               </EmptyContent>
             </Empty>

@@ -11,7 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Dashboard**: Technician console rebuilt as a Vite + React monorepo (Turborepo/bun) with shadcn/ui, replacing the Next.js app.
+- **Dashboard navigation**: Fleet Status, **Hosts**, **Discover**, **Scan**, Drive Health, Health Reports, and NVMe Self-Test as separate pages (replaces the combined Machines view).
 - **Machines API**: REST endpoints to register grading hosts and track reachability and scan status.
+- **LAN Discovery API**: `GET`/`POST /api/v1/discover` scans private IPv4 subnets for listening CDI Health APIs (TCP probe + health check, rate-limited).
+- **Self-test log API**: `GET /api/v1/selftests/status` returns NVMe Log Page 0x06 entries (`recent_results`, progress, completion) alongside live status.
+- **Self-test dashboard UI**: Expanded NVMe Self-Test page with log history, progress, and pass/fail details.
+- **h12-rome mock fixtures**: Real-world bad-drive scan and SMART fixtures for API/dashboard testing.
 
 - **NVMe Self-Test Support**: New `selftest` command for running and monitoring NVMe device self-tests
   - Automatically detects devices that support self-test
@@ -31,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Debian/RPM packages declare `smartmontools` and `nvme-cli` as dependencies, recommend openSeaChest, and run a post-install helper for host tooling.
 - CI builds the dashboard with bun and Turborepo.
+- README, DEVELOPMENT.md, DASHBOARD_API.md, and TECHNICIAN_DEPLOYMENT.md updated for the Vite dashboard, LAN discovery, and remote-host dev workflow.
+- systemd dashboard unit (`cdi-health-dashboard.service`) runs `bun run start` instead of npm.
 
 - Improved terminal output formatting for better readability on any console size
 - Self-test command now detects and displays existing test results instead of always starting new tests

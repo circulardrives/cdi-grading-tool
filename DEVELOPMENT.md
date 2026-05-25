@@ -27,7 +27,19 @@ This guide provides information for developers working on CDI Health.
 
 ## Testing
 
-Continuous integration is defined in **`.github/workflows/ci.yml`** (pytest matrix, pre-commit, dashboard `npm run build`, wheel smoke, license headers). Install **`pip install -e '.[dev,api]'`** locally so FastAPI tests (`tests/test_api.py`) collect.
+Continuous integration is defined in **`.github/workflows/ci.yml`** (pytest matrix, pre-commit, dashboard `bun run build`, wheel smoke, license headers). Install **`pip install -e '.[dev,api]'`** locally so FastAPI tests (`tests/test_api.py`) collect.
+
+### Dashboard (frontend)
+
+The technician UI is a Vite + React monorepo under `dashboard/` (bun + Turborepo). From repo root:
+
+```bash
+./scripts/start-local-mock.sh          # API + dashboard with mock data
+# or manually:
+cd dashboard && bun install && bun run dev
+```
+
+See [dashboard/README.md](dashboard/README.md) and [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md).
 
 ### Running Tests
 ```bash

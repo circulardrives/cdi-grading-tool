@@ -241,7 +241,56 @@ sudo cdi-health-api --host 127.0.0.1 --port 8844
 
 Optional: `--api-token …` and header `X-API-Token`. Endpoints include `/api/v1/scan`, `/api/v1/devices`, `/api/v1/reports`, `/api/v1/selftests`, `/api/v1/jobs`. See [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md).
 
-A Next.js dashboard scaffold lives under `dashboard/` (`npm install && npm run dev`).
+---
+
+## Technician dashboard
+
+Browser-based **grading console** for bench technicians: **Fleet Status**, **Hosts**, **Discover**, **Scan**, **Drive Health**, **Health Reports**, and **NVMe Self-Test**. Source lives in `dashboard/` (Vite + React + shadcn/ui monorepo, managed with **bun**).
+
+The dashboard is **separate from the `.deb` package** — the release install provides `cdi-health` and optional `cdi-health-api` on grading hosts; run the UI from a workstation or deploy it alongside the API (see [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)).
+
+**Prerequisites:** [bun](https://bun.sh) 1.3+
+
+**All-in-one mock (no hardware):**
+
+```shell
+./scripts/start-local-mock.sh
+```
+
+Opens API + dashboard with mock fixtures at http://127.0.0.1:3000 (API on `:8844`).
+
+**Manual local dev:**
+
+```shell
+cd dashboard
+cp apps/web/.env.example apps/web/.env.local
+bun install
+bun run dev
+```
+
+Start `cdi-health-api` separately (or use the mock launcher above). Set `VITE_CDI_USE_MOCK_DATA=0` in `.env.local` for live device scans.
+
+**Remote grading host** (laptop UI → host API):
+
+```shell
+cd dashboard
+cp apps/web/.env.example apps/web/.env.local
+# edit apps/web/.env.local, for example:
+#   VITE_CDI_API_PROXY_TARGET=http://192.168.0.54:8844
+#   VITE_CDI_USE_MOCK_DATA=0
+#   VITE_CDI_API_TOKEN=<token if API auth is enabled>
+#   VITE_CDI_DISCOVER_SUBNET=192.168.0.0/24   # cross-subnet LAN discovery
+bun install && bun run dev
+```
+
+**Production build:**
+
+```shell
+cd dashboard && bun install && bun run build
+bun run start   # serves built assets (default http://127.0.0.1:3000)
+```
+
+API reference: [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md). Systemd and sudoers: [docs/TECHNICIAN_DEPLOYMENT.md](docs/TECHNICIAN_DEPLOYMENT.md). More detail: [dashboard/README.md](dashboard/README.md).
 
 ---
 
@@ -253,6 +302,7 @@ A Next.js dashboard scaffold lives under `dashboard/` (`npm install && npm run d
 | **[CDI Health Specification](docs/CDI_HEALTH_SPEC.md)**                                                      | Main health spec organized by SATA HDD, SAS HDD, SATA SSD, SAS SSD, and NVMe SSD; includes scoring, hard fail-gates, thresholds, telemetry-only fields, certification, reports, and diagnostic workflow guidance |
 | **[Datacenter NVMe SSD Specification v2.7](docs/Datacenter%20NVMe%20SSD%20Specification%20v2.7%20Final.md)** | Local copy; authoritative **[OCP PDF](https://www.opencompute.org/documents/datacenter-nvme-ssd-specification-v2-7-final-pdf-1)**                                                                                |
 | **[Development](DEVELOPMENT.md)**                                                                            | Style, tests, workflow                                                                                                                                                                                           |
+| **[Dashboard API](docs/DASHBOARD_API.md)**                                                                     | REST endpoints for the technician UI                                                                                                                                                                             |
 | **[Testing](README_TESTING.md)**                                                                             | Mock data and test commands                                                                                                                                                                                      |
 | **[Contributing](CONTRIBUTING.md)**                                                                          | Contributions                                                                                                                                                                                                    |
 | **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)**                                                   | `.deb` vs git install, systemd, dashboard, sudoers                                                                                                                                                               |

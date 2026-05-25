@@ -30,7 +30,10 @@ FROM_POSTINST=0
 
 log() { printf '==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
-die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
 
 usage() {
   cat <<'EOF'
@@ -63,13 +66,16 @@ require_root() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --with-sas) WITH_SAS=1 ;;
-      --with-pdf) WITH_PDF=1 ;;
-      --latest-openseachest) FORCE_LATEST_OPENSEACHEST=1 ;;
-      --build-nvme-cli) FORCE_NVME_BUILD=1 ;;
-      --from-postinst) FROM_POSTINST=1 ;;
-      -h|--help) usage; exit 0 ;;
-      *) die "Unknown option: $1 (try --help)" ;;
+    --with-sas) WITH_SAS=1 ;;
+    --with-pdf) WITH_PDF=1 ;;
+    --latest-openseachest) FORCE_LATEST_OPENSEACHEST=1 ;;
+    --build-nvme-cli) FORCE_NVME_BUILD=1 ;;
+    --from-postinst) FROM_POSTINST=1 ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *) die "Unknown option: $1 (try --help)" ;;
     esac
     shift
   done
@@ -147,12 +153,12 @@ detect_arch_portable() {
   local machine
   machine="$(uname -m)"
   case "$machine" in
-    x86_64|amd64) echo "linux-x86_64-portable" ;;
-    aarch64|arm64) echo "linux-aarch64-portable" ;;
-    armv7l|armhf) echo "linux-armv7l-portable" ;;
-    i686|i386) echo "linux-i686-portable" ;;
-    ppc64le) echo "linux-powerpc64le-portable" ;;
-    *) die "Unsupported architecture for Seagate portable OpenSeaChest: ${machine}" ;;
+  x86_64 | amd64) echo "linux-x86_64-portable" ;;
+  aarch64 | arm64) echo "linux-aarch64-portable" ;;
+  armv7l | armhf) echo "linux-armv7l-portable" ;;
+  i686 | i386) echo "linux-i686-portable" ;;
+  ppc64le) echo "linux-powerpc64le-portable" ;;
+  *) die "Unsupported architecture for Seagate portable OpenSeaChest: ${machine}" ;;
   esac
 }
 
@@ -205,8 +211,8 @@ install_openseachest_from_seagate() {
     mkdir -p "${tmpdir}/extract"
     tar -xJf "${tmpdir}/osc.tar.xz" -C "${tmpdir}/extract"
     install -d "${INSTALL_DIR}"
-    find "${tmpdir}/extract" -maxdepth 3 -type f -name 'openSeaChest_*' -executable -print0 \
-      | while IFS= read -r -d '' bin; do install -m 0755 "$bin" "${INSTALL_DIR}/$(basename "$bin")"; done
+    find "${tmpdir}/extract" -maxdepth 3 -type f -name 'openSeaChest_*' -executable -print0 |
+      while IFS= read -r -d '' bin; do install -m 0755 "$bin" "${INSTALL_DIR}/$(basename "$bin")"; done
     log "Installed OpenSeaChest ${tag} portable binaries to ${INSTALL_DIR}"
     return
   else
@@ -215,11 +221,11 @@ install_openseachest_from_seagate() {
 
   unzip -q "${tmpdir}/osc.zip" -d "${tmpdir}/extract"
   install -d "${INSTALL_DIR}"
-  find "${tmpdir}/extract" -maxdepth 3 -type f -name 'openSeaChest_*' -print0 \
-    | while IFS= read -r -d '' bin; do
-        [[ -x "$bin" || -f "$bin" ]] || continue
-        install -m 0755 "$bin" "${INSTALL_DIR}/$(basename "$bin")"
-      done
+  find "${tmpdir}/extract" -maxdepth 3 -type f -name 'openSeaChest_*' -print0 |
+    while IFS= read -r -d '' bin; do
+      [[ -x "$bin" || -f "$bin" ]] || continue
+      install -m 0755 "$bin" "${INSTALL_DIR}/$(basename "$bin")"
+    done
   log "Installed OpenSeaChest ${tag} portable binaries to ${INSTALL_DIR}"
 }
 

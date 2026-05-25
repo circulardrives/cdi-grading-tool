@@ -41,7 +41,7 @@ export function CdiLogo({ className, ...props }: CdiLogoProps) {
       aria-label="Circular Drive Initiative logo"
       xmlns="http://www.w3.org/2000/svg"
       viewBox={LOGO_VIEWBOX}
-      className={cn("block h-auto w-full", className)}
+      className={cn("block h-auto w-full max-w-[240px]", className)}
       {...props}
     >
       <GreenArcs />
@@ -58,7 +58,7 @@ export function CdiLogoMark({ className, ...props }: CdiLogoProps) {
       aria-label="Circular Drive Initiative"
       xmlns="http://www.w3.org/2000/svg"
       viewBox={MARK_VIEWBOX}
-      className={cn("block size-8 shrink-0", className)}
+      className={cn("block size-9 shrink-0", className)}
       {...props}
     >
       <GreenArcs />

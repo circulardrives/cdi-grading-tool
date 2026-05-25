@@ -2,8 +2,8 @@
 
 This guide covers two common setups:
 
-1. **`.deb` package** — fastest way to get `cdi-health` and `cdi-health-api` on Debian/Ubuntu (see [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases)).
-2. **Git clone + Python venv** — use when you need the **Next.js dashboard** from this repository or a matching editable install.
+1. **`.deb` package** — fastest way to get `cdi-health` and `cdi-health-api` on Debian/Ubuntu (see [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases)). Does **not** include the web dashboard.
+2. **Git clone + Python venv** — use when you need the **technician dashboard** (Vite + bun monorepo in `dashboard/`) or a matching editable API install.
 
 Both expect **Linux** with access to storage tooling (see below).
 
@@ -49,7 +49,7 @@ Layout:
 
 Systemd unit **`cdi-health-api.service`** may be installed under `/usr/lib/systemd/system/`; enable it if you want the API on boot (see below).
 
-For **dashboard + API** together, you can pair this CLI/API install with a **separate** dashboard build (Option B dashboard steps) or run API only and point the UI at `127.0.0.1:8844`.
+For **dashboard + API** together, pair this CLI/API install with a **separate** dashboard build (Option B dashboard steps), run `./scripts/start-local-mock.sh` from a dev clone, or run API only and point a workstation UI at the host’s `:8844` endpoint.
 
 ---
 
@@ -75,12 +75,18 @@ Ensure **smartmontools**, **nvme-cli**, and (if needed) **sg3-utils** are instal
 
 ## Install Dashboard (from git tree)
 
+Requires [bun](https://bun.sh) on the machine serving the UI.
+
 ```bash
 cd /opt/cdi-grading-tool/dashboard
-cp .env.example .env.local
-npm install
-npm run build
+cp apps/web/.env.example apps/web/.env.local
+# Set VITE_CDI_API_PROXY_TARGET to your API (e.g. http://127.0.0.1:8844)
+# and VITE_CDI_USE_MOCK_DATA=0 for live scans before building.
+bun install
+bun run build
 ```
+
+Local dev without systemd: `bun run dev` → http://127.0.0.1:3000. All-in-one mock from repo root: `./scripts/start-local-mock.sh`.
 
 ## Install systemd Services
 

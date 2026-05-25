@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 
@@ -26,9 +27,12 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from cdi_health.api.discovery import DISCOVER_COOLDOWN_SECONDS, DiscoveryError, discover_hosts
 from cdi_health.api.jobs import JobStore
 from cdi_health.api.machines import MachineStore
 from cdi_health.api.schemas import (
+    DiscoverRequest,
+    DiscoverResponse,
     HealthResponse,
     JobResponse,
     MachineCreate,
@@ -71,6 +75,7 @@ class ApiState:
         self.latest_scan: dict | None = None
         self.report_paths: set[str] = set()
         self.lock = Lock()
+        self.last_discover_at: float | None = None
 
 
 def create_app() -> FastAPI:
@@ -210,6 +215,57 @@ def create_app() -> FastAPI:
         if not deleted:
             raise HTTPException(status_code=404, detail="Machine not found")
         return {"deleted": True}
+
+    def _run_discovery(request: DiscoverRequest) -> DiscoverResponse:
+        runtime = app.state.runtime
+        now = time.monotonic()
+        with runtime.lock:
+            if runtime.last_discover_at is not None:
+                elapsed = now - runtime.last_discover_at
+                if elapsed < DISCOVER_COOLDOWN_SECONDS:
+                    retry_after = int(DISCOVER_COOLDOWN_SECONDS - elapsed) + 1
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Discovery rate limit exceeded. Retry in {retry_after}s.",
+                    )
+            runtime.last_discover_at = now
+
+        machines = runtime.machine_store.list_machines()
+        try:
+            result = discover_hosts(
+                subnet=request.subnet,
+                subnets=request.subnets,
+                port=request.port,
+                timeout_seconds=request.timeout_seconds,
+                probe_token=request.probe_token,
+                registered_machines=machines,
+            )
+        except DiscoveryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return DiscoverResponse.model_validate(result)
+
+    @app.get("/api/v1/discover", response_model=DiscoverResponse)
+    def discover_get(
+        subnet: str | None = None,
+        port: int = 8844,
+        timeout_seconds: float = 1.5,
+        _: None = Depends(verify_api_token),
+    ) -> DiscoverResponse:
+        return _run_discovery(
+            DiscoverRequest(
+                subnet=subnet,
+                port=port,
+                timeout_seconds=timeout_seconds,
+            )
+        )
+
+    @app.post("/api/v1/discover", response_model=DiscoverResponse)
+    def discover_post(
+        request: DiscoverRequest,
+        _: None = Depends(verify_api_token),
+    ) -> DiscoverResponse:
+        return _run_discovery(request)
 
     @app.post("/api/v1/selftests", response_model=JobResponse)
     def start_selftests(request: SelfTestStartRequest, _: None = Depends(verify_api_token)) -> JobResponse:

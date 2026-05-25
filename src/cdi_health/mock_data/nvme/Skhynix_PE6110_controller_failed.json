@@ -1,0 +1,51 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      5
+    ],
+    "pre_release": false,
+    "svn_revision": "5714",
+    "platform_info": "x86_64-linux-7.0.0-15-generic",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--xall",
+      "--json=ov",
+      "/dev/nvme0"
+    ],
+    "output": [
+      "smartctl 7.5 2025-04-30 r5714 [x86_64-linux-7.0.0-15-generic] (local build)",
+      "Copyright (C) 2002-25, Bruce Allen, Christian Franke, www.smartmontools.org",
+      "",
+      "Smartctl open device: /dev/nvme0 failed: Resource temporarily unavailable"
+    ],
+    "messages": [
+      {
+        "string": "Smartctl open device: /dev/nvme0 failed: Resource temporarily unavailable",
+        "severity": "error"
+      }
+    ],
+    "exit_status": 2
+  },
+  "local_time": {
+    "time_t": 1706400000,
+    "asctime": "Mon Jan 28 00:00:00 2026 UTC"
+  },
+  "device": {
+    "name": "/dev/nvme0",
+    "info_name": "/dev/nvme0",
+    "type": "nvme",
+    "protocol": "NVMe"
+  },
+  "model_name": "Skhynix PE6110 NVMe 1TB",
+  "serial_number": "SN_IS_0x0100_SANITIZED",
+  "user_capacity": {
+    "blocks": 0,
+    "bytes": 0
+  }
+}
