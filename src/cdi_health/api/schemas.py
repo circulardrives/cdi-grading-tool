@@ -35,6 +35,10 @@ class ScanRequest(BaseModel):
     config: str | None = None
     mock_data: str | None = None
     mock_file: str | None = None
+    machine_id: str | None = Field(
+        default=None,
+        description="Optional host registry ID to associate this scan with.",
+    )
 
 
 class ScanSummary(BaseModel):
@@ -67,6 +71,7 @@ class ReportRequest(BaseModel):
 class ReportResponse(BaseModel):
     generated_at: datetime
     output_file: str
+    filename: str
     format: Literal["html", "pdf", "csv"]
     devices_count: int
 
@@ -94,6 +99,7 @@ class HealthResponse(BaseModel):
     allow_non_root_mode: bool
     api_token_enabled: bool
     missing_required_tools: list[str]
+    weasyprint_available: bool
     message: str | None = None
 
 
@@ -108,3 +114,48 @@ class JobResponse(BaseModel):
     completed_at: datetime | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+
+
+class MachineScanSummary(BaseModel):
+    total: int
+    healthy: int
+    warning: int
+    failed: int
+
+
+class MachineCreate(BaseModel):
+    """Register a grading host in the fleet registry."""
+
+    name: str = Field(min_length=1, description="Display name shown in the dashboard.")
+    hostname: str = Field(min_length=1, description="Host identifier, e.g. grading-01.local")
+    address: str = Field(
+        default="",
+        description="Optional IP or host:port for a remote CDI API agent (future).",
+    )
+    location: str = Field(default="", description="Optional rack or data-center location label.")
+    notes: str = ""
+
+
+class MachineUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    hostname: str | None = Field(default=None, min_length=1)
+    address: str | None = None
+    location: str | None = None
+    notes: str | None = None
+    status: Literal["unknown", "reachable", "unreachable"] | None = None
+
+
+class MachineResponse(BaseModel):
+    id: str
+    name: str
+    hostname: str
+    address: str
+    location: str
+    notes: str
+    status: Literal["unknown", "reachable", "unreachable"]
+    last_seen_at: datetime | None = None
+    last_scan_at: datetime | None = None
+    last_scan_status: Literal["success", "failed"] | None = None
+    last_scan_summary: MachineScanSummary | None = None
+    created_at: datetime
+    updated_at: datetime

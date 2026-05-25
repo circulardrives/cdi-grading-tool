@@ -19,22 +19,84 @@
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+ALLOWED_REPORT_EXTENSIONS = {".html", ".pdf", ".csv"}
 
 from cdi_health.api.schemas import ReportRequest, ScanRequest, SelfTestStartRequest
 from cdi_health.classes.config import configure_thresholds
 from cdi_health.classes.nvme_selftest import NVMeSelfTest
 from cdi_health.classes.reporter import ReportGenerator
 from cdi_health.classes.scoring import HealthScoreCalculator
-from cdi_health.cli import check_prerequisites, scan_devices_mock, scan_devices_real, scan_single_mock
+from cdi_health.cli import (
+    _filter_devices_by_path,
+    check_prerequisites,
+    scan_devices_mock,
+    scan_devices_real,
+    scan_single_mock,
+)
+
+DEFAULT_MOCK_DATA_ENV = "CDI_HEALTH_API_MOCK_DATA"
 
 
 def utc_now() -> datetime:
     """Return timezone-aware UTC timestamp."""
     return datetime.now(timezone.utc)
+
+
+def weasyprint_available() -> bool:
+    """Return True when PDF generation dependency is importable."""
+    try:
+        import weasyprint  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def validate_report_filename(filename: str) -> None:
+    """Reject unsafe or unsupported report download filenames."""
+    if not filename or filename != Path(filename).name:
+        raise ValueError("Invalid report filename")
+    if ".." in filename or filename.startswith("."):
+        raise ValueError("Invalid report filename")
+    if Path(filename).suffix.lower() not in ALLOWED_REPORT_EXTENSIONS:
+        raise ValueError("Unsupported report format")
+
+
+def resolve_report_file(filename: str, registered_paths: set[str] | None = None) -> Path:
+    """Resolve a report filename to an on-disk path using a safe lookup policy."""
+    validate_report_filename(filename)
+    candidates: list[Path] = [Path.cwd() / "reports" / filename]
+
+    if registered_paths:
+        for path_str in registered_paths:
+            candidate = Path(path_str)
+            if candidate.name == filename:
+                candidates.append(candidate)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        resolved_key = str(candidate.resolve())
+        if resolved_key in seen:
+            continue
+        seen.add(resolved_key)
+        if candidate.is_file():
+            return candidate.resolve()
+
+    raise FileNotFoundError(f"Report not found: {filename}")
+
+
+def media_type_for_report(filename: str) -> str:
+    """Return the HTTP media type for a generated report filename."""
+    return {
+        ".html": "text/html; charset=utf-8",
+        ".pdf": "application/pdf",
+        ".csv": "text/csv; charset=utf-8",
+    }.get(Path(filename).suffix.lower(), "application/octet-stream")
 
 
 def _serialize(value: Any) -> Any:
@@ -63,6 +125,38 @@ def _decode(value: bytes | str | None) -> str:
     return value.strip()
 
 
+def resolve_data_path(path: str) -> str:
+    """Resolve mock/config paths relative to cwd or repository root."""
+    candidate = Path(path).expanduser()
+    if candidate.exists():
+        return str(candidate.resolve())
+
+    repo_root = Path(__file__).resolve().parents[3]
+    repo_relative = repo_root / path
+    if repo_relative.exists():
+        return str(repo_relative.resolve())
+
+    return str(candidate)
+
+
+def apply_scan_defaults(request: ScanRequest) -> ScanRequest:
+    """Apply server default mock data and normalize relative mock paths."""
+    updates: dict[str, str] = {}
+    if request.mock_data:
+        updates["mock_data"] = resolve_data_path(request.mock_data)
+    if request.mock_file:
+        updates["mock_file"] = resolve_data_path(request.mock_file)
+
+    if not request.mock_data and not request.mock_file:
+        default_mock = os.getenv(DEFAULT_MOCK_DATA_ENV)
+        if default_mock:
+            updates["mock_data"] = resolve_data_path(default_mock)
+
+    if not updates:
+        return request
+    return request.model_copy(update=updates)
+
+
 def _enrich_devices_with_scores(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Attach health scoring fields to device dictionaries."""
     calculator = HealthScoreCalculator()
@@ -71,14 +165,17 @@ def _enrich_devices_with_scores(devices: list[dict[str, Any]]) -> list[dict[str,
         score = calculator.calculate(device)
         payload = dict(device)
         payload.update(score.to_dict())
+        payload["report_category"] = ReportGenerator._device_report_category(payload)
         enriched.append(_serialize(payload))
     return enriched
 
 
 def run_scan(request: ScanRequest) -> dict[str, Any]:
     """Execute a device scan and return structured JSON data."""
+    request = apply_scan_defaults(request)
+
     if request.config:
-        configure_thresholds(request.config)
+        configure_thresholds(resolve_data_path(request.config))
 
     mock_mode = bool(request.mock_data or request.mock_file)
     if mock_mode:
@@ -109,7 +206,7 @@ def run_scan(request: ScanRequest) -> dict[str, Any]:
         )
 
     if request.device:
-        devices = [d for d in devices if d.get("dut") == request.device]
+        devices = _filter_devices_by_path(devices, request.device)
 
     enriched = _enrich_devices_with_scores(devices)
     healthy = sum(1 for d in enriched if d.get("health_score", 0) >= 75)
@@ -370,9 +467,11 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
     else:
         reporter.generate_pdf(devices, str(output_path))
 
+    resolved_path = output_path.resolve()
     return {
         "generated_at": utc_now().isoformat(),
-        "output_file": str(output_path.resolve()),
+        "output_file": str(resolved_path),
+        "filename": resolved_path.name,
         "format": request.format,
         "devices_count": len(devices),
     }

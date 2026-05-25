@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-24
+
 ### Added
+- **Dashboard**: Technician console rebuilt as a Vite + React monorepo (Turborepo/bun) with shadcn/ui, replacing the Next.js app.
+- **Machines API**: REST endpoints to register grading hosts and track reachability and scan status.
+
 - **NVMe Self-Test Support**: New `selftest` command for running and monitoring NVMe device self-tests
   - Automatically detects devices that support self-test
   - Runs short tests by default (completes in ~2 minutes)
@@ -24,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prevents certification of drives with failed self-tests
 
 ### Changed
+- Debian/RPM packages declare `smartmontools` and `nvme-cli` as dependencies, recommend openSeaChest, and run a post-install helper for host tooling.
+- CI builds the dashboard with bun and Turborepo.
+
 - Improved terminal output formatting for better readability on any console size
 - Self-test command now detects and displays existing test results instead of always starting new tests
 - Enhanced error handling for self-test operations
@@ -38,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed release packaging so `.deb` and `.rpm` package versions come from the pushed git tag.
 - Accounted for nFPM's normalized SemVer package filenames, e.g. tag `v0.9` produces OS packages named `0.9.0`.
 
+### Removed
+- **Watch command**: Continuous monitoring mode removed from CLI and examples (use periodic `scan`/`report` or the REST API instead).
+
 ### Technical Details
 - Self-test implementation follows NVMe Base Specification 2.3
 - Uses `nvme-cli` for self-test operations
@@ -46,7 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Features
 - **Scan Command**: Comprehensive device health scanning with detailed table output
 - **Report Command**: Generate detailed HTML or PDF health reports
-- **Watch Command**: Continuous monitoring of device health with configurable intervals
 - **Self-Test Command**: Run and monitor NVMe device self-tests
 - **Multiple Output Formats**: Table (default), JSON, CSV, YAML
 - **Health Scoring**: 0-100 score with letter grades (A-F)
@@ -69,5 +79,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Report generation
 - Watch/monitoring mode
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.8...v0.9.0
 [1.0.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v1.0.0

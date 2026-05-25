@@ -118,16 +118,6 @@ cdi-health report --format pdf --mock-data src/cdi_health/mock_data
 cdi-health report --format html --output-file my_report.html --mock-data src/cdi_health/mock_data
 ```
 
-## Testing Watch Mode
-
-```bash
-# Monitor every 60 seconds (default)
-cdi-health watch --mock-data src/cdi_health/mock_data
-
-# Monitor every 30 seconds
-cdi-health watch --interval 30 --mock-data src/cdi_health/mock_data
-```
-
 ## Testing Terminal Width Adaptation
 
 Test how the output adapts to different terminal sizes:
@@ -149,7 +139,6 @@ COLUMNS=150 cdi-health selftest
 ```bash
 cdi-health scan --mock-data src/cdi_health/mock_data
 cdi-health report --format html --mock-data src/cdi_health/mock_data
-cdi-health watch --interval 5 --mock-data src/cdi_health/mock_data
 ```
 
 ### 2. Test Protocol Filtering

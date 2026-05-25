@@ -22,6 +22,9 @@ from __future__ import annotations
 import argparse
 import os
 
+from cdi_health.api.machines import DEFAULT_DATA_DIR_ENV
+from cdi_health.api.services import DEFAULT_MOCK_DATA_ENV
+
 ALLOW_NON_ROOT_ENV = "CDI_HEALTH_API_ALLOW_NON_ROOT"
 API_TOKEN_ENV = "CDI_HEALTH_API_TOKEN"
 
@@ -45,6 +48,16 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="TOKEN",
         help="Optional static API token (sent by client via X-API-Token header)",
     )
+    parser.add_argument(
+        "--mock-data",
+        metavar="PATH",
+        help="Default mock data directory when scan/report requests omit mock_data",
+    )
+    parser.add_argument(
+        "--data-dir",
+        metavar="PATH",
+        help="Persistent data directory for host registry and scan snapshots",
+    )
     return parser
 
 
@@ -57,6 +70,10 @@ def main() -> int:
         os.environ[ALLOW_NON_ROOT_ENV] = "1"
     if args.api_token:
         os.environ[API_TOKEN_ENV] = args.api_token
+    if args.mock_data:
+        os.environ[DEFAULT_MOCK_DATA_ENV] = args.mock_data
+    if args.data_dir:
+        os.environ[DEFAULT_DATA_DIR_ENV] = args.data_dir
 
     try:
         import uvicorn

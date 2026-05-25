@@ -104,7 +104,6 @@ src/cdi_health/
 │   ├── selftest_formatter.py # Self-test result formatting
 │   ├── tools.py            # External tool integration
 │   ├── validation.py       # Data validation
-│   └── watch.py            # Watch/monitoring mode
 ├── config/
 │   └── thresholds.yaml     # Default thresholds
 └── mock_data/              # Mock device data for testing

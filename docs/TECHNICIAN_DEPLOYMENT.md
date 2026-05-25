@@ -28,12 +28,18 @@ Use `sudo cdi-health scan` if your user cannot read SMART / NVMe log pages on th
 
 ## Option A — Install from `.deb`
 
+The package declares **Depends** on `python3`, `smartmontools`, and `nvme-cli`, and **Recommends** `openseachest` (OpenSeaChest). Prefer apt so dependencies install in one step:
+
 ```bash
-sudo dpkg -i cdi-health_*_all.deb
-sudo apt-get install -f    # satisfy recommends/suggests if dpkg reported gaps
+sudo apt update
+sudo apt install ./cdi-health_*_all.deb
 cdi-health --version
-cdi-health scan            # or: sudo cdi-health scan
+sudo cdi-health scan
 ```
+
+On **Ubuntu 24.04+** and **Debian Trixie+**, `openseachest` is pulled from apt automatically (Ubuntu: enable **universe**). On **Ubuntu 22.04** or **Debian Bookworm**, run `sudo ./scripts/install-host-dependencies.sh` first if OpenSeaChest is not in your apt sources.
+
+For SAS/SCSI: `sudo apt install sg3-utils` (also suggested by the package).
 
 Layout:
 

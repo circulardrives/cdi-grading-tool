@@ -117,6 +117,28 @@ def test_format_ocp_smart_value_hi_lo() -> None:
     assert ReportGenerator._format_ocp_smart_value({"hi": 1, "lo": 0}) == str(1 << 64)
 
 
+def test_normalize_display_value_smartctl_dict() -> None:
+    text, variant = ReportGenerator._normalize_display_value({"name": "SAS (SPL-4)", "value": 6})
+    assert text == "SAS (SPL-4)"
+    assert variant == ""
+
+
+def test_generate_html_advanced_table_uses_inner_clamp_spans(tmp_path: Path, mock_data_dir: Path) -> None:
+    """Advanced cells must not apply line-clamp display on <td> (breaks column layout)."""
+    devices = MockDevices(
+        mock_data_path=str(mock_data_dir),
+        ignore_ata=False,
+        ignore_nvme=False,
+        ignore_scsi=False,
+    ).devices
+    out = tmp_path / "report.html"
+    ReportGenerator().generate_html(devices, str(out))
+    html_text = out.read_text(encoding="utf-8")
+    assert "cell-stat__clamp" in html_text
+    assert "cell-stat:not(.cell-stat--is-multiline)" not in html_text
+    assert '<td class="cell-stat"><span class="cell-stat__clamp">' in html_text
+
+
 def test_generate_html_includes_ocp_columns_when_present(tmp_path: Path, mock_data_dir: Path) -> None:
     """NVMe devices with OCP C0h data get per-field columns with readable hi/lo counters."""
     devices = MockDevices(

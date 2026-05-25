@@ -24,11 +24,16 @@ from threading import Lock
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from cdi_health.api.jobs import JobStore
+from cdi_health.api.machines import MachineStore
 from cdi_health.api.schemas import (
     HealthResponse,
     JobResponse,
+    MachineCreate,
+    MachineResponse,
+    MachineUpdate,
     ReportRequest,
     ReportResponse,
     ScanRequest,
@@ -47,8 +52,11 @@ from cdi_health.api.services import (
     abort_selftest,
     generate_report,
     get_selftest_status,
+    media_type_for_report,
+    resolve_report_file,
     run_scan,
     run_selftest_start,
+    weasyprint_available,
 )
 from cdi_health.cli import check_prerequisites
 
@@ -58,8 +66,10 @@ class ApiState:
 
     def __init__(self):
         self.job_store = JobStore()
+        self.machine_store = MachineStore()
         self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cdi-api")
         self.latest_scan: dict | None = None
+        self.report_paths: set[str] = set()
         self.lock = Lock()
 
 
@@ -105,32 +115,101 @@ def create_app() -> FastAPI:
             allow_non_root_mode=allow_non_root_mode(),
             api_token_enabled=api_token_is_enabled(),
             missing_required_tools=missing_required_tools,
+            weasyprint_available=weasyprint_available(),
             message=message,
         )
 
     @app.post("/api/v1/scan", response_model=ScanResponse)
     def scan(request: ScanRequest, _: None = Depends(verify_api_token)) -> ScanResponse:
+        runtime = app.state.runtime
         try:
             result = run_scan(request)
-            with app.state.runtime.lock:
-                app.state.runtime.latest_scan = result
+            with runtime.lock:
+                runtime.latest_scan = result
+                if request.machine_id:
+                    machine = runtime.machine_store.record_scan(request.machine_id, result, success=True)
+                    if machine is None:
+                        raise HTTPException(status_code=404, detail="Machine not found")
             return ScanResponse.model_validate(result)
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/v1/devices", response_model=ScanResponse)
-    def devices(refresh: bool = False, _: None = Depends(verify_api_token)) -> ScanResponse:
+    def devices(
+        refresh: bool = False,
+        machine_id: str | None = None,
+        _: None = Depends(verify_api_token),
+    ) -> ScanResponse:
+        runtime = app.state.runtime
         try:
-            with app.state.runtime.lock:
-                cached = app.state.runtime.latest_scan
+            if machine_id:
+                if refresh:
+                    result = run_scan(ScanRequest(machine_id=machine_id))
+                    with runtime.lock:
+                        runtime.latest_scan = result
+                        machine = runtime.machine_store.record_scan(machine_id, result, success=True)
+                        if machine is None:
+                            raise HTTPException(status_code=404, detail="Machine not found")
+                    return ScanResponse.model_validate(result)
+
+                cached = runtime.machine_store.get_scan(machine_id)
+                if cached is None:
+                    raise HTTPException(status_code=404, detail="No scan cached for this host")
+                return ScanResponse.model_validate(cached)
+
+            with runtime.lock:
+                cached = runtime.latest_scan
             if refresh or cached is None:
                 result = run_scan(ScanRequest())
-                with app.state.runtime.lock:
-                    app.state.runtime.latest_scan = result
+                with runtime.lock:
+                    runtime.latest_scan = result
                 return ScanResponse.model_validate(result)
             return ScanResponse.model_validate(cached)
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/v1/machines", response_model=list[MachineResponse])
+    def list_machines(_: None = Depends(verify_api_token)) -> list[MachineResponse]:
+        machines = app.state.runtime.machine_store.list_machines()
+        return [MachineResponse.model_validate(machine) for machine in machines]
+
+    @app.post("/api/v1/machines", response_model=MachineResponse)
+    def create_machine(
+        request: MachineCreate,
+        _: None = Depends(verify_api_token),
+    ) -> MachineResponse:
+        machine = app.state.runtime.machine_store.create_machine(request.model_dump())
+        return MachineResponse.model_validate(machine)
+
+    @app.get("/api/v1/machines/{machine_id}", response_model=MachineResponse)
+    def get_machine(machine_id: str, _: None = Depends(verify_api_token)) -> MachineResponse:
+        machine = app.state.runtime.machine_store.get_machine(machine_id)
+        if not machine:
+            raise HTTPException(status_code=404, detail="Machine not found")
+        return MachineResponse.model_validate(machine)
+
+    @app.patch("/api/v1/machines/{machine_id}", response_model=MachineResponse)
+    def update_machine(
+        machine_id: str,
+        request: MachineUpdate,
+        _: None = Depends(verify_api_token),
+    ) -> MachineResponse:
+        updates = request.model_dump(exclude_unset=True)
+        machine = app.state.runtime.machine_store.update_machine(machine_id, updates)
+        if not machine:
+            raise HTTPException(status_code=404, detail="Machine not found")
+        return MachineResponse.model_validate(machine)
+
+    @app.delete("/api/v1/machines/{machine_id}")
+    def delete_machine(machine_id: str, _: None = Depends(verify_api_token)) -> dict[str, bool]:
+        deleted = app.state.runtime.machine_store.delete_machine(machine_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Machine not found")
+        return {"deleted": True}
 
     @app.post("/api/v1/selftests", response_model=JobResponse)
     def start_selftests(request: SelfTestStartRequest, _: None = Depends(verify_api_token)) -> JobResponse:
@@ -180,8 +259,33 @@ def create_app() -> FastAPI:
     def report(request: ReportRequest, _: None = Depends(verify_api_token)) -> ReportResponse:
         try:
             result = generate_report(request)
+            with app.state.runtime.lock:
+                app.state.runtime.report_paths.add(result["output_file"])
             return ReportResponse.model_validate(result)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/v1/reports/{filename}")
+    def download_report(
+        filename: str,
+        download: bool = False,
+        _: None = Depends(verify_api_token),
+    ) -> FileResponse:
+        with app.state.runtime.lock:
+            registered = set(app.state.runtime.report_paths)
+        try:
+            report_path = resolve_report_file(filename, registered_paths=registered)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        disposition = "attachment" if download else "inline"
+        return FileResponse(
+            path=str(report_path),
+            media_type=media_type_for_report(filename),
+            filename=filename,
+            headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+        )
 
     return app

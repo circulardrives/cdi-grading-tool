@@ -1131,13 +1131,36 @@ class ReportGenerator:
         return f'<th class="{classes}" scope="col" title="{title}">{display}</th>'
 
     @staticmethod
+    def _format_scalar_for_display(raw) -> str:
+        """Coerce smartctl-style objects to readable table text."""
+        if isinstance(raw, dict):
+            for key in ("string", "name"):
+                val = raw.get(key)
+                if val not in (None, ""):
+                    return str(val).strip()
+            if set(raw.keys()) == {"value"}:
+                return str(raw["value"]).strip()
+            try:
+                s = json.dumps(raw, ensure_ascii=False, default=str)
+            except TypeError:
+                s = str(raw)
+            return s if len(s) <= 200 else s[:197] + "…"
+        if isinstance(raw, list):
+            try:
+                s = json.dumps(raw, ensure_ascii=False, default=str)
+            except TypeError:
+                s = str(raw)
+            return s if len(s) <= 200 else s[:197] + "…"
+        return str(raw).strip()
+
+    @staticmethod
     def _normalize_display_value(raw) -> tuple[str, str]:
         if raw is None:
             return "—", "is-missing"
         if isinstance(raw, bool):
             return ("Yes" if raw else "No"), "is-bool"
 
-        text = str(raw).strip()
+        text = ReportGenerator._format_scalar_for_display(raw)
         if text in {"", "-", "—", "None", "Not Reported", "NOT REPORTED"}:
             return "—", "is-missing"
         return text, ""
@@ -1158,7 +1181,11 @@ class ReportGenerator:
         if variant:
             classes.append(f"cell-stat--{variant}")
         class_attr = " ".join(classes)
-        return f'<td class="{class_attr}">{html.escape(text)}</td>'
+        if variant == "is-multiline":
+            inner = f'<span class="cell-stat__body">{html.escape(text)}</span>'
+        else:
+            inner = f'<span class="cell-stat__clamp">{html.escape(text)}</span>'
+        return f'<td class="{class_attr}">{inner}</td>'
 
     @staticmethod
     def _simple_table_html(rows_simple: str) -> str:
@@ -1465,17 +1492,22 @@ class ReportGenerator:
         .device-table--wide .cell-stat {
           max-width: 18rem;
           min-width: 7rem;
-          word-break: break-word;
-          white-space: pre-wrap;
           vertical-align: top;
-          line-height: 1.45;
         }
-        /* Keep advanced table rows short unless the cell is explicitly multiline (e.g. SMART attrs). */
-        .device-table--wide .cell-stat:not(.cell-stat--is-multiline):not(.cell-nvme-log-btns) {
+        .device-table--wide .cell-stat__clamp {
           display: -webkit-box;
           -webkit-box-orient: vertical;
           -webkit-line-clamp: 8;
           overflow: hidden;
+          word-break: break-word;
+          white-space: pre-wrap;
+          line-height: 1.45;
+        }
+        .device-table--wide .cell-stat__body {
+          display: block;
+          word-break: break-word;
+          white-space: pre-wrap;
+          line-height: 1.55;
         }
         .device-table--wide td:first-child,
         .device-table--wide th:first-child {
