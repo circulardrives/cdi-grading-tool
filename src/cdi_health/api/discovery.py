@@ -63,9 +63,7 @@ def parse_subnet(value: str) -> ipaddress.IPv4Network:
         )
 
     if not _subnet_is_allowed(network):
-        raise DiscoveryError(
-            f"Subnet {value} is not allowed. Discovery is limited to private/link-local ranges."
-        )
+        raise DiscoveryError(f"Subnet {value} is not allowed. Discovery is limited to private/link-local ranges.")
 
     return network
 
@@ -117,16 +115,12 @@ def resolve_subnets(subnet: str | None, subnets: list[str] | None) -> list[str]:
 
     if explicit:
         if len(explicit) > MAX_SUBNETS_PER_REQUEST:
-            raise DiscoveryError(
-                f"At most {MAX_SUBNETS_PER_REQUEST} subnets can be scanned per request."
-            )
+            raise DiscoveryError(f"At most {MAX_SUBNETS_PER_REQUEST} subnets can be scanned per request.")
         return explicit
 
     local = derive_local_subnets()
     if not local:
-        raise DiscoveryError(
-            "Could not determine a local subnet. Provide subnet explicitly, e.g. 192.168.0.0/24."
-        )
+        raise DiscoveryError("Could not determine a local subnet. Provide subnet explicitly, e.g. 192.168.0.0/24.")
     return local[:MAX_SUBNETS_PER_REQUEST]
 
 
@@ -249,9 +243,7 @@ def discover_hosts(
 
     worker_count = min(64, max(4, len(hosts)))
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        port_futures = {
-            executor.submit(is_port_open, host, port, timeout_seconds): host for host in hosts
-        }
+        port_futures = {executor.submit(is_port_open, host, port, timeout_seconds): host for host in hosts}
         for future in as_completed(port_futures):
             host = port_futures[future]
             try:
