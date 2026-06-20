@@ -37,9 +37,6 @@ sudo python3 example.py --json --validate
 
 # Use custom thresholds
 sudo python3 example.py --config custom_thresholds.yaml --json
-
-# Watch mode
-sudo python3 example.py --watch --watch-interval 30
 """
 
 # Annotations
@@ -367,27 +364,6 @@ def validate_output(devices, verbose=False):
     return 0
 
 
-def run_watch_mode(args):
-    """
-    Run continuous monitoring mode.
-
-    :param args: Parsed arguments
-    """
-    from cdi_health.classes.watch import WatchMode
-
-    # Determine if using mock mode
-    mock_mode = args.mock_data is not None or args.mock_file is not None
-    mock_path = args.mock_data or args.mock_file
-
-    watch = WatchMode(
-        interval=args.watch_interval,
-        mock_mode=mock_mode,
-        mock_data_path=mock_path,
-    )
-
-    watch.start()
-
-
 def main():
     """
     Main
@@ -413,9 +389,6 @@ Examples:
 
   # Use custom threshold configuration
   sudo python3 -m cdi_health --config custom_thresholds.yaml --json
-
-  # Continuous monitoring mode
-  sudo python3 -m cdi_health --watch --watch-interval 30
 """,
     )
 
@@ -443,21 +416,6 @@ Examples:
         "--validate",
         action="store_true",
         help="Validate output schema and report issues",
-    )
-
-    # Watch Mode Arguments
-    watch_group = parser.add_argument_group("Watch Mode", "Continuous monitoring")
-    watch_group.add_argument(
-        "--watch",
-        action="store_true",
-        help="Enable continuous monitoring mode",
-    )
-    watch_group.add_argument(
-        "--watch-interval",
-        type=int,
-        default=60,
-        metavar="N",
-        help="Seconds between scans in watch mode (default: 60)",
     )
 
     # Device Filtering Arguments
@@ -509,11 +467,6 @@ Examples:
         configure_thresholds(args.config)
         if args.verbose:
             print(f"Loaded configuration from: {args.config}")
-
-    # Handle watch mode
-    if args.watch:
-        run_watch_mode(args)
-        sys.exit(0)
 
     # Scan Devices
     if args.mock_file:

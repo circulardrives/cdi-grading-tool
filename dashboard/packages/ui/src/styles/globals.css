@@ -1,0 +1,141 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/source-sans-3";
+
+@custom-variant dark (&:is(.dark *));
+@source "../../../apps/**/*.{ts,tsx}";
+@source "../../../components/**/*.{ts,tsx}";
+@source "../**/*.{ts,tsx}";
+
+:root {
+    /* CDI brand palette — src/cdi_health/assets/cdi_brand_palette.css */
+    --cdi-simply-green: #139c7a;
+    --cdi-foliage-green: #3b7351;
+    --cdi-green-spruce: #5c9279;
+    --cdi-lilac-gray: #9298a6;
+    --cdi-real-teal: #3e6071;
+
+    /* Preset b7SQ0Be2T2: luma + stone base + green theme, with CDI accent override */
+    --background: oklch(0.972 0.012 166);
+    --foreground: oklch(0.216 0.006 56.043);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.216 0.006 56.043);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.216 0.006 56.043);
+    --primary: var(--cdi-simply-green);
+    --primary-foreground: #ffffff;
+    --secondary: oklch(0.967 0.001 106.424);
+    --secondary-foreground: oklch(0.216 0.006 56.043);
+    --muted: oklch(0.953 0.008 166);
+    --muted-foreground: oklch(0.553 0.013 58.071);
+    --accent: oklch(0.953 0.008 166);
+    --accent-foreground: oklch(0.216 0.006 56.043);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.923 0.006 166);
+    --input: oklch(0.923 0.006 166);
+    --ring: var(--cdi-green-spruce);
+    --chart-1: var(--cdi-simply-green);
+    --chart-2: var(--cdi-foliage-green);
+    --chart-3: var(--cdi-green-spruce);
+    --chart-4: var(--cdi-real-teal);
+    --chart-5: var(--cdi-foliage-green);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0.008 166);
+    --sidebar-foreground: oklch(0.216 0.006 56.043);
+    --sidebar-primary: var(--cdi-simply-green);
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: oklch(0.953 0.008 166);
+    --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
+    --sidebar-border: oklch(0.923 0.006 166);
+    --sidebar-ring: var(--cdi-green-spruce);
+}
+
+.dark {
+    --background: oklch(0.145 0.012 166);
+    --foreground: oklch(0.985 0.001 106.423);
+    --card: oklch(0.205 0.012 166);
+    --card-foreground: oklch(0.985 0.001 106.423);
+    --popover: oklch(0.205 0.012 166);
+    --popover-foreground: oklch(0.985 0.001 106.423);
+    --primary: var(--cdi-simply-green);
+    --primary-foreground: #ffffff;
+    --secondary: oklch(0.268 0.007 34.298);
+    --secondary-foreground: oklch(0.985 0.001 106.423);
+    --muted: oklch(0.268 0.007 34.298);
+    --muted-foreground: oklch(0.709 0.01 56.259);
+    --accent: oklch(0.268 0.007 34.298);
+    --accent-foreground: oklch(0.985 0.001 106.423);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: var(--cdi-green-spruce);
+    --chart-1: var(--cdi-simply-green);
+    --chart-2: var(--cdi-foliage-green);
+    --chart-3: var(--cdi-green-spruce);
+    --chart-4: var(--cdi-real-teal);
+    --chart-5: var(--cdi-foliage-green);
+    --sidebar: oklch(0.185 0.012 166);
+    --sidebar-foreground: oklch(0.985 0.001 106.423);
+    --sidebar-primary: var(--cdi-simply-green);
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: oklch(0.268 0.007 34.298);
+    --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: var(--cdi-green-spruce);
+}
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --font-mono: 'JetBrains Mono Variable', monospace;
+    --font-heading: 'Source Sans 3 Variable', sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-heading);
+  }
+}

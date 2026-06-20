@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -165,6 +165,10 @@ cython_debug/
 
 # Local HTML report output (regenerate with: cdi-health report ...)
 /cdi-report.html
+reports/
+
+# macOS
+.DS_Store
 
 # Dashboard (Next.js)
 dashboard/node_modules/

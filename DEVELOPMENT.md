@@ -27,7 +27,19 @@ This guide provides information for developers working on CDI Health.
 
 ## Testing
 
-Continuous integration is defined in **`.github/workflows/ci.yml`** (pytest matrix, pre-commit, dashboard `npm run build`, wheel smoke, license headers). Install **`pip install -e '.[dev,api]'`** locally so FastAPI tests (`tests/test_api.py`) collect.
+Continuous integration is defined in **`.github/workflows/ci.yml`** (pytest matrix, pre-commit, dashboard `bun run build`, wheel smoke, license headers). Install **`pip install -e '.[dev,api]'`** locally so FastAPI tests (`tests/test_api.py`) collect.
+
+### Dashboard (frontend)
+
+The technician UI is a Vite + React monorepo under `dashboard/` (bun + Turborepo). From repo root:
+
+```bash
+./scripts/start-local-mock.sh          # API + dashboard with mock data
+# or manually:
+cd dashboard && bun install && bun run dev
+```
+
+See [dashboard/README.md](dashboard/README.md) and [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md).
 
 ### Running Tests
 ```bash
@@ -104,7 +116,6 @@ src/cdi_health/
 │   ├── selftest_formatter.py # Self-test result formatting
 │   ├── tools.py            # External tool integration
 │   ├── validation.py       # Data validation
-│   └── watch.py            # Watch/monitoring mode
 ├── config/
 │   └── thresholds.yaml     # Default thresholds
 └── mock_data/              # Mock device data for testing
@@ -167,6 +178,27 @@ python -m build
 ### Debian package (`.deb`)
 
 Linux release packages are built in CI (see `.github/workflows/release.yml`) using **nfpm** and `nfpm.yaml`. Artifacts install `cdi-health` / `cdi-health-api` under `/usr/local/bin` and libraries under `/opt/cdi-health/lib`. Local experiments (on a Linux host with nfpm and the packaging script prerequisites) follow the same `nfpm` invocation documented in that workflow.
+
+### Docker images (GHCR)
+
+The same release workflow builds and pushes multi-arch images on each `v*` tag:
+
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+
+Dockerfiles live under `deploy/docker/`. Pull requests build images in CI (amd64, no push) to catch Dockerfile regressions.
+
+**Build locally:**
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml up --build
+```
+
+**Test published images** (after a release):
+
+```bash
+CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+```
 
 ### Install in Development Mode
 ```bash

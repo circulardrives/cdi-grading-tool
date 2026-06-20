@@ -1,0 +1,57 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      5
+    ],
+    "svn_revision": "5714",
+    "platform_info": "x86_64-linux-7.0.0-15-generic",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--xall",
+      "--json=ov",
+      "-d",
+      "nvme",
+      "/dev/nvme0"
+    ],
+    "output": [
+      "smartctl 7.5 2025-04-30 r5714 [x86_64-linux-7.0.0-15-generic] (local build)",
+      "Copyright (C) 2002-25, Bruce Allen, Christian Franke, www.smartmontools.org",
+      "",
+      "Smartctl open device: /dev/nvme0 failed: Resource temporarily unavailable"
+    ],
+    "messages": [
+      {
+        "string": "Smartctl open device: /dev/nvme0 failed: Resource temporarily unavailable",
+        "severity": "error"
+      }
+    ],
+    "exit_status": 2
+  },
+  "local_time": {
+    "time_t": 1779683813,
+    "asctime": "Mon May 25 04:36:53 2026 UTC"
+  },
+  "device": {
+    "name": "/dev/nvme0",
+    "info_name": "/dev/nvme0",
+    "type": "nvme",
+    "protocol": "NVMe"
+  },
+  "model_name": "Skhynix PE6110 NVMe 1TB",
+  "serial_number": "MOCK000002",
+  "firmware_version": "11030G00",
+  "nvme_cli": {
+    "list": {
+      "output": "/dev/nvme0n1  Skhynix PE6110 NVMe 1TB  MOCK000002  Usage 960.20 GB / 0.00 B"
+    },
+    "id_ctrl": {
+      "error": "/dev/nvme0: Resource temporarily unavailable"
+    }
+  }
+}

@@ -25,7 +25,7 @@ Options:
   --mock-data             Run dashboard/API in mock-data mode (default)
   --real-data             Run dashboard/API against real device scan
   --mock-path PATH        Mock data directory (default: src/cdi_health/mock_data)
-  --skip-install          Skip pip/npm installs
+  --skip-install          Skip pip/bun installs
   --kill-existing         Kill existing listeners on API/dashboard ports
   -h, --help              Show this help
 
@@ -174,7 +174,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 require_cmd python3
-require_cmd npm
+require_cmd bun
 
 mkdir -p "$LOG_DIR"
 
@@ -194,16 +194,19 @@ if [[ "$SKIP_INSTALL" != "1" ]]; then
   .venv/bin/python -m pip install -e '.[api]'
 
   echo "Installing dashboard dependencies..."
-  npm --prefix dashboard install
+  (cd dashboard && bun install)
 else
   echo "Skipping dependency installation (SKIP_INSTALL=1)"
 fi
 
-cat >"$ROOT_DIR/dashboard/.env.local" <<ENV
-CDI_API_BASE_URL=http://${API_HOST}:${API_PORT}
-CDI_API_TOKEN=${API_TOKEN}
-NEXT_PUBLIC_CDI_USE_MOCK_DATA=${RUN_MOCK_DATA}
-NEXT_PUBLIC_CDI_MOCK_DATA_PATH=${MOCK_DATA_PATH}
+cat >"$ROOT_DIR/dashboard/apps/web/.env.local" <<ENV
+VITE_CDI_API_PROXY_TARGET=http://${API_HOST}:${API_PORT}
+VITE_CDI_API_BASE_URL=/api/cdi
+VITE_CDI_API_TOKEN=${API_TOKEN}
+VITE_CDI_USE_MOCK_DATA=${RUN_MOCK_DATA}
+VITE_CDI_MOCK_DATA_PATH=${MOCK_DATA_PATH}
+VITE_DEV_HOST=${DASHBOARD_HOST}
+VITE_DEV_PORT=${DASHBOARD_PORT}
 ENV
 
 echo "Starting CDI API backend..."
@@ -212,6 +215,7 @@ echo "Starting CDI API backend..."
   PYTHONPATH=src .venv/bin/python -m cdi_health.api \
     --allow-non-root \
     --api-token "$API_TOKEN" \
+    --mock-data "$MOCK_DATA_PATH" \
     --host "$API_HOST" \
     --port "$API_PORT"
 ) >"$LOG_DIR/cdi-api.log" 2>&1 &
@@ -220,8 +224,7 @@ API_PID=$!
 echo "Starting dashboard..."
 (
   cd "$ROOT_DIR/dashboard"
-  CDI_API_BASE_URL="http://${API_HOST}:${API_PORT}" CDI_API_TOKEN="$API_TOKEN" \
-    npm run dev -- --hostname "$DASHBOARD_HOST" --port "$DASHBOARD_PORT"
+  bun run dev
 ) >"$LOG_DIR/cdi-dashboard.log" 2>&1 &
 DASHBOARD_PID=$!
 
@@ -253,6 +256,7 @@ if command -v curl >/dev/null 2>&1; then
 
   curl -fsS -X POST "http://${DASHBOARD_HOST}:${DASHBOARD_PORT}/api/cdi/api/v1/scan" \
     -H "Content-Type: application/json" \
+    -H "X-API-Token: ${API_TOKEN}" \
     -d "$API_SCAN_PAYLOAD" >/dev/null
 
   if [[ "$RUN_MOCK_DATA" == "1" ]]; then

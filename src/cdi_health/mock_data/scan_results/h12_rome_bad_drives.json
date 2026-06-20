@@ -1,0 +1,23 @@
+{
+  "source": "h12-rome sanitized fixture metadata",
+  "devices": [
+    {
+      "dut": "/dev/sda",
+      "model_number": "SAMSUNG SSD 870 EVO 500GB",
+      "serial_number": "S62ANJ0R9000001",
+      "health_grade": "F",
+      "health_status": "Failed",
+      "health_score": 0,
+      "note": "SMART status failed (exit_status 68)"
+    },
+    {
+      "dut": "/dev/nvme0",
+      "model_number": "Skhynix PE6110 NVMe 1TB",
+      "serial_number": "SN_IS_0x0100_SANITIZED",
+      "health_grade": "N/A",
+      "health_status": "Controller disabled / device unavailable",
+      "health_score": null,
+      "note": "Kernel: nvme0 disabled after reset failure (-19); smartctl open failed"
+    }
+  ]
+}

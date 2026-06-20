@@ -1,15 +1,77 @@
 # Technician Deployment Guide
 
-This guide covers two common setups:
+This guide covers three common setups:
 
-1. **`.deb` package** — fastest way to get `cdi-health` and `cdi-health-api` on Debian/Ubuntu (see [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases)).
-2. **Git clone + Python venv** — use when you need the **Next.js dashboard** from this repository or a matching editable install.
+1. **Docker Compose** — easiest way to run the **dashboard + API** together without installing Python, bun, or systemd (mock/demo by default).
+2. **`.deb` package** — fastest way to get `cdi-health` and `cdi-health-api` on Debian/Ubuntu (see [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases)). Does **not** include the web dashboard.
+3. **Git clone + Python venv** — use when you need an editable install, custom patches, or production systemd on bare metal.
 
-Both expect **Linux** with access to storage tooling (see below).
+Both bare-metal options expect **Linux** with access to storage tooling (see below).
 
-## Required tools (real hardware)
+## Option A — Docker Compose (recommended for dashboard)
 
-Install before scanning **live** drives (not needed for `--mock-data` workflows):
+Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No local Python, bun, or npm install.
+
+**Demo / mock data** (try the UI without physical drives):
+
+```bash
+git clone https://github.com/circulardrives/cdi-grading-tool.git
+cd cdi-grading-tool
+./scripts/docker-up.sh --build
+```
+
+Open http://127.0.0.1:3000
+
+**Published release images (GHCR, no local build):**
+
+```bash
+docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+# pin a version: CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+```
+
+Images are built and pushed on each `v*` tag release to (public GHCR packages):
+
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+
+No `docker login` required for public pulls.
+
+Or without the helper script:
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml up --build
+```
+
+**Live drive scanning** on the Docker host (Linux, root in container, `/dev` mounted):
+
+```bash
+./scripts/docker-up.sh --hardware --build
+# or: docker compose -f deploy/docker/docker-compose.yml \
+#       -f deploy/docker/docker-compose.hardware.yml up --build
+```
+
+Copy `deploy/docker/.env.example` to `deploy/docker/.env` to set `DASHBOARD_PORT` or an optional `CDI_HEALTH_API_TOKEN`.
+
+Stop:
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml down
+```
+
+**Notes:**
+
+- Default stack runs the API in mock mode with bundled fixtures — good for training and UI smoke tests.
+- Hardware overlay runs the API as root with `privileged: true` and host `/dev` access; use only on trusted grading hosts.
+- PDF reports still need WeasyPrint inside the API image if you require `--format pdf` (HTML/CSV work without it).
+- For production grading benches that are not containerized, use Option B (`.deb`) or Option C (git + systemd) below.
+
+---
+
+---
+
+## Required tools (bare metal, real hardware)
+
+Install before scanning **live** drives on the host (not needed for Docker mock mode or `--mock-data` workflows):
 
 ```bash
 sudo apt install smartmontools nvme-cli
@@ -26,28 +88,34 @@ Use `sudo cdi-health scan` if your user cannot read SMART / NVMe log pages on th
 
 ---
 
-## Option A — Install from `.deb`
+## Option B — Install from `.deb`
+
+The package declares **Depends** on `python3`, `smartmontools`, and `nvme-cli`, and **Recommends** `openseachest` (OpenSeaChest). Prefer apt so dependencies install in one step:
 
 ```bash
-sudo dpkg -i cdi-health_*_all.deb
-sudo apt-get install -f    # satisfy recommends/suggests if dpkg reported gaps
+sudo apt update
+sudo apt install ./cdi-health_*_all.deb
 cdi-health --version
-cdi-health scan            # or: sudo cdi-health scan
+sudo cdi-health scan
 ```
+
+On **Ubuntu 24.04+** and **Debian Trixie+**, `openseachest` is pulled from apt automatically (Ubuntu: enable **universe**). On **Ubuntu 22.04** or **Debian Bookworm**, run `sudo ./scripts/install-host-dependencies.sh` first if OpenSeaChest is not in your apt sources.
+
+For SAS/SCSI: `sudo apt install sg3-utils` (also suggested by the package).
 
 Layout:
 
 - **`/usr/local/bin/cdi-health`** — CLI
-- **`/usr/local/bin/cdi-health-api`** — API entry point
+- **`/usr/local/bin/cdi-health-api`** — API entry point (includes FastAPI/uvicorn dependencies)
 - **`/opt/cdi-health/lib`** — application Python tree
 
-Systemd unit **`cdi-health-api.service`** may be installed under `/usr/lib/systemd/system/`; enable it if you want the API on boot (see below).
+Systemd unit **`cdi-health-api.service`** may be installed under `/usr/lib/systemd/system/`; enable it if you want the API on boot (see below). It stores state in **`/var/lib/cdi-health`** and does not require a git clone.
 
-For **dashboard + API** together, you can pair this CLI/API install with a **separate** dashboard build (Option B dashboard steps) or run API only and point the UI at `127.0.0.1:8844`.
+For **dashboard + API** together, use **Option A (Docker Compose)**, `./scripts/start-local-mock.sh` from a dev clone, or a separate dashboard build from Option C.
 
 ---
 
-## Option B — Install backend from git (venv)
+## Option C — Install backend from git (venv)
 
 If `python3 -m venv .venv` fails with **ensurepip** / “python3-venv” errors on Ubuntu, install the matching venv package, for example:
 
@@ -69,16 +137,41 @@ Ensure **smartmontools**, **nvme-cli**, and (if needed) **sg3-utils** are instal
 
 ## Install Dashboard (from git tree)
 
+Requires [bun](https://bun.sh) on the machine serving the UI.
+
 ```bash
 cd /opt/cdi-grading-tool/dashboard
-cp .env.example .env.local
-npm install
-npm run build
+cp apps/web/.env.example apps/web/.env.local
+# Set VITE_CDI_API_PROXY_TARGET to your API (e.g. http://127.0.0.1:8844)
+# and VITE_CDI_USE_MOCK_DATA=0 for live scans before building.
+bun install
+bun run build
 ```
+
+Local dev without systemd: `bun run dev` → http://127.0.0.1:3000. All-in-one mock from repo root: `./scripts/start-local-mock.sh`.
 
 ## Install systemd Services
 
-Paths assume the repo lives at `/opt/cdi-grading-tool` (adjust `cp` sources if you cloned elsewhere).
+Paths assume the repo lives at `/opt/cdi-grading-tool` (adjust `WorkingDirectory` in the unit files if you cloned elsewhere).
+
+**Dashboard unit prerequisites** (not created automatically):
+
+```bash
+# System account for the dashboard service
+sudo useradd --system --home /opt/cdi-grading-tool --shell /usr/sbin/nologin cdi
+sudo chown -R cdi:cdi /opt/cdi-grading-tool/dashboard
+
+# bun (required by cdi-health-dashboard.service; npm is not supported)
+curl -fsSL https://bun.sh/install | bash
+# ensure /usr/local/bin/bun exists, or symlink: sudo ln -sf ~/.bun/bin/bun /usr/local/bin/bun
+
+# Production assets (required before `bun run start` / systemd)
+cd /opt/cdi-grading-tool/dashboard
+sudo -u cdi bun install
+sudo -u cdi bun run build
+```
+
+**`.deb`-only API install:** the API unit shipped in the package does not need a git clone. It uses `/var/lib/cdi-health` for state and `/opt/cdi-health/lib` for Python. Skip copying the dashboard unit unless you also deployed the dashboard from git.
 
 ```bash
 sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.service /etc/systemd/system/
@@ -126,3 +219,28 @@ Then edit the file and replace `cdiapi` with your service account.
 - Keep API bound to `127.0.0.1`.
 - Use `CDI_HEALTH_API_TOKEN` if dashboard/API run as separate users.
 - Do not expose either service directly to untrusted networks.
+
+## Troubleshooting
+
+### `cdi-health-api: Missing API dependencies`
+
+The `.deb` / `.rpm` package must ship FastAPI, uvicorn, and pydantic (the `[api]` extras). If you see this on a release package, upgrade to a build that includes the fix. **Workaround:** install from git with `pip install -e .[api]` in a venv and run `cdi-health-api` from that venv instead of `/usr/local/bin/cdi-health-api`.
+
+### `cdi-health-api.service: Changing to the requested working directory failed`
+
+Usually means the unit still points at `/opt/cdi-grading-tool`, which does not exist on `.deb`-only installs. Use the current unit (state under `/var/lib/cdi-health`) or remove/edit `WorkingDirectory` in your copy under `/etc/systemd/system/`, then `sudo systemctl daemon-reload`.
+
+### `cdi-health-dashboard.service: Failed at step USER` / `No such process`
+
+The `cdi` system user must exist before enabling the dashboard unit (see prerequisites above). The service also expects **bun** at `/usr/bin/bun` or on `PATH` for the `cdi` user — not npm. If your unit references `/usr/bin/npm`, replace it with the current `deploy/systemd/cdi-health-dashboard.service` (`ExecStart=/usr/bin/bun run start`).
+
+### Dashboard `ECONNREFUSED 127.0.0.1:8844`
+
+The UI proxy targets the local API. Start the API first and confirm:
+
+```bash
+curl -s http://127.0.0.1:8844/api/v1/health
+sudo systemctl status cdi-health-api.service   # if using systemd
+```
+
+For git + venv: `source .venv/bin/activate && sudo -E cdi-health-api --host 127.0.0.1 --port 8844 --data-dir ./.cdi-health` (venv must have `pip install -e .[api]`).

@@ -120,6 +120,19 @@ Tests run automatically on:
 
 See `.github/workflows/ci.yml` for CI (pytest matrix, pre-commit, dashboard build, wheel smoke).
 
+Release builds (`.deb`, `.rpm`, wheel, and Docker images) run in `.github/workflows/release.yml` on `v*` tags. Pull requests to that workflow build Docker images locally in CI without pushing to GHCR.
+
+## Docker stack (mock UI / API smoke)
+
+Run the full dashboard + API stack with mock fixtures — useful for manual QA without bun or a Python venv:
+
+```bash
+./scripts/docker-up.sh --build
+curl -s http://127.0.0.1:3000/api/cdi/api/v1/health
+```
+
+Stop: `docker compose -f deploy/docker/docker-compose.yml down`
+
 ## Test Data
 
 Mock data is located in `src/cdi_health/mock_data/`:

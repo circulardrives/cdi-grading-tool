@@ -986,53 +986,6 @@ def cmd_selftest(args: Namespace) -> int:
         return 1
 
 
-def cmd_watch(args: Namespace) -> int:
-    """
-    Execute watch command.
-
-    Args:
-        args: Parsed command-line arguments
-
-    Returns:
-        Exit code (0 for success, non-zero for error)
-    """
-    # Setup logging
-    setup_logging(verbose=args.verbose, no_color=args.no_color)
-    from cdi_health.classes.watch import WatchMode
-
-    # Determine if using mock mode
-    mock_mode = args.mock_data is not None or args.mock_file is not None
-    mock_path = args.mock_data or args.mock_file
-
-    # Check prerequisites for real device scanning
-    if not mock_mode:
-        missing = check_prerequisites(
-            ignore_ata=args.ignore_ata,
-            ignore_nvme=args.ignore_nvme,
-            ignore_scsi=args.ignore_scsi,
-        )
-        if missing:
-            print("Error: Required tools not found:", file=sys.stderr)
-            for tool in missing:
-                print(f"  - {tool}", file=sys.stderr)
-            return 1
-
-    # Load custom configuration if provided
-    if args.config:
-        from cdi_health.classes.config import configure_thresholds
-
-        configure_thresholds(args.config)
-
-    watch = WatchMode(
-        interval=args.interval,
-        mock_mode=mock_mode,
-        mock_data_path=mock_path,
-    )
-
-    watch.start()
-    return 0
-
-
 def cmd_export_mock(args: Namespace) -> int:
     """
     Export JSON snapshots for offline mock use (smartctl + NVMe CLI on NVMe).
@@ -1174,9 +1127,6 @@ Examples:
 
   # Export live devices to anonymized smartctl JSON for offline mock use
   cdi-health export mock -o ./my-mock-bundle
-
-  # Continuous monitoring
-  cdi-health watch --interval 30
 """,
     )
 
@@ -1228,21 +1178,6 @@ Examples:
         "--output-file",
         metavar="PATH",
         help="Output file path (default: cdi-report-{timestamp}.<ext>)",
-    )
-
-    # Watch command
-    watch_parser = subparsers.add_parser(
-        "watch",
-        help="Continuous monitoring mode",
-        description="Continuously monitor device health and report changes.",
-    )
-    add_common_arguments(watch_parser)
-    watch_parser.add_argument(
-        "--interval",
-        type=int,
-        default=60,
-        metavar="N",
-        help="Seconds between scans (default: 60)",
     )
 
     # Self-test command
@@ -1349,8 +1284,6 @@ def main() -> int:
         return cmd_scan(args)
     elif args.command == "report":
         return cmd_report(args)
-    elif args.command == "watch":
-        return cmd_watch(args)
     elif args.command == "selftest":
         return cmd_selftest(args)
     elif args.command == "export":

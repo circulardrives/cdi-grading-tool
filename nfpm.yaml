@@ -22,10 +22,11 @@ license: Apache-2.0
 
 depends:
   - python3
-
-recommends:
   - smartmontools
   - nvme-cli
+
+recommends:
+  - openseachest
 
 contents:
   - src: ./build/pkg/opt/cdi-health/lib
@@ -46,10 +47,20 @@ contents:
     dst: /usr/lib/systemd/system/cdi-health-api.service
     type: config|noreplace
 
+  - src: ./scripts/install-host-dependencies.sh
+    dst: /opt/cdi-health/scripts/install-host-dependencies.sh
+    file_info:
+      mode: 0755
+
+scripts:
+  postinstall: ./deploy/deb/postinst.sh
+
 overrides:
   deb:
     suggests:
       - sg3-utils
   rpm:
+    recommends:
+      - openseachest
     suggests:
       - sg3_utils
