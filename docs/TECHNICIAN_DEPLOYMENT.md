@@ -31,8 +31,8 @@ docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 
 Images are built and pushed on each `v*` tag release to (public GHCR packages):
 
-- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
-- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+- `ghcr.io/circulardrives/cdi-health-api`
+- `ghcr.io/circulardrives/cdi-health-dashboard`
 
 No `docker login` required for public pulls.
 

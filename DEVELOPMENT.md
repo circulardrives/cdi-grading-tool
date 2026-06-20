@@ -183,8 +183,8 @@ Linux release packages are built in CI (see `.github/workflows/release.yml`) usi
 
 The same release workflow builds and pushes multi-arch images on each `v*` tag:
 
-- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
-- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+- `ghcr.io/circulardrives/cdi-health-api`
+- `ghcr.io/circulardrives/cdi-health-dashboard`
 
 Dockerfiles live under `deploy/docker/`. Pull requests build images in CI (amd64, no push) to catch Dockerfile regressions.
 

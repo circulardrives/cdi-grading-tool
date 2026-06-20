@@ -87,8 +87,8 @@ Open http://127.0.0.1:3000 (mock fixtures by default). Live drive scanning: `./s
 
 Official `v*` releases publish multi-arch images (`linux/amd64`, `linux/arm64`):
 
-- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
-- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+- `ghcr.io/circulardrives/cdi-health-api`
+- `ghcr.io/circulardrives/cdi-health-dashboard`
 
 ```shell
 git clone https://github.com/circulardrives/cdi-grading-tool.git
