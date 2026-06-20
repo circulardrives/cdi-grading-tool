@@ -36,6 +36,20 @@ export default defineConfig(({ mode }) => {
     preview: {
       host: env.VITE_DEV_HOST ?? "127.0.0.1",
       port: Number(env.VITE_DEV_PORT ?? 3000),
+      proxy: {
+        "/api/cdi": {
+          target: apiTarget,
+          changeOrigin: true,
+          rewrite: (requestPath) => requestPath.replace(/^\/api\/cdi/, ""),
+          configure: (proxy) => {
+            proxy.on("proxyReq", (proxyReq) => {
+              if (apiToken) {
+                proxyReq.setHeader("X-API-Token", apiToken)
+              }
+            })
+          },
+        },
+      },
     },
   }
 })

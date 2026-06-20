@@ -1,0 +1,48 @@
+# Run the published GHCR stack (no local build). From the repository root:
+#
+#   docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+#
+# Pin a release:
+#   CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+
+name: cdi-health
+
+services:
+  api:
+    image: ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api:${CDI_VERSION:-latest}
+    container_name: cdi-health-api
+    environment:
+      CDI_HEALTH_API_ALLOW_NON_ROOT: "1"
+      CDI_HEALTH_API_MOCK_DATA: /app/src/cdi_health/mock_data
+      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:-}
+      CDI_HEALTH_DATA_DIR: /var/lib/cdi-health
+    volumes:
+      - cdi-api-data:/var/lib/cdi-health
+    expose:
+      - "8844"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8844/api/v1/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  dashboard:
+    image: ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard:${CDI_VERSION:-latest}
+    container_name: cdi-health-dashboard
+    ports:
+      - "${DASHBOARD_PORT:-3000}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  cdi-api-data:

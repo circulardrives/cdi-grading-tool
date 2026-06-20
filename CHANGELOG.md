@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Docker Compose** stack under `deploy/docker/` for API + dashboard without local Python/bun/systemd setup (mock demo by default; optional hardware overlay for live drive scanning).
+- `./scripts/docker-up.sh` helper for `docker compose up`.
+- **Release workflow** publishes multi-arch Docker images to GHCR on each `v*` tag (`cdi-health-api`, `cdi-health-dashboard`); use `deploy/docker/docker-compose.ghcr.yml` to run published images.
+
 ## [0.9.0] - 2026-05-24
 
 ### Added

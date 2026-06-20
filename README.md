@@ -27,6 +27,7 @@ Supports **ATA/SATA**, **NVMe**, and **SCSI/SAS** on Linux with `smartctl`, `nvm
 | **Reports**       | **HTML** (tabbed by drive class, serial-keyed rows) and **PDF**; **CSV** (`report --format csv`) with the same advanced columns for Excel/sorting; NVMe **Advanced** view splits **health log 02h** into numeric columns plus optional full JSON and **OCP on NVMe tab only** |
 | **CLI**           | `scan`, `report`, `selftest` (NVMe); YAML thresholds, mock data for CI                                                                                                                                                                                               |
 | **API**           | Optional FastAPI backend for technician dashboards (`cdi-health-api`)                                                                                                                                                                                                         |
+| **Dashboard**     | Vite + React technician console; run via **Docker Compose**, published **GHCR** images on release, or local **bun** dev                                                                                                                                                        |
 
 
 ---
@@ -60,6 +61,45 @@ When you install the release `.deb` with apt, **smartmontools** and **nvme-cli**
 
 ## Installation
 
+Choose the path that matches your goal:
+
+| Goal | Method |
+| ---- | ------ |
+| Try the **dashboard + API** (mock data) | [Docker Compose](#docker-compose-recommended-for-dashboard) or [GHCR release images](#github-container-registry-ghcr) |
+| Install **CLI on a grading host** | [`.deb` package](#debianubuntu-deb-release-builds--recommended-for-grading-hosts) |
+| **Develop** or patch the codebase | [From source](#from-source) |
+
+### Docker Compose (recommended for dashboard)
+
+Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No local Python, bun, or npm.
+
+**Build locally:**
+
+```shell
+git clone https://github.com/circulardrives/cdi-grading-tool.git
+cd cdi-grading-tool
+./scripts/docker-up.sh --build
+```
+
+Open http://127.0.0.1:3000 (mock fixtures by default). Live drive scanning: `./scripts/docker-up.sh --hardware --build` (Linux host with `/dev` access).
+
+**GitHub Container Registry (GHCR)**
+
+Official `v*` releases publish multi-arch images (`linux/amd64`, `linux/arm64`):
+
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+
+```shell
+git clone https://github.com/circulardrives/cdi-grading-tool.git
+cd cdi-grading-tool
+docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+```
+
+Pin a release: `CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d`
+
+Full options (hardware overlay, env vars, troubleshooting): [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
+
 **From PyPI**
 
 ```shell
@@ -78,7 +118,7 @@ pip install -e .
 pip install -e .[dev,api]
 ```
 
-**Debian/Ubuntu `.deb` (release builds)** — recommended for grading hosts
+**Debian/Ubuntu `.deb` (release builds)** — recommended for bare-metal grading hosts
 
 Prebuilt packages are on [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases).
 
@@ -247,9 +287,21 @@ Optional: `--api-token …` and header `X-API-Token`. Endpoints include `/api/v1
 
 Browser-based **grading console** for bench technicians: **Fleet Status**, **Hosts**, **Discover**, **Scan**, **Drive Health**, **Health Reports**, and **NVMe Self-Test**. Source lives in `dashboard/` (Vite + React + shadcn/ui monorepo, managed with **bun**).
 
-The dashboard is **separate from the `.deb` package** — the release install provides `cdi-health` and optional `cdi-health-api` on grading hosts; run the UI from a workstation or deploy it alongside the API (see [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)).
+The dashboard is **separate from the `.deb` package** — the release install provides `cdi-health` and optional `cdi-health-api` on grading hosts. For the UI, prefer **Docker** (above) or the options below.
 
-**Prerequisites:** [bun](https://bun.sh) 1.3+
+### Run with Docker (easiest)
+
+```shell
+./scripts/docker-up.sh --build
+# or published images:
+docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+```
+
+Opens http://127.0.0.1:3000 with mock data. See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
+
+### Local development (bun)
+
+Requires [bun](https://bun.sh) 1.3+.
 
 **All-in-one mock (no hardware):**
 
@@ -305,7 +357,7 @@ API reference: [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md). Systemd and sudoe
 | **[Dashboard API](docs/DASHBOARD_API.md)**                                                                     | REST endpoints for the technician UI                                                                                                                                                                             |
 | **[Testing](README_TESTING.md)**                                                                             | Mock data and test commands                                                                                                                                                                                      |
 | **[Contributing](CONTRIBUTING.md)**                                                                          | Contributions                                                                                                                                                                                                    |
-| **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)**                                                   | `.deb` vs git install, systemd, dashboard, sudoers                                                                                                                                                               |
+| **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)**                                                   | Docker Compose, GHCR images, `.deb`, git + systemd, dashboard, troubleshooting                                                                                                                                   |
 
 
 ---
@@ -317,7 +369,7 @@ API reference: [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md). Systemd and sudoe
 - Mock JSON fixtures for development and CI
 - NVMe self-test integration
 - Offline HTML/PDF reports with CDI branding; CSV export with advanced columns
-- Optional REST API
+- Optional REST API and technician dashboard (Docker, GHCR, or bun)
 - Detailed spec documentation aligned with implementation
 
 ---

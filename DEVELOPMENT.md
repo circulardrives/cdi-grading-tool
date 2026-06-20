@@ -179,6 +179,27 @@ python -m build
 
 Linux release packages are built in CI (see `.github/workflows/release.yml`) using **nfpm** and `nfpm.yaml`. Artifacts install `cdi-health` / `cdi-health-api` under `/usr/local/bin` and libraries under `/opt/cdi-health/lib`. Local experiments (on a Linux host with nfpm and the packaging script prerequisites) follow the same `nfpm` invocation documented in that workflow.
 
+### Docker images (GHCR)
+
+The same release workflow builds and pushes multi-arch images on each `v*` tag:
+
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+
+Dockerfiles live under `deploy/docker/`. Pull requests build images in CI (amd64, no push) to catch Dockerfile regressions.
+
+**Build locally:**
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml up --build
+```
+
+**Test published images** (after a release):
+
+```bash
+CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+```
+
 ### Install in Development Mode
 ```bash
 pip install -e .[dev]

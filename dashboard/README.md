@@ -12,7 +12,34 @@ dashboard/
 
 ## Quick start
 
-From the repository root with the API running:
+### Docker (recommended — no local bun install)
+
+From the repository root:
+
+```bash
+./scripts/docker-up.sh --build
+```
+
+Open http://127.0.0.1:3000 (mock data by default).
+
+**Published release images** (built on each `v*` tag, hosted on GHCR):
+
+```bash
+docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+# pin a version:
+CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+```
+
+Images:
+
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
+- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+
+See [Technician deployment](../docs/TECHNICIAN_DEPLOYMENT.md) for hardware scanning, env vars, and troubleshooting.
+
+### Local development (bun)
+
+Requires [bun](https://bun.sh) 1.3+. From the repository root with the API running:
 
 ```bash
 cd dashboard
@@ -40,6 +67,8 @@ Copy `apps/web/.env.example` to `apps/web/.env.local` and adjust as needed. The 
 | `VITE_CDI_USE_MOCK_DATA` | `1` to pass mock_data on scan/report calls |
 | `VITE_CDI_MOCK_DATA_PATH` | Mock fixtures path relative to repo root |
 
+In Docker/nginx production mode, the UI uses `/api/cdi` on the same origin; nginx proxies to the API container.
+
 ## Adding components
 
 ```bash
@@ -56,3 +85,5 @@ cd dashboard
 bun run build
 bun run start   # serves apps/web/dist via vite preview
 ```
+
+For production deployment without bun on the host, use Docker (`deploy/docker/`) or the GHCR compose file above.
