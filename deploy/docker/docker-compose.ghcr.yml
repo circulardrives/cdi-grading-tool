@@ -9,7 +9,7 @@ name: cdi-health
 
 services:
   api:
-    image: ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api:${CDI_VERSION:-latest}
+    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-latest}
     container_name: cdi-health-api
     environment:
       CDI_HEALTH_API_ALLOW_NON_ROOT: "1"
@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
 
   dashboard:
-    image: ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard:${CDI_VERSION:-latest}
+    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-latest}
     container_name: cdi-health-dashboard
     ports:
       - "${DASHBOARD_PORT:-3000}:80"

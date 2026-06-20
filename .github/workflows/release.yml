@@ -144,7 +144,7 @@ jobs:
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/cdi-health-api
+          images: ghcr.io/circulardrives/cdi-health-api
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -174,7 +174,7 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: ghcr.io/${{ github.repository }}/cdi-health-api:ci
+          tags: ghcr.io/circulardrives/cdi-health-api:ci
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=cdi-health-api
@@ -185,7 +185,7 @@ jobs:
         id: meta-dashboard
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/cdi-health-dashboard
+          images: ghcr.io/circulardrives/cdi-health-dashboard
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -213,27 +213,24 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: ghcr.io/${{ github.repository }}/cdi-health-dashboard:ci
+          tags: ghcr.io/circulardrives/cdi-health-dashboard:ci
           cache-from: type=gha,scope=cdi-health-dashboard
           cache-to: type=gha,mode=max,scope=cdi-health-dashboard
 
       - name: Verify API image (CI)
         if: steps.version.outputs.push != 'true'
         run: |
-          docker run --rm ghcr.io/${{ github.repository }}/cdi-health-api:ci \
+          docker run --rm ghcr.io/circulardrives/cdi-health-api:ci \
             python -c "import cdi_health; import fastapi; print('ok')"
 
       - name: Set GHCR package visibility to public
         if: steps.version.outputs.push == 'true'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          packages=(
-            "cdi-grading-tool%2Fcdi-health-api"
-            "cdi-grading-tool%2Fcdi-health-dashboard"
-          )
-          for pkg in "${packages[@]}"; do
+          for pkg in cdi-health-api cdi-health-dashboard; do
             echo "Setting ${pkg} visibility to public..."
             gh api --method PATCH "/orgs/circulardrives/packages/container/${pkg}" \
               -f visibility=public \
@@ -259,8 +256,8 @@ jobs:
             echo
             echo "Multi-arch (\`linux/amd64\`, \`linux/arm64\`) images are published to GHCR:"
             echo
-            echo "- \`ghcr.io/${{ github.repository }}/cdi-health-api:${version}\`"
-            echo "- \`ghcr.io/${{ github.repository }}/cdi-health-dashboard:${version}\`"
+            echo "- \`ghcr.io/circulardrives/cdi-health-api:${version}\`"
+            echo "- \`ghcr.io/circulardrives/cdi-health-dashboard:${version}\`"
             echo
             echo '```bash'
             echo "docker compose -f deploy/docker/docker-compose.ghcr.yml up -d"

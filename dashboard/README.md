@@ -32,8 +32,8 @@ CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 
 Images:
 
-- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
-- `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+- `ghcr.io/circulardrives/cdi-health-api`
+- `ghcr.io/circulardrives/cdi-health-dashboard`
 
 See [Technician deployment](../docs/TECHNICIAN_DEPLOYMENT.md) for hardware scanning, env vars, and troubleshooting.
 
