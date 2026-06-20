@@ -29,10 +29,12 @@ docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 # pin a version: CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 ```
 
-Images are built and pushed on each `v*` tag release to:
+Images are built and pushed on each `v*` tag release to (public GHCR packages):
 
 - `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-api`
 - `ghcr.io/circulardrives/cdi-grading-tool/cdi-health-dashboard`
+
+No `docker login` required for public pulls.
 
 Or without the helper script:
 

@@ -223,6 +223,18 @@ jobs:
           docker run --rm ghcr.io/${{ github.repository }}/cdi-health-api:ci \
             python -c "import cdi_health; import fastapi; print('ok')"
 
+      - name: Set GHCR package visibility to public
+        if: steps.version.outputs.push == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for pkg in cdi-grading-tool%2Fcdi-health-api cdi-grading-tool%2Fcdi-health-dashboard; do
+            echo "Setting ${pkg} visibility to public..."
+            gh api --method PATCH "/orgs/circulardrives/packages/container/${pkg}" \
+              -f visibility=public
+          done
+
   release:
     name: 🚀 Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
