@@ -8,62 +8,52 @@ This guide covers three common setups:
 
 Both bare-metal options expect **Linux** with access to storage tooling (see below).
 
-## Option A — Docker Compose (recommended for dashboard)
+## Option A — Docker Compose
 
-Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No local Python, bun, or npm install.
+Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No local Python, bun, or npm.
 
-**Demo / mock data** (try the UI without physical drives):
+### Mock demo (GHCR, no build)
 
 ```bash
 git clone https://github.com/circulardrives/cdi-grading-tool.git
 cd cdi-grading-tool
-./scripts/docker-up.sh --build
+
+CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 ```
 
-Open http://127.0.0.1:3000
+Open http://127.0.0.1:3000 — bundled mock fixtures, no physical drives.
 
-**Published release images (GHCR, no local build):**
+### LAN discovery (find remote grading benches)
+
+Runs the API on the **host network** so **Discover** can probe the lab LAN for systems running `cdi-health-api` (e.g. from the `.deb` on a bench). Port **8844** must be free on your machine.
 
 ```bash
-docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
-# pin a version: CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+CDI_VERSION=0.9.4 docker compose \
+  -f deploy/docker/docker-compose.ghcr.yml \
+  -f deploy/docker/docker-compose.host.yml up -d
 ```
 
-Images are built and pushed on each `v*` tag release to (public GHCR packages):
+Open http://127.0.0.1:3000 → **Discover**.
+
+Images (`linux/amd64`, `linux/arm64`):
 
 - `ghcr.io/circulardrives/cdi-health-api`
 - `ghcr.io/circulardrives/cdi-health-dashboard`
 
 No `docker login` required for public pulls.
 
-Or without the helper script:
-
-```bash
-docker compose -f deploy/docker/docker-compose.yml up --build
-```
-
-**Live drive scanning** on the Docker host (Linux, root in container, `/dev` mounted):
-
-```bash
-./scripts/docker-up.sh --hardware --build
-# or: docker compose -f deploy/docker/docker-compose.yml \
-#       -f deploy/docker/docker-compose.hardware.yml up --build
-```
-
-Copy `deploy/docker/.env.example` to `deploy/docker/.env` to set `DASHBOARD_PORT` or an optional `CDI_HEALTH_API_TOKEN`.
-
 Stop:
 
 ```bash
-docker compose -f deploy/docker/docker-compose.yml down
+docker compose -f deploy/docker/docker-compose.ghcr.yml \
+  -f deploy/docker/docker-compose.host.yml down
 ```
 
-**Notes:**
+**Build locally** (optional): `./scripts/docker-up.sh --build` or `./scripts/docker-up.sh --host --build`
 
-- Default stack runs the API in mock mode with bundled fixtures — good for training and UI smoke tests.
-- Hardware overlay runs the API as root with `privileged: true` and host `/dev` access; use only on trusted grading hosts.
-- PDF reports still need WeasyPrint inside the API image if you require `--format pdf` (HTML/CSV work without it).
-- For production grading benches that are not containerized, use Option B (`.deb`) or Option C (git + systemd) below.
+Copy `deploy/docker/.env.example` to `deploy/docker/.env` to set `DASHBOARD_PORT` or an optional `CDI_HEALTH_API_TOKEN`.
+
+For live drive scanning on the bench itself, use Option B (`.deb`) below.
 
 ---
 
@@ -111,7 +101,17 @@ Layout:
 
 Systemd unit **`cdi-health-api.service`** may be installed under `/usr/lib/systemd/system/`; enable it if you want the API on boot (see below). It stores state in **`/var/lib/cdi-health`** and does not require a git clone.
 
-For **dashboard + API** together, use **Option A (Docker Compose)**, `./scripts/start-local-mock.sh` from a dev clone, or a separate dashboard build from Option C.
+**LAN discovery:** the default unit binds to `127.0.0.1` only. For a bench to appear in **Discover** from a technician laptop (Docker host overlay), expose the API on the lab network:
+
+```bash
+sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
+printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/cdi-health-api --host 0.0.0.0 --port 8844 --data-dir /var/lib/cdi-health\n' | sudo tee /etc/systemd/system/cdi-health-api.service.d/override.conf
+sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
+```
+
+Trusted lab networks only.
+
+For **dashboard + mock demo** on a laptop, use **Option A (Docker Compose)** with the host overlay for discovery, or `./scripts/start-local-mock.sh` from a dev clone.
 
 ---
 

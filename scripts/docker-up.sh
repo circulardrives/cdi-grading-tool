@@ -11,12 +11,14 @@ Usage: ./scripts/docker-up.sh [options] [compose args...]
 Start the CDI Health API + dashboard with Docker Compose (mock/demo by default).
 
 Options:
+  --host       API on host network for LAN discovery (remote grading benches)
   --hardware   Include hardware overlay for live drive scanning on the host
   --build      Pass --build to compose up
   -h, --help   Show this help
 
 Examples:
   ./scripts/docker-up.sh --build
+  ./scripts/docker-up.sh --host --build
   ./scripts/docker-up.sh --hardware --build
   ./scripts/docker-up.sh down
 
@@ -25,11 +27,16 @@ USAGE
 }
 
 HARDWARE=0
+HOST=0
 BUILD=0
 COMPOSE_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+  --host)
+    HOST=1
+    shift
+    ;;
   --hardware)
     HARDWARE=1
     shift
@@ -48,6 +55,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   esac
 done
+
+if [[ "$HOST" == "1" ]]; then
+  COMPOSE_FILES+=(-f "$ROOT_DIR/deploy/docker/docker-compose.host.yml")
+fi
 
 if [[ "$HARDWARE" == "1" ]]; then
   COMPOSE_FILES+=(-f "$ROOT_DIR/deploy/docker/docker-compose.hardware.yml")
