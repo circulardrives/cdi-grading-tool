@@ -44,10 +44,17 @@ fi
 
 if [[ $# -eq 0 ]]; then
   set -- up -d
+elif [[ "${1:-}" == "down" ]]; then
+  set -- down --remove-orphans "$@"
 fi
 
 cd "$ROOT_DIR"
 echo "LAN discovery stack (no BENCH_IP)"
 echo "  Dashboard: http://127.0.0.1:\${DASHBOARD_PORT:-3000}"
 echo "  Discover subnet: ${CDI_DISCOVER_SUBNET} (enter on the Discover page)"
-exec env CDI_VERSION="$CDI_VERSION" docker compose "${COMPOSE_FILES[@]}" "$@"
+if [[ "${1:-}" == "up" ]]; then
+  env CDI_VERSION="$CDI_VERSION" docker compose "${COMPOSE_FILES[@]}" "$@" \
+    || env CDI_VERSION="$CDI_VERSION" docker compose "${COMPOSE_FILES[@]}" "$@"
+else
+  exec env CDI_VERSION="$CDI_VERSION" docker compose "${COMPOSE_FILES[@]}" "$@"
+fi

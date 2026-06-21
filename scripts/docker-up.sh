@@ -70,6 +70,8 @@ if [[ ${#COMPOSE_ARGS[@]} -eq 0 ]]; then
     COMPOSE_ARGS+=(--build)
   fi
   COMPOSE_ARGS+=(-d)
+elif [[ "${COMPOSE_ARGS[0]}" == "down" ]]; then
+  COMPOSE_ARGS+=(--remove-orphans)
 fi
 
 cd "$ROOT_DIR"
