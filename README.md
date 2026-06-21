@@ -95,6 +95,14 @@ CDI_VERSION=0.9.4 docker compose \
 
 Open http://127.0.0.1:3000 → **Discover**. Requires port **8844** free on your machine.
 
+**macOS:** Docker Desktop cannot scan your lab LAN from the host overlay (VM uses a different subnet). Use the remote-bench script instead:
+
+```shell
+BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
+```
+
+Open http://127.0.0.1:3000 → **Discover** with subnet `192.168.0.0/24`.
+
 Stop either stack: `docker compose -f deploy/docker/docker-compose.ghcr.yml down` (add `-f deploy/docker/docker-compose.host.yml` if you used the host overlay).
 
 Images: `ghcr.io/circulardrives/cdi-health-api` and `ghcr.io/circulardrives/cdi-health-dashboard` (multi-arch, published on each `v*` release).
@@ -139,7 +147,7 @@ sudo apt install ./cdi-health_X.Y.Z_all.deb
 
 `apt install ./cdi-health_*.deb` resolves package dependencies and installs:
 
-- **`python3`** — runtime for the bundled application tree under `/opt/cdi-health/lib`
+- **`python3`** and **`python3-venv`** — venv + API dependencies installed at package install time
 - **`smartmontools`** — `smartctl`
 - **`nvme-cli`** — `nvme`
 - **`openseachest`** — OpenSeaChest utilities (when the package exists in your apt sources; **Recommends**)
@@ -185,7 +193,7 @@ cdi-health --version
 sudo cdi-health scan
 ```
 
-Layout: **`/usr/local/bin/cdi-health`** and **`/usr/local/bin/cdi-health-api`**; libraries under **`/opt/cdi-health/lib`**; systemd unit **`cdi-health-api.service`**. See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) for dashboard and sudoers options.
+Layout: **`/usr/local/bin/cdi-health`** and **`/usr/local/bin/cdi-health-api`**; Python venv under **`/opt/cdi-health/venv`** (created at install); systemd unit **`cdi-health-api.service`**. See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) for dashboard and sudoers options.
 
 ---
 

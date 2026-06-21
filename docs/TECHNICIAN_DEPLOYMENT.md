@@ -25,7 +25,7 @@ Open http://127.0.0.1:3000 — bundled mock fixtures, no physical drives.
 
 ### LAN discovery (find remote grading benches)
 
-Runs the API on the **host network** so **Discover** can probe the lab LAN for systems running `cdi-health-api` (e.g. from the `.deb` on a bench). Port **8844** must be free on your machine.
+**Linux:** runs the API on the **host network** so **Discover** can probe the lab LAN for systems running `cdi-health-api` (e.g. from the `.deb` on a bench). Port **8844** must be free on your machine.
 
 ```bash
 CDI_VERSION=0.9.4 docker compose \
@@ -33,7 +33,13 @@ CDI_VERSION=0.9.4 docker compose \
   -f deploy/docker/docker-compose.host.yml up -d
 ```
 
-Open http://127.0.0.1:3000 → **Discover**.
+**macOS (Docker Desktop):** host networking uses the Docker VM, not your Mac's LAN — **Discover** will not find benches on `192.168.0.0/24`. Point the dashboard at a remote bench instead (no local mock API):
+
+```bash
+BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
+```
+
+Open http://127.0.0.1:3000 → **Discover** with subnet `192.168.0.0/24` (discovery runs from the bench API).
 
 Images (`linux/amd64`, `linux/arm64`):
 
@@ -97,7 +103,8 @@ Layout:
 
 - **`/usr/local/bin/cdi-health`** — CLI
 - **`/usr/local/bin/cdi-health-api`** — API entry point (includes FastAPI/uvicorn dependencies)
-- **`/opt/cdi-health/lib`** — application Python tree
+- **`/opt/cdi-health/venv`** — Python venv created at install time (matches system `python3`, including 3.14+)
+- **`/opt/cdi-health/pkg`** — bundled wheel used by postinst
 
 Systemd unit **`cdi-health-api.service`** may be installed under `/usr/lib/systemd/system/`; enable it if you want the API on boot (see below). It stores state in **`/var/lib/cdi-health`** and does not require a git clone.
 
@@ -224,7 +231,12 @@ Then edit the file and replace `cdiapi` with your service account.
 
 ### `cdi-health-api: Missing API dependencies`
 
-The `.deb` / `.rpm` package must ship FastAPI, uvicorn, and pydantic (the `[api]` extras). If you see this on a release package, upgrade to a build that includes the fix. **Workaround:** install from git with `pip install -e .[api]` in a venv and run `cdi-health-api` from that venv instead of `/usr/local/bin/cdi-health-api`.
+The `.deb` postinst creates **`/opt/cdi-health/venv`** and installs the bundled wheel with `[api]` extras for the system `python3`. Requires **`python3-venv`**. If the API still fails, reinstall the package or run:
+
+```bash
+sudo apt install python3-venv
+sudo apt install --reinstall ./cdi-health_*_all.deb
+```
 
 ### `cdi-health-api.service: Changing to the requested working directory failed`
 

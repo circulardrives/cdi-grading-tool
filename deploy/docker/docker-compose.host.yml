@@ -1,10 +1,15 @@
 # Overlay: API uses the host network so LAN discovery sees lab interfaces.
-# Dashboard shares the API network namespace and proxies to 127.0.0.1:8844.
+# Dashboard stays on the default bridge with port 3000 published to the host.
+#
+# Linux only for LAN discovery. Docker Desktop on Mac uses a VM — host network
+# scans the VM subnet (often 192.168.65.0/24), not your lab LAN. On Mac, use the
+# remote-bench overlay instead:
+#   BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
 #
 # Mock demo (default):
 #   docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 #
-# LAN discovery (find remote grading benches on the network):
+# LAN discovery (Linux — find remote grading benches on the network):
 #   docker compose -f deploy/docker/docker-compose.ghcr.yml \
 #     -f deploy/docker/docker-compose.host.yml up -d
 #
@@ -17,7 +22,9 @@ services:
       - cdi-api-data:/var/lib/cdi-health
 
   dashboard:
-    network_mode: service:api
-    ports: !reset null
+    ports: !override
+      - "${DASHBOARD_PORT:-3000}:3000"
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
     volumes:
       - ./nginx.host.conf:/etc/nginx/conf.d/default.conf:ro
