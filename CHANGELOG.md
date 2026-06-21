@@ -7,105 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **Docker API mock default:** remove `--mock-data` from the API image entrypoint and compose env; fixture scans only when **Use mock data** is enabled on Discover (or `mock_data` is sent explicitly). GHCR compose overrides the published image command so `0.9.4` images work without a new tag. `./scripts/docker-reset.sh --clear-data` drops cached fixture scans.
-- **Docker host overlay:** Mac/Linux browsers reach the dashboard on port 3000 via a socat sidecar (`172.17.0.1:8080` → nginx in the API network namespace); nginx proxies API calls to `127.0.0.1:8844`. On macOS, prefer `./scripts/docker-lan-discover.sh` for LAN discovery without host networking quirks.
-- **`.deb` on Python 3.14+:** postinst creates `/opt/cdi-health/venv` from the system `python3` and installs the bundled wheel with `[api]` extras so pydantic-core matches the host interpreter (Ubuntu 26+).
-
-### Added
-- **LAN discovery Docker stack** (`docker-compose.lan-discover.yml`, `./scripts/docker-lan-discover.sh`): technician dashboard + local API without `BENCH_IP`. Enter an explicit lab subnet on **Discover** (works on macOS Docker Desktop).
-
-### Changed
-- **Dashboard mock data:** fixture scans are opt-in via a **Use mock data** toggle on Discover (persisted in browser localStorage). Live scans are the default in published images and remote-bench mode.
-- **Remote-bench script:** secondary path for pinning all API traffic (including scans) to one bench via `BENCH_IP`; primary LAN discovery path is `./scripts/docker-lan-discover.sh`.
-
 ## [0.9.4] - 2026-06-21
 
+Current technician release: Docker GHCR images, `.deb` packages, and documentation target **0.9.4** only.
+
 ### Added
-- **Docker host-network overlay** (`deploy/docker/docker-compose.host.yml`): API binds on the host interface so **Discover** can scan the lab LAN for remote grading benches running `cdi-health-api`. Use `./scripts/docker-up.sh --host` or add the overlay to `docker-compose.ghcr.yml`.
+- **Docker host-network overlay** (`deploy/docker/docker-compose.host.yml`): API on the host network for Linux LAN discovery; Mac/Linux dashboard on port 3000 via socat sidecar + nginx in the API network namespace.
+- **LAN discovery Docker stack** (`docker-compose.lan-discover.yml`, `./scripts/docker-lan-discover.sh`): dashboard + local bridged API without `BENCH_IP`; enter lab subnet on **Discover** (works on macOS Docker Desktop).
+- **`./scripts/docker-reset.sh`**: tear down all compose overlays; `--clear-data` removes cached API scans when switching stacks.
 
 ### Changed
-- Published dashboard image defaults to live-scan UI mode (`VITE_CDI_USE_MOCK_DATA=0`); mock demos still use fixture data from the API container environment.
+- **Dashboard mock data:** fixture scans are opt-in via **Use mock data** on **Discover** (localStorage). Live scans are the default.
+- **Docker API:** no longer forces mock via image entrypoint or compose env; GHCR compose overrides the published API command so existing `0.9.4` images work without a new tag.
+- **Remote-bench script:** `BENCH_IP=… ./scripts/docker-remote-bench.sh` pins all API traffic (including scans) to one bench; primary discovery path is `./scripts/docker-lan-discover.sh`.
+
+### Fixed
+- **`.deb` on Python 3.14+:** postinst creates `/opt/cdi-health/venv` and pip-installs the bundled wheel with `[api]` extras (Ubuntu 26+ pydantic-core ABI).
+- **Docker host overlay on Mac:** localhost dashboard and API proxy via socat; prefer lan-discover for lab subnet probing on Docker Desktop.
+- **Compose overlay switching:** reduced race errors (`No such container`) when moving between host, bridged, and remote-bench stacks.
 
 ## [0.9.0] - 2026-05-24
 
+Initial public dashboard/API release line (superseded for deployment by **0.9.4** — use `v0.9.4` tags and images).
+
 ### Added
-- **Dashboard**: Technician console rebuilt as a Vite + React monorepo (Turborepo/bun) with shadcn/ui, replacing the Next.js app.
-- **Dashboard navigation**: Fleet Status, **Hosts**, **Discover**, **Scan**, Drive Health, Health Reports, and NVMe Self-Test as separate pages (replaces the combined Machines view).
-- **Machines API**: REST endpoints to register grading hosts and track reachability and scan status.
-- **LAN Discovery API**: `GET`/`POST /api/v1/discover` scans private IPv4 subnets for listening CDI Health APIs (TCP probe + health check, rate-limited).
-- **Self-test log API**: `GET /api/v1/selftests/status` returns NVMe Log Page 0x06 entries (`recent_results`, progress, completion) alongside live status.
-- **Self-test dashboard UI**: Expanded NVMe Self-Test page with log history, progress, and pass/fail details.
-- **h12-rome mock fixtures**: Real-world bad-drive scan and SMART fixtures for API/dashboard testing.
+- **Dashboard**: Vite + React technician console (Fleet Status, Hosts, Discover, Scan, Drive Health, Reports, NVMe Self-Test).
+- **Machines API** and **LAN Discovery API** (`/api/v1/discover`).
+- **NVMe self-test** CLI and dashboard log support.
+- GHCR Docker images and `.deb` packaging on `v*` tags.
 
-- **NVMe Self-Test Support**: New `selftest` command for running and monitoring NVMe device self-tests
-  - Automatically detects devices that support self-test
-  - Runs short tests by default (completes in ~2 minutes)
-  - Extended test support (may take several hours)
-  - Displays results in formatted table
-  - Shows existing test results on subsequent runs instead of starting new tests
-  - Status checking and abort functionality
-- **Responsive Terminal Output**: Table formatting adapts to console width
-  - Compact layout for narrow terminals (< 100 columns)
-  - Full layout with all columns for wide terminals
-  - Header box adjusts to terminal size
-- **Failed Self-Test Detection**: Failed NVMe self-tests automatically result in Grade F (critical failure)
-  - Integrated into health scoring system
-  - Prevents certification of drives with failed self-tests
-
-### Changed
-- Debian/RPM packages declare `smartmontools` and `nvme-cli` as dependencies, recommend openSeaChest, and run a post-install helper for host tooling.
-- CI builds the dashboard with bun and Turborepo.
-- README, DEVELOPMENT.md, DASHBOARD_API.md, and TECHNICIAN_DEPLOYMENT.md updated for the Vite dashboard, LAN discovery, and remote-host dev workflow.
-- systemd dashboard unit (`cdi-health-dashboard.service`) runs `bun run start` instead of npm.
-
-- Improved terminal output formatting for better readability on any console size
-- Self-test command now detects and displays existing test results instead of always starting new tests
-- Enhanced error handling for self-test operations
-- Tightened CDI health scoring so critical health deductions are hard fail-gates that produce Grade F / score 0.
-- NVMe health scoring now uses the drive-reported available-spare threshold when present, treats non-zero critical warnings and media/data-integrity errors as failures, and parses smartctl `table[].self_test_result.value` self-test failures.
-- SCSI/SAS scoring now recognizes parser output stored as `offline_uncorrectable_sectors` for combined uncorrected read/write/verify errors.
-- Power-on hours remain report telemetry and no longer create score deductions for missing NVMe self-test history.
-- HTML/CSV reports now surface SCSI/SAS non-medium errors as telemetry for trend review.
-- Reorganized the health specification into drive-class sections for SATA HDD, SAS HDD, SATA SSD, SAS SSD, and NVMe SSD.
-- Added openSeaChest health-check workflow notes to clarify SMART warnings, unavailable SMART checks, DST failure modes, Device Statistics preference, and telemetry-only counters.
-- Updated the README health summary to point to the main-repo CDI health spec and mirror the drive-class grading model.
-- Fixed release packaging so `.deb` and `.rpm` package versions come from the pushed git tag.
-- Accounted for nFPM's normalized SemVer package filenames, e.g. tag `v0.9` produces OS packages named `0.9.0`.
-
-### Removed
-- **Watch command**: Continuous monitoring mode removed from CLI and examples (use periodic `scan`/`report` or the REST API instead).
-
-### Technical Details
-- Self-test implementation follows NVMe Base Specification 2.3
-- Uses `nvme-cli` for self-test operations
-- Checks OACS bit 4 (Device Self-Test supported) via `nvme id-ctrl`
-
-### Features
-- **Scan Command**: Comprehensive device health scanning with detailed table output
-- **Report Command**: Generate detailed HTML or PDF health reports
-- **Self-Test Command**: Run and monitor NVMe device self-tests
-- **Multiple Output Formats**: Table (default), JSON, CSV, YAML
-- **Health Scoring**: 0-100 score with letter grades (A-F)
-- **Protocol Support**: ATA/SATA, NVMe, SCSI/SAS devices
-- **Mock Mode**: Test functionality without physical devices
-
-### Technical Details
-- Python 3.10+ support
-- Requires: nvme-cli, smartmontools (sg3-utils optional)
-- Proper CLI entry point: `cdi-health` command
-- Package can be installed via pip: `pip install cdi-health`
-- Version managed via setuptools-scm from git tags
+See git history and [v0.9.0 release notes](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.0) for full 0.9.0 detail.
 
 ## [1.0.0] - 2025-02-01
 
 ### Added
-- Initial beta release
-- Core scanning functionality
-- Health assessment algorithms
-- Report generation
-- Watch/monitoring mode
+- Initial beta release (pre-dashboard CLI line).
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.9.0...HEAD
-[0.9.0]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.8...v0.9.0
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.4
+[0.9.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.0
 [1.0.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v1.0.0

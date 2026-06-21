@@ -65,16 +65,25 @@ Choose the path that matches your goal:
 
 | Goal | Method |
 | ---- | ------ |
-| **Try the dashboard** (mock data) | [Docker / GHCR](#docker-compose-mock-demo) |
-| **Find grading benches on the LAN** | [Docker + host overlay](#docker-compose-mock-demo) |
+| **Try the dashboard** (fixtures opt-in on Discover) | [Docker / GHCR](#docker-compose-technician-dashboard) |
+| **Find grading benches on the LAN** | [`docker-lan-discover.sh`](#docker-compose-technician-dashboard) |
+| **Live scans** from laptop UI → remote bench | [`docker-remote-bench.sh`](#docker-compose-technician-dashboard) |
 | **Real drive scans** on a grading bench | [`.deb` package](#debianubuntu-deb--for-grading-benches-with-real-drives-cli--api) |
 | **Develop** or patch the codebase | [From source](#from-source) |
 
-### Docker Compose (mock demo)
+### Docker Compose (technician dashboard)
 
 Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No Python, bun, or npm.
 
-**Mock demo** (fixtures, no drives):
+**Current release:** pin **`CDI_VERSION=0.9.4`** (see [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.4)).
+
+**Reset when switching stacks** (fixes compose errors or stale mock scans):
+
+```shell
+./scripts/docker-reset.sh --clear-data
+```
+
+**Default stack** (local API + dashboard; live scans default, mock opt-in on Discover):
 
 ```shell
 git clone https://github.com/circulardrives/cdi-grading-tool.git
@@ -85,13 +94,19 @@ CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 
 Open http://127.0.0.1:3000
 
-**LAN discovery** (find remote grading benches on the network — no bench IP required):
+**LAN discovery** (find remote grading benches — no bench IP required):
 
 ```shell
-./scripts/docker-lan-discover.sh
+CDI_VERSION=0.9.4 ./scripts/docker-lan-discover.sh
 ```
 
 Open http://127.0.0.1:3000 → **Discover** → enter your lab subnet (e.g. `192.168.0.0/24`). Works on **macOS Docker Desktop** and Linux.
+
+**Live scans on a remote bench** (proxies all API traffic to one host):
+
+```shell
+BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
+```
 
 **Linux (optional):** host-network overlay auto-detects the local subnet (port **8844** must be free on the host):
 
@@ -101,19 +116,13 @@ CDI_VERSION=0.9.4 docker compose \
   -f deploy/docker/docker-compose.host.yml up -d
 ```
 
-**Pin scans to one remote bench** (all API traffic proxied to that host):
+Stop: `./scripts/docker-lan-discover.sh down` or `./scripts/docker-reset.sh`.
 
-```shell
-BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
-```
+Images: `ghcr.io/circulardrives/cdi-health-api:0.9.4` and `ghcr.io/circulardrives/cdi-health-dashboard:0.9.4` (multi-arch).
 
-Stop: `./scripts/docker-lan-discover.sh down` (or `docker compose -f deploy/docker/docker-compose.ghcr.yml down` for mock demo).
+To build the dashboard with the **Use mock data** toggle from source: `docker compose -f deploy/docker/docker-compose.yml up -d --build`.
 
-Images: `ghcr.io/circulardrives/cdi-health-api` and `ghcr.io/circulardrives/cdi-health-dashboard` (multi-arch, published on each `v*` release).
-
-To build locally instead of pulling: `./scripts/docker-up.sh --build` (add `--host` for LAN discovery).
-
-Full options: [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
+Full options and team test plan: [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) · [Team testing (0.9.4)](docs/TEAM_TESTING.md).
 
 **From PyPI**
 
@@ -144,9 +153,9 @@ On a fresh Debian/Ubuntu bench (e.g. `jm@192.168.0.54`), download the `.deb` and
 ```shell
 # Enable universe on Ubuntu if needed: sudo add-apt-repository universe
 
-wget https://github.com/circulardrives/cdi-grading-tool/releases/download/vX.Y.Z/cdi-health_X.Y.Z_all.deb
+wget https://github.com/circulardrives/cdi-grading-tool/releases/download/v0.9.4/cdi-health_0.9.4_all.deb
 sudo apt update
-sudo apt install ./cdi-health_X.Y.Z_all.deb
+sudo apt install ./cdi-health_0.9.4_all.deb
 ```
 
 `apt install ./cdi-health_*.deb` resolves package dependencies and installs:
@@ -312,18 +321,17 @@ Optional: `--api-token …` and header `X-API-Token`. Endpoints include `/api/v1
 
 Browser-based **grading console** for bench technicians: **Fleet Status**, **Hosts**, **Discover**, **Scan**, **Drive Health**, **Health Reports**, and **NVMe Self-Test**. Source lives in `dashboard/` (Vite + React + shadcn/ui monorepo, managed with **bun**).
 
-The dashboard is **separate from the `.deb` package**. Install `.deb` on grading benches; run the UI via **Docker/GHCR** on a technician laptop (mock demo or LAN discovery with the host overlay).
+The dashboard is **separate from the `.deb` package**. Install `.deb` on grading benches; run the UI via **Docker/GHCR 0.9.4** on a technician laptop.
 
 ### Run with Docker
 
 ```shell
-CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
-# LAN discovery:
-CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml \
-  -f deploy/docker/docker-compose.host.yml up -d
+CDI_VERSION=0.9.4 ./scripts/docker-lan-discover.sh          # find benches on LAN
+BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh       # live scans on one bench
+./scripts/docker-reset.sh --clear-data                       # when switching stacks
 ```
 
-See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
+See [Team testing (0.9.4)](docs/TEAM_TESTING.md) and [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
 
 ### Local development (bun)
 
@@ -382,7 +390,8 @@ API reference: [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md). Systemd and sudoe
 | **[Dashboard API](docs/DASHBOARD_API.md)**                                                                     | REST endpoints for the technician UI                                                                                                                                                                             |
 | **[Testing](README_TESTING.md)**                                                                             | Mock data and test commands                                                                                                                                                                                      |
 | **[Contributing](CONTRIBUTING.md)**                                                                          | Contributions                                                                                                                                                                                                    |
-| **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)**                                                   | Docker Compose, GHCR images, `.deb`, git + systemd, dashboard, troubleshooting                                                                                                                                   |
+| **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)**                                                   | Docker Compose, GHCR 0.9.4, `.deb`, git + systemd, dashboard, troubleshooting                                                                                                                                   |
+| **[Team testing (0.9.4)](docs/TEAM_TESTING.md)**                                                             | End-to-end validation: bench `.deb` + laptop Docker, LAN discover, live scans                                                                                                                                     |
 
 
 ---

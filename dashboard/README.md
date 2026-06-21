@@ -2,6 +2,8 @@
 
 Vite + React technician console for the CDI Health local API. Built with [shadcn/ui](https://ui.shadcn.com) (radix-luma preset) in a bun monorepo.
 
+**Release:** use Docker image `ghcr.io/circulardrives/cdi-health-dashboard:0.9.4` or build from this repo.
+
 ## Structure
 
 ```
@@ -10,63 +12,70 @@ dashboard/
 └── packages/ui/       # Shared shadcn components
 ```
 
-## Quick start
+## Quick start (Docker — recommended)
 
-### Docker (recommended — no local bun install)
-
-From the repository root:
+From the repository root. Pin **0.9.4**:
 
 ```bash
-./scripts/docker-up.sh --build
-```
+./scripts/docker-reset.sh --clear-data
 
-Open http://127.0.0.1:3000 (mock data by default).
+# Find grading benches on the LAN
+CDI_VERSION=0.9.4 ./scripts/docker-lan-discover.sh
 
-**Published release images** (built on each `v*` tag, hosted on GHCR):
-
-```bash
-docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
-# pin a version:
-CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
-```
-
-Images:
-
-- `ghcr.io/circulardrives/cdi-health-api`
-- `ghcr.io/circulardrives/cdi-health-dashboard`
-
-See [Technician deployment](../docs/TECHNICIAN_DEPLOYMENT.md) for hardware scanning, env vars, and troubleshooting.
-
-### Local development (bun)
-
-Requires [bun](https://bun.sh) 1.3+. From the repository root with the API running:
-
-```bash
-cd dashboard
-bun install
-bun run dev
+# Live scans via one remote bench
+BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
 ```
 
 Open http://127.0.0.1:3000
 
-Or use the all-in-one mock launcher from repo root:
+- **Discover** → subnet `192.168.0.0/24` to find `cdi-health-api` on the network.
+- **Use mock data** (Discover → Demo mode) is **off by default**; enable for fixture demos only.
+
+Build from source (includes latest UI, e.g. mock toggle):
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml up -d --build
+```
+
+Images (multi-arch):
+
+- `ghcr.io/circulardrives/cdi-health-api:0.9.4`
+- `ghcr.io/circulardrives/cdi-health-dashboard:0.9.4`
+
+See [Team testing](../docs/TEAM_TESTING.md) and [Technician deployment](../docs/TECHNICIAN_DEPLOYMENT.md).
+
+## Local development (bun)
+
+Requires [bun](https://bun.sh) 1.3+.
+
+```bash
+cd dashboard
+cp apps/web/.env.example apps/web/.env.local
+bun install
+bun run dev
+```
+
+Or all-in-one mock from repo root:
 
 ```bash
 ./scripts/start-local-mock.sh
 ```
 
+Live scans are the default; enable **Use mock data** on **Discover** for fixtures.
+
 ## Environment
 
-Copy `apps/web/.env.example` to `apps/web/.env.local` and adjust as needed. The start script writes this file automatically.
+Copy `apps/web/.env.example` to `apps/web/.env.local`.
 
 | Variable | Purpose |
 | --- | --- |
 | `VITE_CDI_API_BASE_URL` | Fetch base path (`/api/cdi` in dev) |
 | `VITE_CDI_API_PROXY_TARGET` | Vite proxy upstream (default `127.0.0.1:8844`) |
 | `VITE_CDI_API_TOKEN` | Sent as `X-API-Token` when API auth is enabled |
-| `VITE_CDI_MOCK_DATA_PATH` | Mock fixtures path when **Use mock data** is enabled in the UI |
+| `VITE_CDI_MOCK_DATA_PATH` | Path sent to API when **Use mock data** is enabled |
+| `VITE_CDI_DISCOVER_SUBNET` | Default subnet placeholder on Discover |
 
-In Docker/nginx production mode, the UI uses `/api/cdi` on the same origin; nginx proxies to the API container.
+In Docker/nginx production mode, the UI uses `/api/cdi` on the same origin; nginx proxies to the API container or remote bench.
 
 ## Adding components
 
@@ -85,4 +94,4 @@ bun run build
 bun run start   # serves apps/web/dist via vite preview
 ```
 
-For production deployment without bun on the host, use Docker (`deploy/docker/`) or the GHCR compose file above.
+For production without bun on the host, use Docker (`deploy/docker/`) or GHCR compose.

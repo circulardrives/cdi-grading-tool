@@ -21,7 +21,7 @@ name: cdi-health
 
 services:
   api:
-    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-latest}
+    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-0.9.4}
     container_name: cdi-health-api
     command:
       [
@@ -59,7 +59,7 @@ services:
     restart: unless-stopped
 
   dashboard:
-    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-latest}
+    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-0.9.4}
     container_name: cdi-health-dashboard
     ports:
       - "${DASHBOARD_PORT:-3000}:80"

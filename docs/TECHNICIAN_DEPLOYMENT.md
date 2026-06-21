@@ -1,18 +1,28 @@
 # Technician Deployment Guide
 
+**Current release: 0.9.4** — Docker images, `.deb` packages, and examples below use `CDI_VERSION=0.9.4` or [v0.9.4](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.4).
+
+Team end-to-end test plan: **[TEAM_TESTING.md](TEAM_TESTING.md)**.
+
 This guide covers three common setups:
 
-1. **Docker Compose** — easiest way to run the **dashboard + API** together without installing Python, bun, or systemd (mock/demo by default).
-2. **`.deb` package** — fastest way to get `cdi-health` and `cdi-health-api` on Debian/Ubuntu (see [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases)). Does **not** include the web dashboard.
-3. **Git clone + Python venv** — use when you need an editable install, custom patches, or production systemd on bare metal.
+1. **Docker Compose** — run the **dashboard + API** on a technician laptop without Python, bun, or systemd.
+2. **`.deb` package** — install `cdi-health` and `cdi-health-api` on Debian/Ubuntu grading benches (no web UI in the package).
+3. **Git clone + Python venv** — editable install, custom patches, or production systemd on bare metal.
 
-Both bare-metal options expect **Linux** with access to storage tooling (see below).
+Bare-metal grading hosts expect **Linux** with storage tooling (see below).
 
 ## Option A — Docker Compose
 
-Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No local Python, bun, or npm.
+Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2.
 
-### Mock demo (GHCR, no build)
+**Reset when switching stacks:**
+
+```bash
+./scripts/docker-reset.sh --clear-data
+```
+
+### Default stack (GHCR 0.9.4)
 
 ```bash
 git clone https://github.com/circulardrives/cdi-grading-tool.git
@@ -21,14 +31,14 @@ cd cdi-grading-tool
 CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 ```
 
-Open http://127.0.0.1:3000 — bundled mock fixtures, no physical drives.
+Open http://127.0.0.1:3000 — **live scans default**; enable **Use mock data** on **Discover** for fixtures.
 
 ### LAN discovery (find remote grading benches)
 
 **macOS and Linux (recommended):** local API on the default Docker bridge. Enter your lab subnet on the **Discover** page — no `BENCH_IP` required.
 
 ```bash
-./scripts/docker-lan-discover.sh
+CDI_VERSION=0.9.4 ./scripts/docker-lan-discover.sh
 ```
 
 Open http://127.0.0.1:3000 → **Discover** → subnet `192.168.0.0/24` (or your lab CIDR). On macOS Docker Desktop, host networking uses the VM subnet (~192.168.65.x), but probing an **explicit** lab subnet from the bridged API container reaches benches on your LAN.
@@ -59,10 +69,9 @@ No `docker login` required for public pulls.
 Stop:
 
 ```bash
+./scripts/docker-reset.sh
+# or
 ./scripts/docker-lan-discover.sh down
-# or, if using the Linux host overlay:
-docker compose -f deploy/docker/docker-compose.ghcr.yml \
-  -f deploy/docker/docker-compose.host.yml down
 ```
 
 **Build locally** (optional): `./scripts/docker-up.sh --build` or `./scripts/docker-up.sh --host --build`
@@ -100,7 +109,7 @@ The package declares **Depends** on `python3`, `smartmontools`, and `nvme-cli`, 
 
 ```bash
 sudo apt update
-sudo apt install ./cdi-health_*_all.deb
+sudo apt install ./cdi-health_0.9.4_all.deb
 cdi-health --version
 sudo cdi-health scan
 ```
@@ -128,7 +137,7 @@ sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
 
 Trusted lab networks only.
 
-For **dashboard + mock demo** on a laptop, use **Option A (Docker Compose)** with the host overlay for discovery, or `./scripts/start-local-mock.sh` from a dev clone.
+For **fixture demos** on a laptop, use **Option A** with `docker compose -f deploy/docker/docker-compose.yml up -d --build` and enable **Use mock data** on Discover, or `./scripts/start-local-mock.sh` from a dev clone.
 
 ---
 
