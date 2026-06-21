@@ -37,14 +37,19 @@ import { Spinner } from "@workspace/ui/components/spinner"
 import { Switch } from "@workspace/ui/components/switch"
 
 import { PageHeader } from "@/components/page-header"
+import { MockDataToggle } from "@/components/mock-data-toggle"
+import {
+  mockDataRequestFields,
+  useMockDataSettings,
+} from "@/components/mock-data-provider"
 import { getHealth, listMachines, scanDevices } from "@/lib/api"
-import { appConfig } from "@/lib/config"
 import { getSelectedHostId, setSelectedHostId } from "@/lib/selected-host"
 import type { HealthResponse, Machine, ScanResponse } from "@/lib/types"
 
 const LOCAL_SCAN_TARGET = "local"
 
 export function ScanPage() {
+  const { useMockData, mockDataPath } = useMockDataSettings()
   const [hosts, setHosts] = useState<Machine[]>([])
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
@@ -101,7 +106,7 @@ export function ScanPage() {
         ignore_nvme: ignoreNvme,
         ignore_scsi: ignoreScsi,
         ...(scanTarget !== LOCAL_SCAN_TARGET ? { machine_id: scanTarget } : {}),
-        ...(appConfig.useMockData ? { mock_data: appConfig.mockDataPath } : {}),
+        ...mockDataRequestFields(useMockData, mockDataPath),
       })
       setLastResult(result)
       const label = selectedHost?.name ?? "local API"
@@ -175,10 +180,11 @@ export function ScanPage() {
               {selectedHost
                 ? `Grade drives for ${selectedHost.name}`
                 : "Scan attached drives on the local API (no fleet host)"}
-              {appConfig.useMockData ? " · mock data mode" : ""}
+              {useMockData ? " · mock data mode" : ""}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
+            <MockDataToggle id="scan-use-mock-data" compact />
             {loading ? (
               <Skeleton className="h-10 w-full max-w-xs" />
             ) : (

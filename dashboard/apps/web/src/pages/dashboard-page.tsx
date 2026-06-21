@@ -36,8 +36,11 @@ import {
   TableRow,
 } from "@workspace/ui/components/table"
 
+import {
+  mockDataRequestFields,
+  useMockDataSettings,
+} from "@/components/mock-data-provider"
 import { getDevices, getHealth, scanDevices } from "@/lib/api"
-import { appConfig } from "@/lib/config"
 import type { HealthResponse, ScanResponse } from "@/lib/types"
 
 function statusBadgeVariant(status?: string) {
@@ -52,6 +55,7 @@ function statusBadgeVariant(status?: string) {
 }
 
 export function DashboardPage() {
+  const { useMockData, mockDataPath } = useMockDataSettings()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [scan, setScan] = useState<ScanResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -88,9 +92,7 @@ export function DashboardPage() {
         ignore_ata: false,
         ignore_nvme: false,
         ignore_scsi: false,
-        ...(appConfig.useMockData
-          ? { mock_data: appConfig.mockDataPath }
-          : {}),
+        ...mockDataRequestFields(useMockData, mockDataPath),
       })
       setScan(result)
       toast.success(`Scan complete — ${result.summary.total} device(s) found`)

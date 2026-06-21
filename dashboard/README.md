@@ -64,8 +64,7 @@ Copy `apps/web/.env.example` to `apps/web/.env.local` and adjust as needed. The 
 | `VITE_CDI_API_BASE_URL` | Fetch base path (`/api/cdi` in dev) |
 | `VITE_CDI_API_PROXY_TARGET` | Vite proxy upstream (default `127.0.0.1:8844`) |
 | `VITE_CDI_API_TOKEN` | Sent as `X-API-Token` when API auth is enabled |
-| `VITE_CDI_USE_MOCK_DATA` | `1` to pass mock_data on scan/report calls |
-| `VITE_CDI_MOCK_DATA_PATH` | Mock fixtures path relative to repo root |
+| `VITE_CDI_MOCK_DATA_PATH` | Mock fixtures path when **Use mock data** is enabled in the UI |
 
 In Docker/nginx production mode, the UI uses `/api/cdi` on the same origin; nginx proxies to the API container.
 

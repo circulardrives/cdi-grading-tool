@@ -149,8 +149,8 @@ Requires [bun](https://bun.sh) on the machine serving the UI.
 ```bash
 cd /opt/cdi-grading-tool/dashboard
 cp apps/web/.env.example apps/web/.env.local
-# Set VITE_CDI_API_PROXY_TARGET to your API (e.g. http://127.0.0.1:8844)
-# and VITE_CDI_USE_MOCK_DATA=0 for live scans before building.
+# Set VITE_CDI_API_PROXY_TARGET to your API (e.g. http://127.0.0.1:8844).
+# Live scans are the default; enable **Use mock data** on the Discover page for demos.
 bun install
 bun run build
 ```

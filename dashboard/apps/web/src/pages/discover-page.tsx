@@ -38,6 +38,7 @@ import {
 } from "@workspace/ui/components/table"
 
 import { PageHeader } from "@/components/page-header"
+import { MockDataToggle } from "@/components/mock-data-toggle"
 import { createMachine, discoverHosts } from "@/lib/api"
 import { appConfig } from "@/lib/config"
 import {
@@ -165,6 +166,19 @@ export function DiscoverPage() {
           network interfaces on the API host.
         </AlertDescription>
       </Alert>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Demo mode</CardTitle>
+          <CardDescription>
+            Mock data is off by default. Enable it here when you want fixture drives
+            instead of live hardware scans.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <MockDataToggle id="discover-use-mock-data" />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

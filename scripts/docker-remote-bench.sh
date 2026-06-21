@@ -24,6 +24,8 @@ Examples:
   BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh down
 
 Open http://127.0.0.1:\${DASHBOARD_PORT:-3000} → Discover with subnet 192.168.0.0/24
+
+Live scans are the default. Enable **Use mock data** on Discover for fixture demos.
 USAGE
 }
 

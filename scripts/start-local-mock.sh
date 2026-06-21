@@ -203,7 +203,6 @@ cat >"$ROOT_DIR/dashboard/apps/web/.env.local" <<ENV
 VITE_CDI_API_PROXY_TARGET=http://${API_HOST}:${API_PORT}
 VITE_CDI_API_BASE_URL=/api/cdi
 VITE_CDI_API_TOKEN=${API_TOKEN}
-VITE_CDI_USE_MOCK_DATA=${RUN_MOCK_DATA}
 VITE_CDI_MOCK_DATA_PATH=${MOCK_DATA_PATH}
 VITE_DEV_HOST=${DASHBOARD_HOST}
 VITE_DEV_PORT=${DASHBOARD_PORT}
@@ -272,7 +271,7 @@ echo "Services are running:"
 echo "  API:       http://${API_HOST}:${API_PORT}"
 echo "  Dashboard: http://${DASHBOARD_HOST}:${DASHBOARD_PORT}"
 if [[ "$RUN_MOCK_DATA" == "1" ]]; then
-  echo "  Data mode: mock (${MOCK_DATA_PATH})"
+  echo "  Data mode: mock (${MOCK_DATA_PATH}) — enable **Use mock data** on Discover in the UI"
 else
   echo "  Data mode: real device scan"
 fi

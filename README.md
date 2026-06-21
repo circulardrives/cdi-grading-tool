@@ -342,7 +342,7 @@ bun install
 bun run dev
 ```
 
-Start `cdi-health-api` separately (or use the mock launcher above). Set `VITE_CDI_USE_MOCK_DATA=0` in `.env.local` for live device scans.
+Start `cdi-health-api` separately (or use the mock launcher above). Live scans are the default; enable **Use mock data** on the Discover page for fixture demos.
 
 **Remote grading host** (laptop UI → bench API):
 
@@ -351,7 +351,6 @@ cd dashboard
 cp apps/web/.env.example apps/web/.env.local
 # edit apps/web/.env.local, for example:
 #   VITE_CDI_API_PROXY_TARGET=http://192.168.0.54:8844
-#   VITE_CDI_USE_MOCK_DATA=0
 #   VITE_CDI_API_TOKEN=<token if API auth is enabled>
 #   VITE_CDI_DISCOVER_SUBNET=192.168.0.0/24   # cross-subnet LAN discovery
 bun install && bun run dev
