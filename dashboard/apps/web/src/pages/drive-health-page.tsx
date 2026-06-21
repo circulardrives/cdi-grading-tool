@@ -43,8 +43,11 @@ import {
 
 import { DriveHealthTable } from "@/components/drive-health-table"
 import { PageHeader } from "@/components/page-header"
+import {
+  mockDataRequestFields,
+  useMockDataSettings,
+} from "@/components/mock-data-provider"
 import { getDevices, listMachines, scanDevices } from "@/lib/api"
-import { appConfig } from "@/lib/config"
 import { getDetailedColumns, getSimpleColumns } from "@/lib/drive-columns"
 import {
   countByDriveClass,
@@ -55,6 +58,7 @@ import { getSelectedHostId, setSelectedHostId } from "@/lib/selected-host"
 import type { DeviceRecord, DriveClass, DriveViewMode, Machine } from "@/lib/types"
 
 export function DriveHealthPage() {
+  const { useMockData, mockDataPath } = useMockDataSettings()
   const [devices, setDevices] = useState<DeviceRecord[]>([])
   const [hosts, setHosts] = useState<Machine[]>([])
   const [selectedHostId, setSelectedHostIdState] = useState<string | null>(
@@ -122,9 +126,7 @@ export function DriveHealthPage() {
         ignore_nvme: false,
         ignore_scsi: false,
         machine_id: selectedHostId,
-        ...(appConfig.useMockData
-          ? { mock_data: appConfig.mockDataPath }
-          : {}),
+        ...mockDataRequestFields(useMockData, mockDataPath),
       })
       setDevices(result.devices)
       setScannedAt(result.scanned_at)

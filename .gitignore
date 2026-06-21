@@ -122,6 +122,7 @@ celerybeat.pid
 
 # Environments
 .env
+deploy/docker/.nginx.remote-bench.generated.conf
 .venv
 env/
 venv/

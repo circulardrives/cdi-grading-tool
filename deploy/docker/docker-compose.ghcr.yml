@@ -2,22 +2,42 @@
 #
 #   docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 #
-# Pin a release:
-#   CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+# Live scans are the default. Enable **Use mock data** on the Discover page for fixtures.
 #
-# LAN discovery overlay:
-#   CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml \
+# Pin a release:
+#   CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+#
+# If switching overlays fails with "No such container", run:
+#   ./scripts/docker-reset.sh
+#
+# LAN discovery (macOS + Linux — explicit subnet on Discover page):
+#   ./scripts/docker-lan-discover.sh
+#
+# Linux host-network overlay (auto-detect local subnet):
+#   CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml \
 #     -f deploy/docker/docker-compose.host.yml up -d
 
 name: cdi-health
 
 services:
   api:
-    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-latest}
+    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-0.9.5}
     container_name: cdi-health-api
+    command:
+      [
+        "python",
+        "-m",
+        "cdi_health.api.server",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8844",
+        "--data-dir",
+        "/var/lib/cdi-health",
+        "--allow-non-root",
+      ]
     environment:
       CDI_HEALTH_API_ALLOW_NON_ROOT: "1"
-      CDI_HEALTH_API_MOCK_DATA: /app/src/cdi_health/mock_data
       CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:-}
       CDI_HEALTH_DATA_DIR: /var/lib/cdi-health
     volumes:
@@ -39,13 +59,13 @@ services:
     restart: unless-stopped
 
   dashboard:
-    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-latest}
+    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-0.9.5}
     container_name: cdi-health-dashboard
     ports:
       - "${DASHBOARD_PORT:-3000}:80"
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
 
 volumes:

@@ -11,7 +11,7 @@ Usage: ./scripts/docker-up.sh [options] [compose args...]
 Start the CDI Health API + dashboard with Docker Compose (mock/demo by default).
 
 Options:
-  --host       API on host network for LAN discovery (remote grading benches)
+  --host       API on host network for LAN discovery (Linux; auto-detect subnet)
   --hardware   Include hardware overlay for live drive scanning on the host
   --build      Pass --build to compose up
   -h, --help   Show this help
@@ -70,6 +70,8 @@ if [[ ${#COMPOSE_ARGS[@]} -eq 0 ]]; then
     COMPOSE_ARGS+=(--build)
   fi
   COMPOSE_ARGS+=(-d)
+elif [[ "${COMPOSE_ARGS[0]}" == "down" ]]; then
+  COMPOSE_ARGS+=(--remove-orphans)
 fi
 
 cd "$ROOT_DIR"

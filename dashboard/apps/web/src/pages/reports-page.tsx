@@ -53,6 +53,10 @@ import { Spinner } from "@workspace/ui/components/spinner"
 import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert"
 
 import {
+  mockDataRequestFields,
+  useMockDataSettings,
+} from "@/components/mock-data-provider"
+import {
   downloadReportFile,
   generateReport,
   getDevices,
@@ -60,7 +64,6 @@ import {
   openReportFile,
   reportFilename,
 } from "@/lib/api"
-import { appConfig } from "@/lib/config"
 import type { DeviceRecord, ReportHistoryEntry } from "@/lib/types"
 
 const HISTORY_KEY = "cdi-report-history"
@@ -82,6 +85,7 @@ function saveReportHistory(entries: ReportHistoryEntry[]): void {
 }
 
 export function ReportsPage() {
+  const { useMockData, mockDataPath } = useMockDataSettings()
   const [format, setFormat] = useState<"html" | "pdf" | "csv">("html")
   const [outputPath, setOutputPath] = useState("")
   const [device, setDevice] = useState("")
@@ -118,9 +122,7 @@ export function ReportsPage() {
         ignore_nvme: ignoreNvme,
         ignore_scsi: ignoreScsi,
         device: device.trim() || undefined,
-        ...(appConfig.useMockData
-          ? { mock_data: appConfig.mockDataPath }
-          : {}),
+        ...mockDataRequestFields(useMockData, mockDataPath),
       })
 
       const entry: ReportHistoryEntry = {

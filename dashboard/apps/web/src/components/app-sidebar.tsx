@@ -24,9 +24,8 @@ import {
 } from "@workspace/ui/components/sidebar"
 import { Badge } from "@workspace/ui/components/badge"
 
-import { appConfig } from "@/lib/config"
-
 import { CdiLogo, CdiLogoMark } from "@/components/cdi-logo"
+import { useMockDataSettings } from "@/components/mock-data-provider"
 
 const navItems = [
   {
@@ -75,6 +74,7 @@ const navItems = [
 
 export function AppSidebar() {
   const location = useLocation()
+  const { useMockData } = useMockDataSettings()
 
   return (
     <Sidebar collapsible="icon" variant="inset">
@@ -136,7 +136,7 @@ export function AppSidebar() {
             <Badge variant="outline">Local API</Badge>
             <span className="truncate font-mono">127.0.0.1:8844</span>
           </div>
-          {appConfig.useMockData ? (
+          {useMockData ? (
             <Badge variant="secondary" className="w-fit">
               Mock scan data
             </Badge>

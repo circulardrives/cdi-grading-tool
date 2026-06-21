@@ -1,39 +1,63 @@
 # Technician Deployment Guide
 
+**Current release: 0.9.5** — Docker images, `.deb` packages, and examples below use `CDI_VERSION=0.9.5` or [v0.9.5](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.5).
+
+Team end-to-end test plan: **[TEAM_TESTING.md](TEAM_TESTING.md)**.
+
 This guide covers three common setups:
 
-1. **Docker Compose** — easiest way to run the **dashboard + API** together without installing Python, bun, or systemd (mock/demo by default).
-2. **`.deb` package** — fastest way to get `cdi-health` and `cdi-health-api` on Debian/Ubuntu (see [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases)). Does **not** include the web dashboard.
-3. **Git clone + Python venv** — use when you need an editable install, custom patches, or production systemd on bare metal.
+1. **Docker Compose** — run the **dashboard + API** on a technician laptop without Python, bun, or systemd.
+2. **`.deb` package** — install `cdi-health` and `cdi-health-api` on Debian/Ubuntu grading benches (no web UI in the package).
+3. **Git clone + Python venv** — editable install, custom patches, or production systemd on bare metal.
 
-Both bare-metal options expect **Linux** with access to storage tooling (see below).
+Bare-metal grading hosts expect **Linux** with storage tooling (see below).
 
 ## Option A — Docker Compose
 
-Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No local Python, bun, or npm.
+Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2.
 
-### Mock demo (GHCR, no build)
+**Reset when switching stacks:**
+
+```bash
+./scripts/docker-reset.sh --clear-data
+```
+
+### Default stack (GHCR 0.9.5)
 
 ```bash
 git clone https://github.com/circulardrives/cdi-grading-tool.git
 cd cdi-grading-tool
 
-CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 ```
 
-Open http://127.0.0.1:3000 — bundled mock fixtures, no physical drives.
+Open http://127.0.0.1:3000 — **live scans default**; enable **Use mock data** on **Discover** for fixtures.
 
 ### LAN discovery (find remote grading benches)
 
-Runs the API on the **host network** so **Discover** can probe the lab LAN for systems running `cdi-health-api` (e.g. from the `.deb` on a bench). Port **8844** must be free on your machine.
+**macOS and Linux (recommended):** local API on the default Docker bridge. Enter your lab subnet on the **Discover** page — no `BENCH_IP` required.
 
 ```bash
-CDI_VERSION=0.9.4 docker compose \
+CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh
+```
+
+Open http://127.0.0.1:3000 → **Discover** → subnet `192.168.0.0/24` (or your lab CIDR). On macOS Docker Desktop, host networking uses the VM subnet (~192.168.65.x), but probing an **explicit** lab subnet from the bridged API container reaches benches on your LAN.
+
+**Linux (optional):** host-network overlay auto-detects the local subnet. Port **8844** must be free on your machine.
+
+```bash
+CDI_VERSION=0.9.5 docker compose \
   -f deploy/docker/docker-compose.ghcr.yml \
   -f deploy/docker/docker-compose.host.yml up -d
 ```
 
-Open http://127.0.0.1:3000 → **Discover**.
+**Pin all API traffic to one bench** (including live scans on that host — not just discovery):
+
+```bash
+BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
+```
+
+v1 limitation: with `./scripts/docker-lan-discover.sh`, **Discover** finds remote benches, but **Scan** / **Drive Health** still hit the local API container until you select a connected host or use remote-bench mode.
 
 Images (`linux/amd64`, `linux/arm64`):
 
@@ -45,8 +69,9 @@ No `docker login` required for public pulls.
 Stop:
 
 ```bash
-docker compose -f deploy/docker/docker-compose.ghcr.yml \
-  -f deploy/docker/docker-compose.host.yml down
+./scripts/docker-reset.sh
+# or
+./scripts/docker-lan-discover.sh down
 ```
 
 **Build locally** (optional): `./scripts/docker-up.sh --build` or `./scripts/docker-up.sh --host --build`
@@ -84,7 +109,7 @@ The package declares **Depends** on `python3`, `smartmontools`, and `nvme-cli`, 
 
 ```bash
 sudo apt update
-sudo apt install ./cdi-health_*_all.deb
+sudo apt install ./cdi-health_0.9.5_all.deb
 cdi-health --version
 sudo cdi-health scan
 ```
@@ -97,7 +122,8 @@ Layout:
 
 - **`/usr/local/bin/cdi-health`** — CLI
 - **`/usr/local/bin/cdi-health-api`** — API entry point (includes FastAPI/uvicorn dependencies)
-- **`/opt/cdi-health/lib`** — application Python tree
+- **`/opt/cdi-health/venv`** — Python venv created at install time (matches system `python3`, including 3.14+)
+- **`/opt/cdi-health/pkg`** — bundled wheel used by postinst
 
 Systemd unit **`cdi-health-api.service`** may be installed under `/usr/lib/systemd/system/`; enable it if you want the API on boot (see below). It stores state in **`/var/lib/cdi-health`** and does not require a git clone.
 
@@ -111,7 +137,7 @@ sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
 
 Trusted lab networks only.
 
-For **dashboard + mock demo** on a laptop, use **Option A (Docker Compose)** with the host overlay for discovery, or `./scripts/start-local-mock.sh` from a dev clone.
+For **fixture demos** on a laptop, use **Option A** with `docker compose -f deploy/docker/docker-compose.yml up -d --build` and enable **Use mock data** on Discover, or `./scripts/start-local-mock.sh` from a dev clone.
 
 ---
 
@@ -142,8 +168,8 @@ Requires [bun](https://bun.sh) on the machine serving the UI.
 ```bash
 cd /opt/cdi-grading-tool/dashboard
 cp apps/web/.env.example apps/web/.env.local
-# Set VITE_CDI_API_PROXY_TARGET to your API (e.g. http://127.0.0.1:8844)
-# and VITE_CDI_USE_MOCK_DATA=0 for live scans before building.
+# Set VITE_CDI_API_PROXY_TARGET to your API (e.g. http://127.0.0.1:8844).
+# Live scans are the default; enable **Use mock data** on the Discover page for demos.
 bun install
 bun run build
 ```
@@ -224,7 +250,12 @@ Then edit the file and replace `cdiapi` with your service account.
 
 ### `cdi-health-api: Missing API dependencies`
 
-The `.deb` / `.rpm` package must ship FastAPI, uvicorn, and pydantic (the `[api]` extras). If you see this on a release package, upgrade to a build that includes the fix. **Workaround:** install from git with `pip install -e .[api]` in a venv and run `cdi-health-api` from that venv instead of `/usr/local/bin/cdi-health-api`.
+The `.deb` postinst creates **`/opt/cdi-health/venv`** and installs the bundled wheel with `[api]` extras for the system `python3`. Requires **`python3-venv`**. If the API still fails, reinstall the package or run:
+
+```bash
+sudo apt install python3-venv
+sudo apt install --reinstall ./cdi-health_*_all.deb
+```
 
 ### `cdi-health-api.service: Changing to the requested working directory failed`
 

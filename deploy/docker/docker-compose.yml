@@ -3,7 +3,7 @@
 # From the repository root:
 #   docker compose -f deploy/docker/docker-compose.yml up --build
 #
-# Open http://127.0.0.1:3000 (mock data by default).
+# Open http://127.0.0.1:3000 — enable **Use mock data** on Discover for fixture demos.
 #
 # For live drive scanning on the Docker host, add the hardware overlay:
 #   docker compose -f deploy/docker/docker-compose.yml \
@@ -17,9 +17,21 @@ services:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.api
     container_name: cdi-health-api
+    command:
+      [
+        "python",
+        "-m",
+        "cdi_health.api.server",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8844",
+        "--data-dir",
+        "/var/lib/cdi-health",
+        "--allow-non-root",
+      ]
     environment:
       CDI_HEALTH_API_ALLOW_NON_ROOT: "1"
-      CDI_HEALTH_API_MOCK_DATA: /app/src/cdi_health/mock_data
       CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:-}
       CDI_HEALTH_DATA_DIR: /var/lib/cdi-health
     volumes:
@@ -46,6 +58,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.dashboard
       args:
         VITE_CDI_USE_MOCK_DATA: ${VITE_CDI_USE_MOCK_DATA:-0}
+        VITE_CDI_MOCK_DATA_PATH: /app/src/cdi_health/mock_data
         VITE_CDI_API_TOKEN: ${CDI_HEALTH_API_TOKEN:-}
     container_name: cdi-health-dashboard
     ports:

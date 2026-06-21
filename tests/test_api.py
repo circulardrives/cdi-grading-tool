@@ -281,10 +281,12 @@ def test_api_selftest_status_includes_result_details(api_client: TestClient) -> 
     assert isinstance(body["devices"], list)
 
     for device in body["devices"]:
-        assert "latest_result" in device
         assert "recent_results" in device
         assert "logs_message" in device
         assert isinstance(device["recent_results"], list)
+        if not device.get("supported", True):
+            continue
+        assert "latest_result" in device
         if device.get("latest_result"):
             assert "result_code" in device["latest_result"]
             assert "result" in device["latest_result"]

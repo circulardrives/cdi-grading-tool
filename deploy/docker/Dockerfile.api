@@ -12,7 +12,7 @@ WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 
-ARG VERSION=0.9.4
+ARG VERSION=0.9.5
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 RUN pip install --no-cache-dir ".[api]"
 
@@ -21,4 +21,4 @@ RUN mkdir -p /var/lib/cdi-health
 
 EXPOSE 8844
 
-CMD ["python", "-m", "cdi_health.api.server", "--host", "0.0.0.0", "--port", "8844", "--data-dir", "/var/lib/cdi-health", "--allow-non-root", "--mock-data", "/app/src/cdi_health/mock_data"]
+CMD ["python", "-m", "cdi_health.api.server", "--host", "0.0.0.0", "--port", "8844", "--data-dir", "/var/lib/cdi-health", "--allow-non-root"]
