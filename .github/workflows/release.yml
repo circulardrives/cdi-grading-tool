@@ -46,26 +46,20 @@ jobs:
 
       - name: Prepare package layout
         run: |
-          mkdir -p build/pkg/opt/cdi-health/lib
+          mkdir -p build/pkg/opt/cdi-health/pkg
           mkdir -p build/pkg/usr/local/bin
 
-          # Include [api] extras so cdi-health-api can import fastapi/uvicorn/pydantic.
-          pip install --target=build/pkg/opt/cdi-health/lib "$(ls dist/*.whl)[api]"
-
-          # Remove __pycache__ dirs to avoid bloating the package
-          find build/pkg -type d -name __pycache__ -prune -exec rm -rf {} +
+          cp dist/cdi_health-*.whl build/pkg/opt/cdi-health/pkg/
 
           cat > build/pkg/usr/local/bin/cdi-health << 'WRAPPER'
           #!/bin/sh
-          export PYTHONPATH=/opt/cdi-health/lib
-          exec python3 -m cdi_health "$@"
+          exec /opt/cdi-health/bin/cdi-health-wrapper.sh -m cdi_health "$@"
           WRAPPER
           chmod +x build/pkg/usr/local/bin/cdi-health
 
           cat > build/pkg/usr/local/bin/cdi-health-api << 'WRAPPER'
           #!/bin/sh
-          export PYTHONPATH=/opt/cdi-health/lib
-          exec python3 -c "from cdi_health.api.server import main; main()" "$@"
+          exec /opt/cdi-health/bin/cdi-health-wrapper.sh -m cdi_health.api.server "$@"
           WRAPPER
           chmod +x build/pkg/usr/local/bin/cdi-health-api
 

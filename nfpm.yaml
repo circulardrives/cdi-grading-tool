@@ -22,6 +22,7 @@ license: Apache-2.0
 
 depends:
   - python3
+  - python3-venv
   - smartmontools
   - nvme-cli
 
@@ -29,9 +30,14 @@ recommends:
   - openseachest
 
 contents:
-  - src: ./build/pkg/opt/cdi-health/lib
-    dst: /opt/cdi-health/lib
+  - src: ./build/pkg/opt/cdi-health/pkg
+    dst: /opt/cdi-health/pkg
     type: tree
+
+  - src: ./deploy/deb/cdi-health-wrapper.sh
+    dst: /opt/cdi-health/bin/cdi-health-wrapper.sh
+    file_info:
+      mode: 0755
 
   - src: ./build/pkg/usr/local/bin/cdi-health
     dst: /usr/local/bin/cdi-health

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Docker host overlay:** dashboard publishes port 3000 on the host again (Mac browser) via `host.containers.internal` to reach the host-network API.
+- **`.deb` on Python 3.14+:** postinst creates `/opt/cdi-health/venv` from the system `python3` and installs the bundled wheel with `[api]` extras so pydantic-core matches the host interpreter (Ubuntu 26+).
+
 ## [0.9.4] - 2026-06-21
 
 ### Added
