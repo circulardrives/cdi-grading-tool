@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-06-21
+
 ### Added
-- **Docker Compose** stack under `deploy/docker/` for API + dashboard without local Python/bun/systemd setup (mock demo by default; optional hardware overlay for live drive scanning).
-- `./scripts/docker-up.sh` helper for `docker compose up`.
-- **Release workflow** publishes multi-arch Docker images to GHCR on each `v*` tag (`cdi-health-api`, `cdi-health-dashboard`); use `deploy/docker/docker-compose.ghcr.yml` to run published images.
+- **Docker host-network overlay** (`deploy/docker/docker-compose.host.yml`): API binds on the host interface so **Discover** can scan the lab LAN for remote grading benches running `cdi-health-api`. Use `./scripts/docker-up.sh --host` or add the overlay to `docker-compose.ghcr.yml`.
+
+### Changed
+- Published dashboard image defaults to live-scan UI mode (`VITE_CDI_USE_MOCK_DATA=0`); mock demos still use fixture data from the API container environment.
 
 ## [0.9.0] - 2026-05-24
 

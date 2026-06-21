@@ -8,7 +8,7 @@ COPY dashboard/apps ./apps
 COPY dashboard/packages ./packages
 
 ARG VITE_CDI_API_BASE_URL=/api/cdi
-ARG VITE_CDI_USE_MOCK_DATA=1
+ARG VITE_CDI_USE_MOCK_DATA=0
 ARG VITE_CDI_API_TOKEN=
 ARG VITE_CDI_MOCK_DATA_PATH=src/cdi_health/mock_data
 

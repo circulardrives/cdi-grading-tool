@@ -45,7 +45,7 @@ services:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.dashboard
       args:
-        VITE_CDI_USE_MOCK_DATA: ${VITE_CDI_USE_MOCK_DATA:-1}
+        VITE_CDI_USE_MOCK_DATA: ${VITE_CDI_USE_MOCK_DATA:-0}
         VITE_CDI_API_TOKEN: ${CDI_HEALTH_API_TOKEN:-}
     container_name: cdi-health-dashboard
     ports:

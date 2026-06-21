@@ -260,9 +260,10 @@ jobs:
             echo "- \`ghcr.io/circulardrives/cdi-health-dashboard:${version}\`"
             echo
             echo '```bash'
-            echo "docker compose -f deploy/docker/docker-compose.ghcr.yml up -d"
-            echo "# or pin this release:"
+            echo "# mock demo:"
             echo "CDI_VERSION=${version} docker compose -f deploy/docker/docker-compose.ghcr.yml up -d"
+            echo "# LAN discovery (host network API):"
+            echo "CDI_VERSION=${version} docker compose -f deploy/docker/docker-compose.ghcr.yml -f deploy/docker/docker-compose.host.yml up -d"
             echo '```'
           } > "$RUNNER_TEMP/release-containers.md"
 

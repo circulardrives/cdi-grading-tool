@@ -65,40 +65,43 @@ Choose the path that matches your goal:
 
 | Goal | Method |
 | ---- | ------ |
-| Try the **dashboard + API** (mock data) | [Docker Compose](#docker-compose-recommended-for-dashboard) or [GHCR release images](#github-container-registry-ghcr) |
-| Install **CLI on a grading host** | [`.deb` package](#debianubuntu-deb-release-builds--recommended-for-grading-hosts) |
+| **Try the dashboard** (mock data) | [Docker / GHCR](#docker-compose-mock-demo) |
+| **Find grading benches on the LAN** | [Docker + host overlay](#docker-compose-mock-demo) |
+| **Real drive scans** on a grading bench | [`.deb` package](#debianubuntu-deb--for-grading-benches-with-real-drives-cli--api) |
 | **Develop** or patch the codebase | [From source](#from-source) |
 
-### Docker Compose (recommended for dashboard)
+### Docker Compose (mock demo)
 
-Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No local Python, bun, or npm.
+Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No Python, bun, or npm.
 
-**Build locally:**
-
-```shell
-git clone https://github.com/circulardrives/cdi-grading-tool.git
-cd cdi-grading-tool
-./scripts/docker-up.sh --build
-```
-
-Open http://127.0.0.1:3000 (mock fixtures by default). Live drive scanning: `./scripts/docker-up.sh --hardware --build` (Linux host with `/dev` access).
-
-**GitHub Container Registry (GHCR)**
-
-Official `v*` releases publish multi-arch images (`linux/amd64`, `linux/arm64`):
-
-- `ghcr.io/circulardrives/cdi-health-api`
-- `ghcr.io/circulardrives/cdi-health-dashboard`
+**Mock demo** (fixtures, no drives):
 
 ```shell
 git clone https://github.com/circulardrives/cdi-grading-tool.git
 cd cdi-grading-tool
-docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+
+CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 ```
 
-Pin a release: `CDI_VERSION=0.9.0 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d`
+Open http://127.0.0.1:3000
 
-Full options (hardware overlay, env vars, troubleshooting): [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
+**LAN discovery** (find remote grading benches on the network):
+
+```shell
+CDI_VERSION=0.9.4 docker compose \
+  -f deploy/docker/docker-compose.ghcr.yml \
+  -f deploy/docker/docker-compose.host.yml up -d
+```
+
+Open http://127.0.0.1:3000 → **Discover**. Requires port **8844** free on your machine.
+
+Stop either stack: `docker compose -f deploy/docker/docker-compose.ghcr.yml down` (add `-f deploy/docker/docker-compose.host.yml` if you used the host overlay).
+
+Images: `ghcr.io/circulardrives/cdi-health-api` and `ghcr.io/circulardrives/cdi-health-dashboard` (multi-arch, published on each `v*` release).
+
+To build locally instead of pulling: `./scripts/docker-up.sh --build` (add `--host` for LAN discovery).
+
+Full options: [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
 
 **From PyPI**
 
@@ -118,7 +121,7 @@ pip install -e .
 pip install -e .[dev,api]
 ```
 
-**Debian/Ubuntu `.deb` (release builds)** — recommended for bare-metal grading hosts
+**Debian/Ubuntu `.deb`** — for **grading benches** with real drives (CLI + API)
 
 Prebuilt packages are on [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases).
 
@@ -158,12 +161,22 @@ For latest Seagate OpenSeaChest or a newer **nvme-cli** with OCP support when ap
 sudo ./scripts/install-host-dependencies.sh --latest-openseachest --build-nvme-cli
 ```
 
-**Enable the local API** (optional, for dashboards):
+**Enable the local API** (optional, for dashboards and LAN discovery):
 
 ```shell
 sudo systemctl enable --now cdi-health-api
 curl -s http://127.0.0.1:8844/api/v1/health
 ```
+
+To appear in **Discover** from a technician laptop running Docker (host overlay), bind the API on the lab network:
+
+```shell
+sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
+printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/cdi-health-api --host 0.0.0.0 --port 8844 --data-dir /var/lib/cdi-health\n' | sudo tee /etc/systemd/system/cdi-health-api.service.d/override.conf
+sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
+```
+
+Use only on trusted lab networks.
 
 **Verify grading:**
 
@@ -287,17 +300,18 @@ Optional: `--api-token …` and header `X-API-Token`. Endpoints include `/api/v1
 
 Browser-based **grading console** for bench technicians: **Fleet Status**, **Hosts**, **Discover**, **Scan**, **Drive Health**, **Health Reports**, and **NVMe Self-Test**. Source lives in `dashboard/` (Vite + React + shadcn/ui monorepo, managed with **bun**).
 
-The dashboard is **separate from the `.deb` package** — the release install provides `cdi-health` and optional `cdi-health-api` on grading hosts. For the UI, prefer **Docker** (above) or the options below.
+The dashboard is **separate from the `.deb` package**. Install `.deb` on grading benches; run the UI via **Docker/GHCR** on a technician laptop (mock demo or LAN discovery with the host overlay).
 
-### Run with Docker (easiest)
+### Run with Docker
 
 ```shell
-./scripts/docker-up.sh --build
-# or published images:
-docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+# LAN discovery:
+CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml \
+  -f deploy/docker/docker-compose.host.yml up -d
 ```
 
-Opens http://127.0.0.1:3000 with mock data. See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
+See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
 
 ### Local development (bun)
 
@@ -322,7 +336,7 @@ bun run dev
 
 Start `cdi-health-api` separately (or use the mock launcher above). Set `VITE_CDI_USE_MOCK_DATA=0` in `.env.local` for live device scans.
 
-**Remote grading host** (laptop UI → host API):
+**Remote grading host** (laptop UI → bench API):
 
 ```shell
 cd dashboard
