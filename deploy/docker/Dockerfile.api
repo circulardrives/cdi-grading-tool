@@ -21,4 +21,4 @@ RUN mkdir -p /var/lib/cdi-health
 
 EXPOSE 8844
 
-CMD ["python", "-m", "cdi_health.api.server", "--host", "0.0.0.0", "--port", "8844", "--data-dir", "/var/lib/cdi-health", "--allow-non-root", "--mock-data", "/app/src/cdi_health/mock_data"]
+CMD ["python", "-m", "cdi_health.api.server", "--host", "0.0.0.0", "--port", "8844", "--data-dir", "/var/lib/cdi-health", "--allow-non-root"]

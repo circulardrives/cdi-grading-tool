@@ -37,7 +37,6 @@ import { Spinner } from "@workspace/ui/components/spinner"
 import { Switch } from "@workspace/ui/components/switch"
 
 import { PageHeader } from "@/components/page-header"
-import { MockDataToggle } from "@/components/mock-data-toggle"
 import {
   mockDataRequestFields,
   useMockDataSettings,
@@ -180,11 +179,10 @@ export function ScanPage() {
               {selectedHost
                 ? `Grade drives for ${selectedHost.name}`
                 : "Scan attached drives on the local API (no fleet host)"}
-              {useMockData ? " · mock data mode" : ""}
+              {useMockData ? " · mock data enabled on Discover" : ""}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <MockDataToggle id="scan-use-mock-data" compact />
             {loading ? (
               <Skeleton className="h-10 w-full max-w-xs" />
             ) : (

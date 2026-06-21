@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Docker API mock default:** remove `--mock-data` from the API image entrypoint and compose env; fixture scans only when **Use mock data** is enabled on Discover (or `mock_data` is sent explicitly). GHCR compose overrides the published image command so `0.9.4` images work without a new tag. `./scripts/docker-reset.sh --clear-data` drops cached fixture scans.
 - **Docker host overlay:** Mac/Linux browsers reach the dashboard on port 3000 via a socat sidecar (`172.17.0.1:8080` → nginx in the API network namespace); nginx proxies API calls to `127.0.0.1:8844`. On macOS, prefer `./scripts/docker-lan-discover.sh` for LAN discovery without host networking quirks.
 - **`.deb` on Python 3.14+:** postinst creates `/opt/cdi-health/venv` from the system `python3` and installs the bundled wheel with `[api]` extras so pydantic-core matches the host interpreter (Ubuntu 26+).
 
