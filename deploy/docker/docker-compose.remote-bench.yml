@@ -1,6 +1,10 @@
-# Overlay: dashboard-only — proxy all API calls to a remote grading bench.
-# Skips the local mock API container (Mac Docker host networking cannot scan the lab LAN).
+# Overlay: dashboard-only — proxy all API calls to one remote grading bench.
+# Skips the local API container. Use when scans must run on the bench itself.
 #
+# For LAN discovery without hardcoding BENCH_IP, use docker-compose.lan-discover.yml:
+#   ./scripts/docker-lan-discover.sh
+#
+# Pin to one bench (all API traffic, including scans):
 #   BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
 #
 # Or manually:

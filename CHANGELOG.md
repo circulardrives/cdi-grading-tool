@@ -11,8 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker host overlay:** dashboard publishes port 3000 on the host again (Mac browser) via `host.containers.internal` to reach the host-network API.
 - **`.deb` on Python 3.14+:** postinst creates `/opt/cdi-health/venv` from the system `python3` and installs the bundled wheel with `[api]` extras so pydantic-core matches the host interpreter (Ubuntu 26+).
 
+### Added
+- **LAN discovery Docker stack** (`docker-compose.lan-discover.yml`, `./scripts/docker-lan-discover.sh`): technician dashboard + local API without `BENCH_IP`. Enter an explicit lab subnet on **Discover** (works on macOS Docker Desktop).
+
 ### Changed
 - **Dashboard mock data:** fixture scans are opt-in via a **Use mock data** toggle on Discover (persisted in browser localStorage). Live scans are the default in published images and remote-bench mode.
+- **Remote-bench script:** secondary path for pinning all API traffic (including scans) to one bench via `BENCH_IP`; primary LAN discovery path is `./scripts/docker-lan-discover.sh`.
 
 ## [0.9.4] - 2026-06-21
 

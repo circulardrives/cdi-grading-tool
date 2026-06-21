@@ -5,7 +5,10 @@
 # Pin a release:
 #   CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 #
-# LAN discovery overlay:
+# LAN discovery (macOS + Linux — explicit subnet on Discover page):
+#   ./scripts/docker-lan-discover.sh
+#
+# Linux host-network overlay (auto-detect local subnet):
 #   CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml \
 #     -f deploy/docker/docker-compose.host.yml up -d
 

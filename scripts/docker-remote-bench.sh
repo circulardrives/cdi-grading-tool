@@ -11,8 +11,11 @@ usage() {
   cat <<USAGE
 Usage: BENCH_IP=<bench-ip> ./scripts/docker-remote-bench.sh [compose args...]
 
-Run the technician dashboard on this machine; all API traffic goes to the remote
-grading bench (real drive scans, LAN discovery from the bench's network).
+Pin the dashboard to one remote grading bench — all API traffic (Discover, scans,
+reports) is proxied to that host. Use this when scans must run on the bench itself.
+
+For LAN discovery without hardcoding a bench IP, use:
+  ./scripts/docker-lan-discover.sh
 
 Environment:
   BENCH_IP       Required. Grading bench IP (e.g. 192.168.0.74)
@@ -23,7 +26,7 @@ Examples:
   BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
   BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh down
 
-Open http://127.0.0.1:\${DASHBOARD_PORT:-3000} → Discover with subnet 192.168.0.0/24
+Open http://127.0.0.1:\${DASHBOARD_PORT:-3000} — API calls go to http://\${BENCH_IP}:8844
 
 Live scans are the default. Enable **Use mock data** on Discover for fixture demos.
 USAGE
@@ -35,7 +38,8 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 if [[ -z "$BENCH_IP" ]]; then
-  echo "error: set BENCH_IP to the grading bench address (e.g. 192.168.0.74)" >&2
+  echo "error: set BENCH_IP to pin API traffic to a remote bench" >&2
+  echo "hint: for LAN discovery without BENCH_IP, run ./scripts/docker-lan-discover.sh" >&2
   usage >&2
   exit 1
 fi
@@ -57,5 +61,5 @@ if [[ $# -eq 0 ]]; then
 fi
 
 cd "$ROOT_DIR"
-echo "Dashboard → http://${BENCH_IP}:8844 (bench API)"
+echo "Remote bench mode — all API traffic → http://${BENCH_IP}:8844"
 exec env CDI_VERSION="$CDI_VERSION" docker compose "${COMPOSE_FILES[@]}" "$@"

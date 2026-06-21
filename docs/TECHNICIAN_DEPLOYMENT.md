@@ -25,7 +25,15 @@ Open http://127.0.0.1:3000 — bundled mock fixtures, no physical drives.
 
 ### LAN discovery (find remote grading benches)
 
-**Linux:** runs the API on the **host network** so **Discover** can probe the lab LAN for systems running `cdi-health-api` (e.g. from the `.deb` on a bench). Port **8844** must be free on your machine.
+**macOS and Linux (recommended):** local API on the default Docker bridge. Enter your lab subnet on the **Discover** page — no `BENCH_IP` required.
+
+```bash
+./scripts/docker-lan-discover.sh
+```
+
+Open http://127.0.0.1:3000 → **Discover** → subnet `192.168.0.0/24` (or your lab CIDR). On macOS Docker Desktop, host networking uses the VM subnet (~192.168.65.x), but probing an **explicit** lab subnet from the bridged API container reaches benches on your LAN.
+
+**Linux (optional):** host-network overlay auto-detects the local subnet. Port **8844** must be free on your machine.
 
 ```bash
 CDI_VERSION=0.9.4 docker compose \
@@ -33,13 +41,13 @@ CDI_VERSION=0.9.4 docker compose \
   -f deploy/docker/docker-compose.host.yml up -d
 ```
 
-**macOS (Docker Desktop):** host networking uses the Docker VM, not your Mac's LAN — **Discover** will not find benches on `192.168.0.0/24`. Point the dashboard at a remote bench instead (no local mock API):
+**Pin all API traffic to one bench** (including live scans on that host — not just discovery):
 
 ```bash
 BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
 ```
 
-Open http://127.0.0.1:3000 → **Discover** with subnet `192.168.0.0/24` (discovery runs from the bench API).
+v1 limitation: with `./scripts/docker-lan-discover.sh`, **Discover** finds remote benches, but **Scan** / **Drive Health** still hit the local API container until you select a connected host or use remote-bench mode.
 
 Images (`linux/amd64`, `linux/arm64`):
 
@@ -51,6 +59,8 @@ No `docker login` required for public pulls.
 Stop:
 
 ```bash
+./scripts/docker-lan-discover.sh down
+# or, if using the Linux host overlay:
 docker compose -f deploy/docker/docker-compose.ghcr.yml \
   -f deploy/docker/docker-compose.host.yml down
 ```

@@ -85,7 +85,15 @@ CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 
 Open http://127.0.0.1:3000
 
-**LAN discovery** (find remote grading benches on the network):
+**LAN discovery** (find remote grading benches on the network — no bench IP required):
+
+```shell
+./scripts/docker-lan-discover.sh
+```
+
+Open http://127.0.0.1:3000 → **Discover** → enter your lab subnet (e.g. `192.168.0.0/24`). Works on **macOS Docker Desktop** and Linux.
+
+**Linux (optional):** host-network overlay auto-detects the local subnet (port **8844** must be free on the host):
 
 ```shell
 CDI_VERSION=0.9.4 docker compose \
@@ -93,17 +101,13 @@ CDI_VERSION=0.9.4 docker compose \
   -f deploy/docker/docker-compose.host.yml up -d
 ```
 
-Open http://127.0.0.1:3000 → **Discover**. Requires port **8844** free on your machine.
-
-**macOS:** Docker Desktop cannot scan your lab LAN from the host overlay (VM uses a different subnet). Use the remote-bench script instead:
+**Pin scans to one remote bench** (all API traffic proxied to that host):
 
 ```shell
 BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
 ```
 
-Open http://127.0.0.1:3000 → **Discover** with subnet `192.168.0.0/24`.
-
-Stop either stack: `docker compose -f deploy/docker/docker-compose.ghcr.yml down` (add `-f deploy/docker/docker-compose.host.yml` if you used the host overlay).
+Stop: `./scripts/docker-lan-discover.sh down` (or `docker compose -f deploy/docker/docker-compose.ghcr.yml down` for mock demo).
 
 Images: `ghcr.io/circulardrives/cdi-health-api` and `ghcr.io/circulardrives/cdi-health-dashboard` (multi-arch, published on each `v*` release).
 

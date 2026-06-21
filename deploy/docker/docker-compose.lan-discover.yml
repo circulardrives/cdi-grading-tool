@@ -1,0 +1,18 @@
+# Overlay: local API on the default bridge network for LAN discovery.
+#
+# Probing an explicit lab subnet (e.g. 192.168.0.0/24) from the API container
+# reaches hosts on the technician's LAN — including on macOS Docker Desktop,
+# where network_mode: host uses the VM subnet instead of the lab LAN.
+#
+# No BENCH_IP required. Open http://127.0.0.1:3000 → Discover, enter your lab
+# subnet (placeholder: 192.168.0.0/24), then add found benches to the fleet.
+#
+#   ./scripts/docker-lan-discover.sh
+#
+# v1 note: scan/report requests still go to this local API unless you pin a
+# remote bench (remote-bench overlay with BENCH_IP).
+
+services:
+  api:
+    environment:
+      CDI_HEALTH_API_MOCK_DATA: ""
