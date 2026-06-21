@@ -5,7 +5,7 @@
 # Live scans are the default. Enable **Use mock data** on the Discover page for fixtures.
 #
 # Pin a release:
-#   CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+#   CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 #
 # If switching overlays fails with "No such container", run:
 #   ./scripts/docker-reset.sh
@@ -14,14 +14,14 @@
 #   ./scripts/docker-lan-discover.sh
 #
 # Linux host-network overlay (auto-detect local subnet):
-#   CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml \
+#   CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml \
 #     -f deploy/docker/docker-compose.host.yml up -d
 
 name: cdi-health
 
 services:
   api:
-    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-0.9.4}
+    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-0.9.5}
     container_name: cdi-health-api
     command:
       [
@@ -59,7 +59,7 @@ services:
     restart: unless-stopped
 
   dashboard:
-    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-0.9.4}
+    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-0.9.5}
     container_name: cdi-health-dashboard
     ports:
       - "${DASHBOARD_PORT:-3000}:80"

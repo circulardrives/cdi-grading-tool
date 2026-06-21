@@ -9,7 +9,7 @@
 #   docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 #
 # Linux host-network LAN discovery:
-#   CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml \
+#   CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml \
 #     -f deploy/docker/docker-compose.host.yml up -d
 #
 # Open http://127.0.0.1:3000 — ensure port 8844 is free on the host.

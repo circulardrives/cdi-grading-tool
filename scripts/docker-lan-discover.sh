@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CDI_VERSION="${CDI_VERSION:-0.9.4}"
+CDI_VERSION="${CDI_VERSION:-0.9.5}"
 CDI_DISCOVER_SUBNET="${CDI_DISCOVER_SUBNET:-192.168.0.0/24}"
 
 COMPOSE_FILES=(
@@ -20,7 +20,7 @@ The API container probes explicit subnets you enter on the Discover page (works 
 macOS Docker Desktop when you set the lab subnet, e.g. ${CDI_DISCOVER_SUBNET}).
 
 Environment:
-  CDI_VERSION          GHCR tag (default: 0.9.4)
+  CDI_VERSION          GHCR tag (default: 0.9.5)
   CDI_DISCOVER_SUBNET  Documented default subnet for Discover UI (default: 192.168.0.0/24)
   DASHBOARD_PORT       Host port for the UI (default: 3000)
 

@@ -1,17 +1,16 @@
-# CDI Health 0.9.4 — team testing guide
+# CDI Health 0.9.5 — team testing guide
 
 Use this guide to validate the technician workflow: **Docker dashboard on a laptop** + **`.deb` API on a grading bench** on the lab LAN.
 
-**Release:** [v0.9.4](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.4)  
-**Pull request:** [#63](https://github.com/circulardrives/cdi-grading-tool/pull/63) (merge target for doc/script fixes after 0.9.4 tag)
+**Release:** [v0.9.5](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.5)
 
 ---
 
 ## Slack / email (copy-paste)
 
-> **CDI Health 0.9.4 — please test technician workflow**
+> **CDI Health 0.9.5 — please test technician workflow**
 >
-> We consolidated on **0.9.4** for Docker images, `.deb` packages, and docs. Mock fixture data is **off by default**; enable **Use mock data** on the **Discover** page only for demos.
+> We consolidated on **0.9.5** for Docker images, `.deb` packages, and docs. Mock fixture data is **off by default**; enable **Use mock data** on the **Discover** page only for demos.
 >
 > **Bench (Linux):** install or upgrade the `.deb`, enable `cdi-health-api` on `0.0.0.0:8844` so Discover can find it.
 >
@@ -40,10 +39,10 @@ Use this guide to validate the technician workflow: **Docker dashboard on a lapt
 On the bench (example: `h12-rome` / `192.168.0.74`):
 
 ```bash
-# Download from GitHub Releases (v0.9.4)
-wget https://github.com/circulardrives/cdi-grading-tool/releases/download/v0.9.4/cdi-health_0.9.4_all.deb
+# Download from GitHub Releases (v0.9.5)
+wget https://github.com/circulardrives/cdi-grading-tool/releases/download/v0.9.5/cdi-health_0.9.5_all.deb
 sudo apt update
-sudo apt install ./cdi-health_0.9.4_all.deb
+sudo apt install ./cdi-health_0.9.5_all.deb
 
 cdi-health --version
 sudo systemctl enable --now cdi-health-api
@@ -59,7 +58,7 @@ sudo cdi-health scan
 
 **Pass criteria:** health JSON `status: ok`; scan shows real drive serials and grades.
 
-**Python 3.14+ (Ubuntu 26):** postinst creates `/opt/cdi-health/venv` automatically. If API fails on pydantic, reinstall the 0.9.4 `.deb` from PR #63 build.
+**Python 3.14+ (Ubuntu 26):** postinst creates `/opt/cdi-health/venv` automatically. If API fails on pydantic, reinstall the 0.9.5 `.deb` from PR #63 build.
 
 ---
 
@@ -69,7 +68,7 @@ From the repo root on the laptop:
 
 ```bash
 ./scripts/docker-reset.sh --clear-data
-CDI_VERSION=0.9.4 ./scripts/docker-lan-discover.sh
+CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh
 open http://127.0.0.1:3000   # or visit in browser
 ```
 
@@ -144,7 +143,7 @@ Then start the stack you need (see [Technician deployment](TECHNICIAN_DEPLOYMENT
 
 | Goal | Command |
 | ---- | ------- |
-| Find benches on LAN | `CDI_VERSION=0.9.4 ./scripts/docker-lan-discover.sh` |
+| Find benches on LAN | `CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh` |
 | Live scans on one bench | `BENCH_IP=<ip> ./scripts/docker-remote-bench.sh` |
 | Mock fixtures (UI toggle) | `docker compose -f deploy/docker/docker-compose.yml up -d --build` → Discover → **Use mock data** |
 | Reset / fix compose errors | `./scripts/docker-reset.sh --clear-data` |

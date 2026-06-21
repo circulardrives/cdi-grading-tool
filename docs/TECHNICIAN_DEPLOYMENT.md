@@ -1,6 +1,6 @@
 # Technician Deployment Guide
 
-**Current release: 0.9.4** — Docker images, `.deb` packages, and examples below use `CDI_VERSION=0.9.4` or [v0.9.4](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.4).
+**Current release: 0.9.5** — Docker images, `.deb` packages, and examples below use `CDI_VERSION=0.9.5` or [v0.9.5](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.5).
 
 Team end-to-end test plan: **[TEAM_TESTING.md](TEAM_TESTING.md)**.
 
@@ -22,13 +22,13 @@ Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2.
 ./scripts/docker-reset.sh --clear-data
 ```
 
-### Default stack (GHCR 0.9.4)
+### Default stack (GHCR 0.9.5)
 
 ```bash
 git clone https://github.com/circulardrives/cdi-grading-tool.git
 cd cdi-grading-tool
 
-CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 ```
 
 Open http://127.0.0.1:3000 — **live scans default**; enable **Use mock data** on **Discover** for fixtures.
@@ -38,7 +38,7 @@ Open http://127.0.0.1:3000 — **live scans default**; enable **Use mock data** 
 **macOS and Linux (recommended):** local API on the default Docker bridge. Enter your lab subnet on the **Discover** page — no `BENCH_IP` required.
 
 ```bash
-CDI_VERSION=0.9.4 ./scripts/docker-lan-discover.sh
+CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh
 ```
 
 Open http://127.0.0.1:3000 → **Discover** → subnet `192.168.0.0/24` (or your lab CIDR). On macOS Docker Desktop, host networking uses the VM subnet (~192.168.65.x), but probing an **explicit** lab subnet from the bridged API container reaches benches on your LAN.
@@ -46,7 +46,7 @@ Open http://127.0.0.1:3000 → **Discover** → subnet `192.168.0.0/24` (or your
 **Linux (optional):** host-network overlay auto-detects the local subnet. Port **8844** must be free on your machine.
 
 ```bash
-CDI_VERSION=0.9.4 docker compose \
+CDI_VERSION=0.9.5 docker compose \
   -f deploy/docker/docker-compose.ghcr.yml \
   -f deploy/docker/docker-compose.host.yml up -d
 ```
@@ -109,7 +109,7 @@ The package declares **Depends** on `python3`, `smartmontools`, and `nvme-cli`, 
 
 ```bash
 sudo apt update
-sudo apt install ./cdi-health_0.9.4_all.deb
+sudo apt install ./cdi-health_0.9.5_all.deb
 cdi-health --version
 sudo cdi-health scan
 ```

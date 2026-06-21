@@ -2,7 +2,7 @@
 
 Vite + React technician console for the CDI Health local API. Built with [shadcn/ui](https://ui.shadcn.com) (radix-luma preset) in a bun monorepo.
 
-**Release:** use Docker image `ghcr.io/circulardrives/cdi-health-dashboard:0.9.4` or build from this repo.
+**Release:** use Docker image `ghcr.io/circulardrives/cdi-health-dashboard:0.9.5` or build from this repo.
 
 ## Structure
 
@@ -14,13 +14,13 @@ dashboard/
 
 ## Quick start (Docker — recommended)
 
-From the repository root. Pin **0.9.4**:
+From the repository root. Pin **0.9.5**:
 
 ```bash
 ./scripts/docker-reset.sh --clear-data
 
 # Find grading benches on the LAN
-CDI_VERSION=0.9.4 ./scripts/docker-lan-discover.sh
+CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh
 
 # Live scans via one remote bench
 BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
@@ -39,8 +39,8 @@ docker compose -f deploy/docker/docker-compose.yml up -d --build
 
 Images (multi-arch):
 
-- `ghcr.io/circulardrives/cdi-health-api:0.9.4`
-- `ghcr.io/circulardrives/cdi-health-dashboard:0.9.4`
+- `ghcr.io/circulardrives/cdi-health-api:0.9.5`
+- `ghcr.io/circulardrives/cdi-health-dashboard:0.9.5`
 
 See [Team testing](../docs/TEAM_TESTING.md) and [Technician deployment](../docs/TECHNICIAN_DEPLOYMENT.md).
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BENCH_IP="${BENCH_IP:-}"
-CDI_VERSION="${CDI_VERSION:-0.9.4}"
+CDI_VERSION="${CDI_VERSION:-0.9.5}"
 GENERATED="$ROOT_DIR/deploy/docker/.nginx.remote-bench.generated.conf"
 TEMPLATE="$ROOT_DIR/deploy/docker/nginx.remote-bench.conf.template"
 
@@ -19,7 +19,7 @@ For LAN discovery without hardcoding a bench IP, use:
 
 Environment:
   BENCH_IP       Required. Grading bench IP (e.g. 192.168.0.74)
-  CDI_VERSION    GHCR tag (default: 0.9.4)
+  CDI_VERSION    GHCR tag (default: 0.9.5)
   DASHBOARD_PORT Host port for the UI (default: 3000)
 
 Examples:

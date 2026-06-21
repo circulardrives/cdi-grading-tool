@@ -7,18 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.4] - 2026-06-21
+## [0.9.5] - 2026-06-21
 
-Current technician release: Docker GHCR images, `.deb` packages, and documentation target **0.9.4** only.
+Current technician release: Docker GHCR images, `.deb` packages, and documentation target **0.9.5**.
 
 ### Added
 - **Docker host-network overlay** (`deploy/docker/docker-compose.host.yml`): API on the host network for Linux LAN discovery; Mac/Linux dashboard on port 3000 via socat sidecar + nginx in the API network namespace.
 - **LAN discovery Docker stack** (`docker-compose.lan-discover.yml`, `./scripts/docker-lan-discover.sh`): dashboard + local bridged API without `BENCH_IP`; enter lab subnet on **Discover** (works on macOS Docker Desktop).
 - **`./scripts/docker-reset.sh`**: tear down all compose overlays; `--clear-data` removes cached API scans when switching stacks.
+- **Team testing guide** (`docs/TEAM_TESTING.md`): end-to-end validation for bench `.deb` + laptop Docker.
 
 ### Changed
 - **Dashboard mock data:** fixture scans are opt-in via **Use mock data** on **Discover** (localStorage). Live scans are the default.
-- **Docker API:** no longer forces mock via image entrypoint or compose env; GHCR compose overrides the published API command so existing `0.9.4` images work without a new tag.
+- **Docker API:** no longer forces mock via image entrypoint or compose env.
 - **Remote-bench script:** `BENCH_IP=… ./scripts/docker-remote-bench.sh` pins all API traffic (including scans) to one bench; primary discovery path is `./scripts/docker-lan-discover.sh`.
 
 ### Fixed
@@ -28,13 +29,7 @@ Current technician release: Docker GHCR images, `.deb` packages, and documentati
 
 ## [0.9.0] - 2026-05-24
 
-Initial public dashboard/API release line (superseded for deployment by **0.9.4** — use `v0.9.4` tags and images).
-
-### Added
-- **Dashboard**: Vite + React technician console (Fleet Status, Hosts, Discover, Scan, Drive Health, Reports, NVMe Self-Test).
-- **Machines API** and **LAN Discovery API** (`/api/v1/discover`).
-- **NVMe self-test** CLI and dashboard log support.
-- GHCR Docker images and `.deb` packaging on `v*` tags.
+Initial public dashboard/API release line. Use **v0.9.5** for technician deployment.
 
 See git history and [v0.9.0 release notes](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.0) for full 0.9.0 detail.
 
@@ -43,7 +38,7 @@ See git history and [v0.9.0 release notes](https://github.com/circulardrives/cdi
 ### Added
 - Initial beta release (pre-dashboard CLI line).
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.9.4...HEAD
-[0.9.4]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.4
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.5
 [0.9.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.0
 [1.0.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v1.0.0

@@ -194,10 +194,10 @@ Dockerfiles live under `deploy/docker/`. Pull requests build images in CI (amd64
 docker compose -f deploy/docker/docker-compose.yml up --build
 ```
 
-**Test published 0.9.4 images:**
+**Test published 0.9.5 images:**
 
 ```bash
-CDI_VERSION=0.9.4 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 ```
 
 ### Install in Development Mode
