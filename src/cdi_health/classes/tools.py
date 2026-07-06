@@ -45,14 +45,21 @@ class Command:
     Command Class
     """
 
-    def __init__(self, command: str = None):
+    # Default timeout for subprocesses; generous enough for slow spun-down HDDs
+    # responding to smartctl --xall, but bounded so a wedged drive or bridge
+    # cannot stall a scan thread forever.
+    DEFAULT_TIMEOUT: int = 120
+
+    def __init__(self, command: str = None, timeout: int | None = DEFAULT_TIMEOUT):
         """
         Constructor
-        :param command:
+        :param command: command string to run
+        :param timeout: seconds before the subprocess is killed (None disables)
         """
 
         # Properties
         self.command = " ".join(command.split()) if command else None
+        self.timeout = timeout
         self.arguments = None
         self.process = None
         self.process_id = None
@@ -98,7 +105,12 @@ class Command:
             self.arguments = self.process.args
 
             # Capture Output
-            self.output, self.errors = self.process.communicate()
+            try:
+                self.output, self.errors = self.process.communicate(timeout=self.timeout)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.communicate()
+                raise CommandException(f"Command timed out after {self.timeout}s: {self.command}")
 
             # Capture Return Code
             self.return_code = self.process.returncode
@@ -122,6 +134,10 @@ class Command:
         except FileNotFoundError:
             # Raise Command Exception
             raise CommandException("Command not found")
+
+        # If Command Exception (e.g. timeout) - propagate unchanged
+        except CommandException:
+            raise
 
         # If Exception
         except Exception:
@@ -516,8 +532,8 @@ class SG3Utils:
 
         # Command Exception
         except CommandException:
-            # Return False
-            return False
+            # Return
+            return "Not Ready"
 
 
 class Smartctl:
@@ -668,10 +684,11 @@ class Smartctl:
         # Return Smartctl Output as Text
         return command.get_output().strip().decode("utf-8")
 
-    def get_all_as_json(self) -> dict | bool:
+    def get_all_as_json(self) -> dict:
         """
         Get All as JSON
-        :return: dict if OK | False if not
+        :return: dict of smartctl JSON output
+        :raises CommandException: on hard smartctl failure or unparseable output
         """
 
         # Prepare Command String
@@ -683,18 +700,41 @@ class Smartctl:
         # Run Command
         command.run()
 
-        # If Return Code is not Zero
-        if command.get_return_code() != 0:
-            # Loop through Bitmask
-            for bit_position, error_message in self.bitmask_codes.items():
-                # Check if Bit is Set
-                if command.get_return_code() & (1 << bit_position):
-                    # Print Error
-                    # print(f"{self.dut} - {error_message}")
-                    pass
+        # Return Code
+        return_code = command.get_return_code()
 
-        # Return Smartctl Output as JSON
-        return json.loads(command.get_output().strip().decode("utf-8"))
+        # Bits 0 (command line did not parse) and 1 (device open failed) are hard
+        # failures. Higher bits indicate a failing/failed disk but smartctl still
+        # emits valid JSON, which is exactly what a grading scan needs to see.
+        if return_code is not None and return_code & 0b11:
+            messages = [message for bit, message in self.bitmask_codes.items() if return_code & (1 << bit)]
+            errors = command.get_errors()
+            if isinstance(errors, bytes):
+                errors = errors.decode("utf-8", errors="replace")
+            raise CommandException(
+                f"smartctl failed for {self.dut} (return code {return_code}): "
+                f"{'; '.join(messages) or 'unknown error'}"
+                f"{f' | stderr: {errors.strip()[:200]}' if errors and errors.strip() else ''}"
+            )
+
+        # Decode Output
+        output = command.get_output()
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        output = (output or "").strip()
+
+        # If Empty Output
+        if not output:
+            raise CommandException(f"smartctl returned empty output for {self.dut} (return code {return_code})")
+
+        # Try Decode JSON
+        try:
+            # Return Smartctl Output as JSON
+            return json.loads(output)
+
+        # If JSON Decode Error
+        except json.JSONDecodeError as exception:
+            raise CommandException(f"Failed to parse smartctl JSON for {self.dut}: {exception}. Output: {output[:200]}")
 
     def get_health(self, as_json=True):
         """

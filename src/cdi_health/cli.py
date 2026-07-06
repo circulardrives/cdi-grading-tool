@@ -113,6 +113,26 @@ def check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) 
     return missing
 
 
+def load_threshold_config(config_path: str | None) -> None:
+    """
+    Load threshold configuration.
+
+    Uses the explicit --config path when given, otherwise falls back to the
+    packaged thresholds.yaml so the shipped defaults are actually applied.
+    """
+    from cdi_health.classes.config import configure_thresholds, get_default_config_path
+
+    if config_path:
+        configure_thresholds(config_path)
+        logger.info("Loaded configuration from: %s", config_path)
+        return
+
+    default_path = get_default_config_path()
+    if default_path:
+        configure_thresholds(default_path)
+        logger.debug("Loaded default configuration from: %s", default_path)
+
+
 def scan_devices_real(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) -> list[dict]:
     """Scan real devices."""
     from cdi_health.classes.devices import Devices
@@ -122,6 +142,16 @@ def scan_devices_real(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) ->
         ignore_nvme=ignore_nvme,
         ignore_scsi=ignore_scsi,
     )
+
+    # Surface drives that could not be opened or analysed so they are not
+    # silently missing from results (the worst failure mode on a grading bench).
+    if devices.failures:
+        logger.warning("%d device(s) could not be analysed:", len(devices.failures))
+        for failure in devices.failures:
+            name = failure.get("name", "<unknown>")
+            error = failure.get("error") or failure.get("open_error") or "unknown error"
+            logger.warning("  %s: %s", name, error)
+
     return devices.devices
 
 
@@ -203,12 +233,8 @@ def cmd_scan(args: Namespace) -> int:
             logger.info("Please install them before scanning real devices.")
             return 1
 
-    # Load custom configuration if provided
-    if args.config:
-        from cdi_health.classes.config import configure_thresholds
-
-        configure_thresholds(args.config)
-        logger.info("Loaded configuration from: %s", args.config)
+    # Load configuration (custom via --config, or packaged defaults)
+    load_threshold_config(args.config)
 
     # Scan devices
     try:
@@ -289,11 +315,8 @@ def cmd_report(args: Namespace) -> int:
             logger.error("Required tools not found: %s", ", ".join(missing))
             return 1
 
-    # Load custom configuration if provided
-    if args.config:
-        from cdi_health.classes.config import configure_thresholds
-
-        configure_thresholds(args.config)
+    # Load configuration (custom via --config, or packaged defaults)
+    load_threshold_config(args.config)
 
     # Scan devices
     try:
@@ -1013,11 +1036,7 @@ def cmd_export_mock(args: Namespace) -> int:
         logger.info("Install smartctl/nvme-cli (and sg utils for SCSI) before exporting.")
         return 1
 
-    if args.config:
-        from cdi_health.classes.config import configure_thresholds
-
-        configure_thresholds(args.config)
-        logger.info("Loaded configuration from: %s", args.config)
+    load_threshold_config(args.config)
 
     try:
         devices = scan_devices_real(

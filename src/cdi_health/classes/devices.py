@@ -33,9 +33,6 @@ from concurrent.futures import ThreadPoolExecutor
 # Data Classes
 from dataclasses import dataclass
 
-# Configuration
-from cdi_health.classes.config import get_config
-
 # Exceptions
 from cdi_health.classes.exceptions import CommandException, DevicesException
 
@@ -47,6 +44,27 @@ from cdi_health.classes.tools import Command, SeaTools, SG3Utils, Smartctl
 
 # Constants
 from cdi_health.constants import Protocol
+
+# Logging
+from cdi_health.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+def int_or_none(value) -> int | None:
+    """
+    Coerce a numeric JSON value to int; None for missing/non-numeric values
+    (e.g. "Not Reported"), so numeric comparisons never see strings.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.lstrip("-").isdigit():
+            return int(stripped)
+    return None
 
 
 class Device:
@@ -119,11 +137,18 @@ class Device:
 
         # Use provided SG3Utils or create new one
         if sg3utils_provider:
-            self.dut_sg: str = sg3utils_provider.sg_map26()
-            self.state: str = sg3utils_provider.test_unit_ready()
+            sg_mapped = sg3utils_provider.sg_map26()
+            self.dut_sg: str = sg_mapped if sg_mapped else self.dut
+            self.state: str = sg3utils_provider.test_unit_ready() or "Not Ready"
         else:
-            self.dut_sg: str = SG3Utils(self.dut).sg_map26()
-            self.state: str = SG3Utils(self.dut_sg).test_unit_ready()
+            sg_mapped = SG3Utils(self.dut).sg_map26()
+            if not sg_mapped:
+                # Mapping can fail for devices without an sg node (e.g. behind
+                # some USB bridges); fall back to the block device path rather
+                # than propagating False into tool commands.
+                logger.warning("sg_map26 failed for %s; falling back to block device path", self.dut)
+            self.dut_sg: str = sg_mapped if sg_mapped else self.dut
+            self.state: str = SG3Utils(self.dut_sg).test_unit_ready() or "Not Ready"
 
         # Store providers for later use
         self._smartctl_provider = smartctl_provider
@@ -366,6 +391,30 @@ class Device:
             # Collect SCSI Information
             SCSIProtocol(device=self, smartctl=self.smartctl_json)
 
+        # Grade the Device - protocols we cannot collect metrics for stay "U"
+        if self.is_ata or self.is_nvme or self.is_scsi:
+            self.apply_health_grade()
+
+    def apply_health_grade(self) -> None:
+        """
+        Derive CDI grading from the health score calculator so cdi_grade /
+        cdi_certified can never disagree with health_grade / is_certified.
+        The protocol handlers only collect metrics; this is the single
+        grading source of truth.
+        """
+
+        # Local import: scoring is a leaf module, but importing lazily keeps
+        # module import order flexible for future refactors
+        from cdi_health.classes.scoring import calculate_health_score
+
+        # Calculate Health Score
+        health = calculate_health_score(self.to_dict(pop=True))
+
+        # Apply CDI Grading
+        self.cdi_grade = health.grade
+        self.cdi_certified = health.is_certified
+        self.cdi_eligible = health.grade != "F"
+
     def refresh(self):
         """
         Refresh Device
@@ -572,24 +621,48 @@ class Device:
         :return: Media Type
         """
 
-        # Check Rotation Rate
-        if "rotation_rate" in self.smartctl_json:
-            # Set Media Type
-            return self.rotation_rate_map.get(
-                # Get Rotation Rate
-                self.smartctl_json.get("rotation_rate", "Not Reported"),
-                # Fallback
-                "Not Reported",
-            )
-        else:
-            # If Transport Protocol is NVMe
-            if self.transport_protocol == "NVMe":
-                # Set Media Type to SSD
-                return "SSD"
-            # If Transport Protocol is ATA
-            elif self.transport_protocol == "ATA":
-                # Set Media Type to HDD
-                return "HDD"
+        # Rotation rate is authoritative when reported: 0 = solid state, >0 = rpm
+        rotation_rate = self.smartctl_json.get("rotation_rate")
+        if isinstance(rotation_rate, int) and not isinstance(rotation_rate, bool):
+            return "SSD" if rotation_rate == 0 else "HDD"
+
+        # NVMe is always solid state
+        if self.transport_protocol == "NVMe":
+            return "SSD"
+
+        # ATA without rotation_rate: look for SSD evidence before assuming HDD,
+        # otherwise SATA SSDs get graded on the HDD sector-defect curve
+        if self.transport_protocol == "ATA":
+            return "SSD" if self.has_ata_ssd_indicators else "HDD"
+
+        return "Not Reported"
+
+    @property
+    def has_ata_ssd_indicators(self) -> bool:
+        """
+        SSD evidence for ATA devices that do not report rotation_rate.
+        :return: True if SMART data indicates solid state media
+        """
+
+        # Wear/endurance SMART attributes that only exist on SSDs. IDs 202/231
+        # are excluded because they mean different things on some HDDs.
+        ssd_attribute_ids = {169, 177, 230, 232, 233}
+        ssd_name_tokens = ("wear", "ssd", "nand", "percent_lifetime", "lifetime_remain")
+
+        for attribute in self.smartctl_json.get("ata_smart_attributes", {}).get("table", []) or []:
+            if attribute.get("id") in ssd_attribute_ids:
+                return True
+            if any(token in str(attribute.get("name", "")).lower() for token in ssd_name_tokens):
+                return True
+
+        # ATA Device Statistics log page 7 only exists on solid state devices
+        for page in self.smartctl_json.get("ata_device_statistics", {}).get("pages", []) or []:
+            if page.get("name") == "Solid State Device Statistics":
+                return True
+
+        # SSD-only form factors
+        form_factor = str(self.smartctl_json.get("form_factor", {}).get("name", "")).lower()
+        return any(token in form_factor for token in ("m.2", "msata"))
 
     @property
     def determine_transport_protocol(self) -> str:
@@ -964,8 +1037,10 @@ class Devices:
         # Reset Devices
         self.devices = list()
 
-        # Create Threads and Analyse Devices
-        with ThreadPoolExecutor() as analysis:
+        # Create Threads and Analyse Devices. Cap concurrency: each worker runs
+        # several privileged subprocesses, and unbounded parallelism overwhelms
+        # USB bridges and expander backplanes on high-drive-count benches.
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(self.scanned)))) as analysis:
             # Devices List
             devices_list = list(
                 # Map List Comprehension
@@ -977,12 +1052,11 @@ class Devices:
         # Return
         return True
 
-    @staticmethod
-    def analyse_device(device_id: str):
+    def analyse_device(self, device_id: str):
         """
         Analyse Device
         :param device_id: Device ID
-        :return: a Device instance
+        :return: a Device dictionary | False on failure (recorded in self.failures)
         """
 
         # Try
@@ -991,8 +1065,17 @@ class Devices:
             device = Device(device_id=device_id).to_dict(pop=True)
 
         # If CommandException
-        except CommandException:
-            # False
+        except CommandException as exception:
+            # Record and surface the failure instead of silently dropping the drive
+            logger.warning("Device analysis failed for %s: %s", device_id, exception)
+            self.failures.append({"name": device_id, "error": str(exception)})
+            return False
+
+        # If unexpected Exception (e.g. malformed smartctl JSON structure)
+        except Exception as exception:
+            # One bad drive must not kill the whole scan
+            logger.warning("Unexpected error analysing %s: %s", device_id, exception, exc_info=True)
+            self.failures.append({"name": device_id, "error": f"{type(exception).__name__}: {exception}"})
             return False
 
         # Get Drive
@@ -1343,119 +1426,29 @@ class ATAProtocol:
                 # Extract Table
                 temperature_table = page.get("table", [])
 
-                # Iterate Table
+                # Statistic Name to Device Attribute Map
+                temperature_attribute_map = {
+                    "Specified Maximum Operating Temperature": "maximum_temperature",
+                    "Specified Minimum Operating Temperature": "minimum_temperature",
+                    "Current Temperature": "current_temperature",
+                    "Highest Temperature": "highest_temperature",
+                    "Lowest Temperature": "lowest_temperature",
+                    "Average Short Term Temperature": "average_short_temperature",
+                    "Average Long Term Temperature": "average_long_temperature",
+                    "Highest Average Short Term Temperature": "highest_average_short_temperature",
+                    "Lowest Average Short Term Temperature": "lowest_average_short_temperature",
+                    "Highest Average Long Term Temperature": "highest_average_long_temperature",
+                    "Lowest Average Long Term Temperature": "lowest_average_long_temperature",
+                }
+
+                # Iterate Table - coerce to int | None so comparisons never see strings
                 for temperature in temperature_table:
-                    # If Specified Maximum Operating Temperature
-                    if temperature.get("name") == "Specified Maximum Operating Temperature":
-                        # Get Specified Maximum Operating Temperature
-                        device.maximum_temperature = temperature.get("value", "Not Reported")
+                    attribute = temperature_attribute_map.get(temperature.get("name"))
+                    if attribute:
+                        setattr(device, attribute, int_or_none(temperature.get("value")))
 
-                    # If Specified Minimum Operating Temperature
-                    if temperature.get("name") == "Specified Minimum Operating Temperature":
-                        # Get Specified Minimum Operating Temperature
-                        device.minimum_temperature = temperature.get("value", "Not Reported")
-
-                    # If Current Temperature
-                    if temperature.get("name") == "Current Temperature":
-                        # Get Current Temperature
-                        device.current_temperature = temperature.get("value", "Not Reported")
-
-                    # If Highest Temperature
-                    if temperature.get("name") == "Highest Temperature":
-                        # Get Highest Temperature
-                        device.highest_temperature = temperature.get("value", "Not Reported")
-
-                    # If Lowest Temperature
-                    if temperature.get("name") == "Lowest Temperature":
-                        # Get Lowest Temperature
-                        device.lowest_temperature = temperature.get("value", "Not Reported")
-
-                    # If Average Short Term Temperature
-                    if temperature.get("name") == "Average Short Term Temperature":
-                        # Get Current Temperature
-                        device.average_short_temperature = temperature.get("value", "Not Reported")
-
-                    # If Average Long Term Temperature
-                    if temperature.get("name") == "Average Long Term Temperature":
-                        # Get Current Temperature
-                        device.average_long_temperature = temperature.get("value", "Not Reported")
-
-                    # If Highest Average Short Term Temperature
-                    if temperature.get("name") == "Highest Average Short Term Temperature":
-                        # Get Current Temperature
-                        device.highest_average_short_temperature = temperature.get("value", "Not Reported")
-
-                    # If Lowest Average Short Term Temperature
-                    if temperature.get("name") == "Lowest Average Short Term Temperature":
-                        # Get Current Temperature
-                        device.lowest_average_short_temperature = temperature.get("value", "Not Reported")
-
-                    # If Highest Average Long Term Temperature
-                    if temperature.get("name") == "Highest Average Long Term Temperature":
-                        # Get Current Temperature
-                        device.highest_average_long_temperature = temperature.get("value", "Not Reported")
-
-                    # If Lowest Average Long Term Temperature
-                    if temperature.get("name") == "Lowest Average Long Term Temperature":
-                        # Get Current Temperature
-                        device.lowest_average_long_temperature = temperature.get("value", "Not Reported")
-
-        # Get configuration for thresholds
-        config = get_config()
-
-        # Set A Grade Default
-        device.cdi_grade = "A"
-        device.cdi_eligible = True
-        device.cdi_certified = True
-
-        # If S.M.A.R.T Fail
-        if not device.smart_status:
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Maximum Reallocated Sectors exceeded
-        if device.reallocated_sectors >= config.maximum_reallocated_sectors:
-            # Set State to Failed
-            device.state = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Maximum Pending Sectors exceeded
-        if device.pending_reallocated_sectors >= config.maximum_pending_sectors:
-            # Set State to Failed
-            device.state = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Maximum Uncorrectable Errors exceeded
-        if device.offline_uncorrectable_sectors >= config.maximum_uncorrectable_errors:
-            # Set State to Failed
-            device.state = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Temperatures is not None
-        if device.highest_temperature is not None and device.maximum_temperature is not None:
-            # If Maximum Temperature exceeded
-            if device.highest_temperature > device.maximum_temperature:
-                # Set State to Failed
-                device.state = f"Fail"
-
-                # Set F Grade
-                device.cdi_grade = "F"
-                device.cdi_eligible = False
-                device.cdi_certified = False
+        # Grading is applied centrally via Device.apply_health_grade() so the
+        # scan-time grade can never disagree with the health score.
 
     @staticmethod
     def get_smart_attribute_by_id(
@@ -1799,53 +1792,8 @@ class NVMeProtocol:
             except CommandException:
                 pass
 
-        # Set A Grade Default
-        device.cdi_grade = "A"
-        device.cdi_eligible = True
-        device.cdi_certified = True
-
-        # If S.M.A.R.T Fail
-        if not device.smart_status:
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Self-Test Failed - Drive is bad, set to F Grade
-        # A failed self-test means the drive cannot reliably store/retrieve data
-        if device.nvme_self_test_failed_count > 0:
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # NVMe critical health signals are hard fail-gates.
-        spare_threshold = (
-            device.available_spare_threshold
-            if device.available_spare_threshold is not None
-            else get_config().minimum_ssd_available_spare
-        )
-        if (
-            (device.critical_warning or 0) > 0
-            or (device.media_errors or 0) > 0
-            or (device.available_spare is not None and device.available_spare < spare_threshold)
-        ):
-            device.state = f"Fail"
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Temperatures is not None
-        if device.highest_temperature is not None and device.maximum_temperature is not None:
-            # If Maximum Temperature exceeded
-            if device.highest_temperature > device.maximum_temperature:
-                # Set State to Failed
-                device.state = f"Fail"
-
-                # Set F Grade
-                device.cdi_grade = "F"
-                device.cdi_eligible = False
-                device.cdi_certified = False
+        # Grading is applied centrally via Device.apply_health_grade() so the
+        # scan-time grade can never disagree with the health score.
 
 
 @dataclass
@@ -1999,52 +1947,5 @@ class SCSIProtocol:
         # Convert Uncorrectable Errors
         device.offline_uncorrectable_sectors: int = int(uncorrectable_errors)
 
-        # Get configuration for thresholds
-        config = get_config()
-
-        # Set A Grade Default
-        device.cdi_grade: str = "A"
-        device.cdi_eligible: bool = True
-        device.cdi_certified: bool = True
-
-        # If S.M.A.R.T Fail
-        if not device.smart_status:
-            # Set State to Failed
-            device.state: str = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade: str = "F"
-            device.cdi_eligible: bool = False
-            device.cdi_certified: bool = False
-
-        # If Maximum Grown Defects exceeded
-        if device.reallocated_sectors >= config.maximum_grown_defects:
-            # Set State to Failed
-            device.state: str = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade: str = "F"
-            device.cdi_eligible: bool = False
-            device.cdi_certified: bool = False
-
-        # If Maximum Uncorrected Errors exceeded
-        if device.offline_uncorrectable_sectors >= config.maximum_scsi_uncorrected_errors:
-            # Set State to Failed
-            device.state: str = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade: str = "F"
-            device.cdi_eligible: bool = False
-            device.cdi_certified: bool = False
-
-        # If Temperatures is not None
-        if device.highest_temperature is not None and device.maximum_temperature is not None:
-            # If Maximum Temperature exceeded
-            if device.highest_temperature > device.maximum_temperature:
-                # Set State to Failed
-                device.state: str = f"Fail"
-
-                # Set F Grade
-                device.cdi_grade: str = "F"
-                device.cdi_eligible: bool = False
-                device.cdi_certified: bool = False
+        # Grading is applied centrally via Device.apply_health_grade() so the
+        # scan-time grade can never disagree with the health score.

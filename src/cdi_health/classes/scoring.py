@@ -704,7 +704,17 @@ class HealthScoreCalculator:
         """Check temperature metrics."""
         deductions = []
 
-        temp = device.get("current_temperature")
+        # Coerce to int; skip scoring for missing or non-numeric values
+        # (collection/mock data may carry strings like "Not Reported").
+        raw_temp = device.get("current_temperature")
+        if isinstance(raw_temp, bool):
+            temp = None
+        elif isinstance(raw_temp, (int, float)):
+            temp = int(raw_temp)
+        elif isinstance(raw_temp, str) and raw_temp.strip().lstrip("-").isdigit():
+            temp = int(raw_temp.strip())
+        else:
+            temp = None
         if temp is None:
             return deductions
 
@@ -731,6 +741,29 @@ class HealthScoreCalculator:
                     field="current_temperature",
                     value=temp,
                     threshold=warning_temp,
+                )
+            )
+
+        # Historical excursion beyond the drive's own specified maximum
+        # operating temperature (previously a scan-time hard fail-gate in the
+        # protocol handlers; kept critical here to preserve that behavior).
+        highest = device.get("highest_temperature")
+        spec_max = device.get("maximum_temperature")
+        if (
+            isinstance(highest, int)
+            and not isinstance(highest, bool)
+            and isinstance(spec_max, int)
+            and not isinstance(spec_max, bool)
+            and highest > spec_max
+        ):
+            deductions.append(
+                ScoreDeduction(
+                    reason="Highest recorded temperature exceeded specified maximum",
+                    points=self.TEMP_CRITICAL_DEDUCTION,
+                    severity="critical",
+                    field="highest_temperature",
+                    value=highest,
+                    threshold=spec_max,
                 )
             )
 
