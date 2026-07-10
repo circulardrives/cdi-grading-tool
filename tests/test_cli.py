@@ -31,6 +31,7 @@ from cdi_health.cli import (
     check_prerequisites,
     cmd_export_mock,
     cmd_scan,
+    cmd_validate,
     create_parser,
     scan_devices_mock,
     scan_single_mock,
@@ -140,6 +141,13 @@ class TestCLIParser:
         assert args.command == "scan"
         assert args.output == "json"
 
+    def test_parser_validate(self) -> None:
+        """Test validate subcommand parsing (#82)."""
+        parser = create_parser()
+        args = parser.parse_args(["validate", "--mock-data", "src/cdi_health/mock_data"])
+        assert args.command == "validate"
+        assert args.mock_data == "src/cdi_health/mock_data"
+
     def test_parser_version(self) -> None:
         """Test version argument."""
         parser = create_parser()
@@ -154,6 +162,53 @@ class TestCLIParser:
         assert args.export_command == "mock"
         assert args.output == "/tmp/mock-out"
         assert args.no_anonymize is False
+
+
+class TestValidateCommand:
+    """Test validate subcommand (#82)."""
+
+    @patch("cdi_health.cli.scan_devices_mock")
+    @patch("cdi_health.cli.setup_logging")
+    def test_cmd_validate_mock_ok(self, _setup: MagicMock, mock_scan: MagicMock) -> None:
+        from argparse import Namespace
+
+        mock_scan.return_value = [
+            {
+                "dut": "/dev/sda",
+                "dut_sg": "/dev/sg0",
+                "vendor": "TEST",
+                "model_number": "MODEL",
+                "serial_number": "SN",
+                "firmware_revision": "1.0",
+                "transport_protocol": "ATA",
+                "media_type": "HDD",
+                "cdi_grade": "A",
+                "cdi_eligible": True,
+                "cdi_certified": True,
+                "smart_supported": True,
+                "smart_enabled": True,
+                "smart_status": True,
+                "bytes": 1000,
+                "kilobytes": 1.0,
+                "megabytes": 0.001,
+                "gigabytes": 0.000001,
+                "terabytes": 0.0,
+                "sectors": 1,
+                "logical_sector_size": 512,
+                "physical_sector_size": 512,
+            }
+        ]
+        args = Namespace(
+            mock_data="path",
+            mock_file=None,
+            ignore_ata=False,
+            ignore_nvme=False,
+            ignore_scsi=False,
+            verbose=False,
+            no_color=False,
+            config=None,
+        )
+        assert cmd_validate(args) == 0
 
 
 class TestExportMock:

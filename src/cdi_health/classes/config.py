@@ -52,6 +52,11 @@ DEFAULT_THRESHOLDS = {
     "nvme": {
         "maximum_percentage_used": 100,
         "minimum_available_spare": 97,
+        # Wear warning tiers (percentage used); critical still uses maximum_percentage_used
+        "wear_warning_moderate": 80,
+        "wear_warning_high": 90,
+        "wear_moderate_deduction": 5,
+        "wear_high_deduction": 10,
     },
     "scsi": {
         "maximum_grown_defects": 10,
@@ -66,6 +71,21 @@ DEFAULT_THRESHOLDS = {
         "hdd_sector_defect_max_deduction_points": 10,
         "hdd_sector_excess_points_per_sector": 1,
         "hdd_sector_excess_cap": 40,
+        # Numeric score → letter grade bands (minimum score inclusive)
+        "grade_bands": {
+            "A": 90,
+            "B": 75,
+            "C": 60,
+            "D": 40,
+            "F": 0,
+        },
+        "deductions": {
+            "smart_failure": 50,
+            "per_sector": 5,
+            "threshold_exceeded": 25,
+            "temp_warning": 5,
+            "temp_critical": 15,
+        },
     },
 }
 
@@ -248,6 +268,26 @@ class ThresholdConfig:
         """Minimum available spare percentage for NVMe SSDs."""
         return self.get("nvme", "minimum_available_spare", default=97)
 
+    @property
+    def ssd_wear_warning_moderate(self) -> int:
+        """SSD/NVMe percentage-used moderate warning tier."""
+        return self.get("nvme", "wear_warning_moderate", default=80)
+
+    @property
+    def ssd_wear_warning_high(self) -> int:
+        """SSD/NVMe percentage-used high warning tier."""
+        return self.get("nvme", "wear_warning_high", default=90)
+
+    @property
+    def ssd_wear_moderate_deduction(self) -> int:
+        """Points deducted at the moderate wear tier."""
+        return self.get("nvme", "wear_moderate_deduction", default=5)
+
+    @property
+    def ssd_wear_high_deduction(self) -> int:
+        """Points deducted at the high wear tier."""
+        return self.get("nvme", "wear_high_deduction", default=10)
+
     # SCSI thresholds
     @property
     def maximum_grown_defects(self) -> int:
@@ -289,6 +329,32 @@ class ThresholdConfig:
     def hdd_sector_excess_cap(self) -> int:
         """Maximum extra points from excess sectors (on top of M at failure threshold)."""
         return self.get("grading", "hdd_sector_excess_cap", default=40)
+
+    @property
+    def grade_score_bands(self) -> dict:
+        """Minimum numeric scores for letter grades (A/B/C/D/F)."""
+        bands = self.get("grading", "grade_bands", default=None)
+        return bands if isinstance(bands, dict) else {}
+
+    @property
+    def smart_failure_deduction(self) -> int:
+        return self.get("grading", "deductions", "smart_failure", default=50)
+
+    @property
+    def per_sector_deduction(self) -> int:
+        return self.get("grading", "deductions", "per_sector", default=5)
+
+    @property
+    def threshold_exceeded_deduction(self) -> int:
+        return self.get("grading", "deductions", "threshold_exceeded", default=25)
+
+    @property
+    def temp_warning_deduction(self) -> int:
+        return self.get("grading", "deductions", "temp_warning", default=5)
+
+    @property
+    def temp_critical_deduction(self) -> int:
+        return self.get("grading", "deductions", "temp_critical", default=15)
 
     def to_dict(self) -> dict:
         """
