@@ -69,18 +69,18 @@ class TestNVMeSelfTest:
             # Should return True if OACS bit 4 is set
             assert isinstance(result, bool)
 
-    @patch("subprocess.run")
-    def test_find_nvme_devices(self, mock_run: MagicMock) -> None:
-        """Test finding NVMe devices."""
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = '{"Devices": [{"DevicePath": "/dev/nvme0n1"}, {"DevicePath": "/dev/nvme1n1"}]}'
-        mock_run.return_value = mock_result
+    @patch("cdi_health.classes.nvme_selftest.Command")
+    @patch("cdi_health.classes.nvme_selftest.shutil.which")
+    def test_find_nvme_devices(self, mock_which: MagicMock, mock_command: MagicMock) -> None:
+        """Test finding NVMe devices extracts controllers from namespace paths."""
+        mock_which.return_value = "/usr/bin/nvme"
+        mock_cmd = MagicMock()
+        mock_cmd.return_code = 0
+        mock_cmd.output = b'{"Devices": [{"DevicePath": "/dev/nvme0n1"}, {"DevicePath": "/dev/nvme1n1"}]}'
+        mock_command.return_value = mock_cmd
 
         devices = NVMeSelfTest.find_nvme_devices()
-        assert isinstance(devices, list)
-        # Should extract controllers from namespace paths
-        assert "/dev/nvme0" in devices or "/dev/nvme1" in devices or len(devices) >= 0
+        assert devices == ["/dev/nvme0", "/dev/nvme1"]
 
     @patch("shutil.which")
     def test_find_supported_devices(self, mock_which: MagicMock) -> None:
