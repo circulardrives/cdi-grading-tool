@@ -19,10 +19,53 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
+
+# Strict NVMe controller/namespace paths only (no whitespace or extra tokens).
+NVME_DEVICE_PATTERN = re.compile(r"^/dev/nvme[0-9]+(n[0-9]+)?$")
+# Block-device style paths for scan/report filters (no shell metacharacters).
+BLOCK_DEVICE_PATTERN = re.compile(r"^/dev/[a-zA-Z0-9][a-zA-Z0-9._+/-]*$")
+
+
+def _reject_path_traversal(value: str, field_name: str) -> str:
+    if not value or "\x00" in value:
+        raise ValueError(f"Invalid {field_name}")
+    if any(part == ".." for part in Path(value).parts):
+        raise ValueError(f"Invalid {field_name}: path traversal is not allowed")
+    return value
+
+
+def _validate_optional_fs_path(value: str | None, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _reject_path_traversal(value, field_name)
+
+
+def _validate_optional_block_device(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not BLOCK_DEVICE_PATTERN.fullmatch(value):
+        raise ValueError("device must be a /dev path without whitespace or shell metacharacters")
+    return value
+
+
+def _validate_optional_nvme_device(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not NVME_DEVICE_PATTERN.fullmatch(value):
+        raise ValueError("device must match /dev/nvmeN or /dev/nvmeNnN")
+    return value
+
+
+def _validate_required_nvme_device(value: str) -> str:
+    if not NVME_DEVICE_PATTERN.fullmatch(value):
+        raise ValueError("device must match /dev/nvmeN or /dev/nvmeNnN")
+    return value
 
 
 class ScanRequest(BaseModel):
@@ -39,6 +82,16 @@ class ScanRequest(BaseModel):
         default=None,
         description="Optional host registry ID to associate this scan with.",
     )
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str | None) -> str | None:
+        return _validate_optional_block_device(value)
+
+    @field_validator("config", "mock_data", "mock_file")
+    @classmethod
+    def validate_paths(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _validate_optional_fs_path(value, info.field_name)
 
 
 class ScanSummary(BaseModel):
@@ -67,6 +120,16 @@ class ReportRequest(BaseModel):
     mock_data: str | None = None
     mock_file: str | None = None
 
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str | None) -> str | None:
+        return _validate_optional_block_device(value)
+
+    @field_validator("config", "mock_data", "mock_file", "output_file")
+    @classmethod
+    def validate_paths(cls, value: str | None, info: ValidationInfo) -> str | None:
+        return _validate_optional_fs_path(value, info.field_name)
+
 
 class ReportResponse(BaseModel):
     generated_at: datetime
@@ -88,18 +151,29 @@ class SelfTestStartRequest(BaseModel):
     poll_interval_seconds: int = Field(default=30, ge=5, le=600)
     timeout_seconds: int = Field(default=14_400, ge=60, le=172_800)
 
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str | None) -> str | None:
+        return _validate_optional_nvme_device(value)
+
 
 class SelfTestAbortRequest(BaseModel):
     device: str
 
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str) -> str:
+        return _validate_required_nvme_device(value)
+
 
 class HealthResponse(BaseModel):
     status: str
-    is_root: bool
-    allow_non_root_mode: bool
-    api_token_enabled: bool
-    missing_required_tools: list[str]
-    weasyprint_available: bool
+    version: str = "1.0.0"
+    is_root: bool | None = None
+    allow_non_root_mode: bool | None = None
+    api_token_enabled: bool | None = None
+    missing_required_tools: list[str] | None = None
+    weasyprint_available: bool | None = None
     message: str | None = None
 
 

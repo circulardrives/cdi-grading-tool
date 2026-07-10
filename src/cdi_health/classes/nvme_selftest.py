@@ -27,6 +27,7 @@ Supports short and extended self-tests via nvme-cli.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import struct
 import subprocess
@@ -35,6 +36,16 @@ from typing import Any
 
 from cdi_health.classes.exceptions import CommandException
 from cdi_health.classes.tools import Command
+
+# Strict NVMe controller/namespace paths — reject whitespace and injected tokens.
+_NVME_DEVICE_RE = re.compile(r"^/dev/nvme[0-9]+(n[0-9]+)?$")
+
+
+def validate_nvme_device_path(device_path: str) -> str:
+    """Reject device paths that could inject extra nvme-cli arguments."""
+    if not device_path or not _NVME_DEVICE_RE.fullmatch(device_path):
+        raise ValueError(f"Invalid NVMe device path; expected /dev/nvmeN or /dev/nvmeNnN (got {device_path!r})")
+    return device_path
 
 
 class NVMeSelfTest:
@@ -59,7 +70,7 @@ class NVMeSelfTest:
 
         :param device_path: NVMe device path (e.g., /dev/nvme0)
         """
-        self.device_path = device_path
+        self.device_path = validate_nvme_device_path(device_path)
         self.nvme_path = self._find_nvme_cli()
 
     def _find_nvme_cli(self) -> str:

@@ -27,9 +27,15 @@ from typing import Any
 
 ALLOWED_REPORT_EXTENSIONS = {".html", ".pdf", ".csv"}
 
-from cdi_health.api.schemas import ReportRequest, ScanRequest, SelfTestStartRequest
+from cdi_health.api.machines import resolve_data_dir
+from cdi_health.api.schemas import (
+    NVME_DEVICE_PATTERN,
+    ReportRequest,
+    ScanRequest,
+    SelfTestStartRequest,
+)
 from cdi_health.classes.config import configure_thresholds
-from cdi_health.classes.nvme_selftest import NVMeSelfTest
+from cdi_health.classes.nvme_selftest import NVMeSelfTest, validate_nvme_device_path
 from cdi_health.classes.reporter import ReportGenerator
 from cdi_health.classes.scoring import HealthScoreCalculator
 from cdi_health.cli import (
@@ -57,6 +63,13 @@ def weasyprint_available() -> bool:
     return True
 
 
+def reports_directory() -> Path:
+    """Return the dedicated reports output directory under the API data dir."""
+    path = resolve_data_dir() / "reports"
+    path.mkdir(parents=True, exist_ok=True)
+    return path.resolve()
+
+
 def validate_report_filename(filename: str) -> None:
     """Reject unsafe or unsupported report download filenames."""
     if not filename or filename != Path(filename).name:
@@ -67,10 +80,57 @@ def validate_report_filename(filename: str) -> None:
         raise ValueError("Unsupported report format")
 
 
+def resolve_report_output_path(output_file: str | None, report_format: str) -> Path:
+    """
+    Resolve a report output path constrained to the dedicated reports directory.
+
+    Accepts a basename, a relative path under the reports dir, or an absolute
+    path that resolves inside the allowlisted directory. Rejects traversal and
+    symlink escapes.
+    """
+    reports_dir = reports_directory()
+    if output_file:
+        candidate = Path(output_file).expanduser()
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+        else:
+            # Basename-only or relative under reports/
+            if candidate.name != candidate.as_posix() and ".." in candidate.parts:
+                raise ValueError("Report output path must stay within the reports directory")
+            resolved = (reports_dir / candidate.name).resolve()
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        resolved = (reports_dir / f"cdi-report-{timestamp}.{report_format}").resolve()
+
+    try:
+        resolved.relative_to(reports_dir)
+    except ValueError as exc:
+        raise ValueError("Report output path must stay within the reports directory") from exc
+
+    if resolved.suffix.lower() not in ALLOWED_REPORT_EXTENSIONS:
+        raise ValueError("Unsupported report format")
+
+    # Reject if an existing symlink would escape the allowlist after open.
+    if resolved.exists() and resolved.is_symlink():
+        link_target = resolved.resolve()
+        try:
+            link_target.relative_to(reports_dir)
+        except ValueError as exc:
+            raise ValueError("Report output path must stay within the reports directory") from exc
+
+    return resolved
+
+
 def resolve_report_file(filename: str, registered_paths: set[str] | None = None) -> Path:
-    """Resolve a report filename to an on-disk path using a safe lookup policy."""
+    """
+    Resolve a report filename to an on-disk path.
+
+    Prefer explicitly registered generation paths; fall back only to the
+    dedicated reports directory (never an arbitrary CWD reports/ folder).
+    """
     validate_report_filename(filename)
-    candidates: list[Path] = [Path.cwd() / "reports" / filename]
+    reports_dir = reports_directory()
+    candidates: list[Path] = []
 
     if registered_paths:
         for path_str in registered_paths:
@@ -78,14 +138,28 @@ def resolve_report_file(filename: str, registered_paths: set[str] | None = None)
             if candidate.name == filename:
                 candidates.append(candidate)
 
+    # Scoped fallback: only files under the dedicated reports directory.
+    candidates.append(reports_dir / filename)
+
     seen: set[str] = set()
     for candidate in candidates:
-        resolved_key = str(candidate.resolve())
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        resolved_key = str(resolved)
         if resolved_key in seen:
             continue
         seen.add(resolved_key)
-        if candidate.is_file():
-            return candidate.resolve()
+        try:
+            resolved.relative_to(reports_dir)
+        except ValueError:
+            continue
+        if resolved.is_file() and not resolved.is_symlink():
+            return resolved
+        # Allow regular files reached via a non-escaping path.
+        if resolved.is_file():
+            return resolved
 
     raise FileNotFoundError(f"Report not found: {filename}")
 
@@ -128,11 +202,15 @@ def _decode(value: bytes | str | None) -> str:
 def resolve_data_path(path: str) -> str:
     """Resolve mock/config paths relative to cwd or repository root."""
     candidate = Path(path).expanduser()
+    if any(part == ".." for part in candidate.parts):
+        raise ValueError("Path traversal is not allowed")
     if candidate.exists():
         return str(candidate.resolve())
 
     repo_root = Path(__file__).resolve().parents[3]
     repo_relative = repo_root / path
+    if any(part == ".." for part in Path(path).parts):
+        raise ValueError("Path traversal is not allowed")
     if repo_relative.exists():
         return str(repo_relative.resolve())
 
@@ -225,8 +303,18 @@ def run_scan(request: ScanRequest) -> dict[str, Any]:
     }
 
 
+def _assert_nvme_device(device: str | None) -> None:
+    """Re-validate NVMe device paths before invoking nvme-cli wrappers."""
+    if device is None:
+        return
+    if not NVME_DEVICE_PATTERN.fullmatch(device):
+        raise ValueError("Self-test only supports NVMe controller paths (e.g., /dev/nvme0)")
+    validate_nvme_device_path(device)
+
+
 def _supported_nvme_targets(device: str | None = None) -> list[dict[str, Any]]:
     """Return supported target metadata for a specific device or all devices."""
+    _assert_nvme_device(device)
     if device:
         targets = [{"device": device, "supported": False}]
         try:
@@ -301,12 +389,10 @@ def _read_selftest_outcome(handler: NVMeSelfTest) -> dict[str, Any]:
 
 def run_selftest_start(request: SelfTestStartRequest) -> dict[str, Any]:
     """Start NVMe self-tests and optionally wait for completion."""
+    _assert_nvme_device(request.device)
     targets = _supported_nvme_targets(request.device)
     if not targets:
         return {"devices": [], "summary": {"total": 0, "started": 0, "completed": 0, "failed_to_start": 0}}
-
-    if request.device and not request.device.startswith("/dev/nvme"):
-        raise ValueError("Self-test only supports NVMe controller paths (e.g., /dev/nvme0)")
 
     results: list[dict[str, Any]] = []
     handlers: dict[str, NVMeSelfTest] = {}
@@ -418,6 +504,8 @@ def run_selftest_start(request: SelfTestStartRequest) -> dict[str, Any]:
 
 def get_selftest_status(device: str | None = None) -> dict[str, Any]:
     """Return current self-test status for one or all NVMe devices."""
+    if device is not None:
+        _assert_nvme_device(device)
     targets = _supported_nvme_targets(device)
     statuses = []
 
@@ -462,8 +550,7 @@ def get_selftest_status(device: str | None = None) -> dict[str, Any]:
 
 def abort_selftest(device: str) -> dict[str, Any]:
     """Abort active self-test on a specific NVMe device."""
-    if not device.startswith("/dev/nvme"):
-        raise ValueError("Abort requires an NVMe controller path (e.g., /dev/nvme0)")
+    _assert_nvme_device(device)
 
     handler = NVMeSelfTest(device)
     if not handler.is_supported():
@@ -490,11 +577,7 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
     scan_result = run_scan(scan_request)
     devices = scan_result["devices"]
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    if request.output_file:
-        output_path = Path(request.output_file).expanduser()
-    else:
-        output_path = Path.cwd() / "reports" / f"cdi-report-{timestamp}.{request.format}"
+    output_path = resolve_report_output_path(request.output_file, request.format)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     reporter = ReportGenerator()
@@ -513,3 +596,28 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
         "format": request.format,
         "devices_count": len(devices),
     }
+
+
+def http_error_detail(exc: Exception, *, context: str) -> tuple[int, str]:
+    """
+    Map known exceptions to safe client-facing messages.
+
+    Returns (status_code, detail). Unexpected errors become generic 500s;
+    full exception text is logged server-side by the caller.
+    """
+    if isinstance(exc, ValueError):
+        message = str(exc)
+        # Keep short, actionable validation messages; avoid dumping paths/tool output.
+        if len(message) > 200 or any(token in message for token in ("/", "\\", "Traceback")):
+            return 400, f"Invalid {context} request"
+        return 400, message
+    if isinstance(exc, FileNotFoundError):
+        return 404, f"{context.capitalize()} not found"
+    if isinstance(exc, PermissionError):
+        return 403, "Permission denied"
+    if isinstance(exc, RuntimeError):
+        message = str(exc)
+        if message.startswith("Missing required tools:"):
+            return 400, message
+        return 400, f"{context.capitalize()} failed"
+    return 500, f"{context.capitalize()} failed due to an internal error"

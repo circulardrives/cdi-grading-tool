@@ -11,6 +11,8 @@ WORKDIR /app
 
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
+COPY deploy/docker/api-entrypoint.sh /usr/local/bin/cdi-api-entrypoint.sh
+RUN chmod +x /usr/local/bin/cdi-api-entrypoint.sh
 
 ARG VERSION=0.9.5
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
@@ -21,4 +23,5 @@ RUN mkdir -p /var/lib/cdi-health
 
 EXPOSE 8844
 
+ENTRYPOINT ["/usr/local/bin/cdi-api-entrypoint.sh"]
 CMD ["python", "-m", "cdi_health.api.server", "--host", "0.0.0.0", "--port", "8844", "--data-dir", "/var/lib/cdi-health", "--allow-non-root"]
