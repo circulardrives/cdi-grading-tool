@@ -46,9 +46,11 @@ import {
   discoveryHealthLabel,
   discoveryHealthVariant,
 } from "@/lib/host-utils"
+import { useInvalidateCdiQueries } from "@/hooks/use-cdi-queries"
 import type { DiscoveredHost } from "@/lib/types"
 
 export function DiscoverPage() {
+  const { invalidateMachines } = useInvalidateCdiQueries()
   const [discovering, setDiscovering] = useState(false)
   const [discoverSubnet, setDiscoverSubnet] = useState(appConfig.discoverSubnet)
   const [discoveredHosts, setDiscoveredHosts] = useState<DiscoveredHost[]>([])
@@ -100,6 +102,7 @@ export function DiscoverPage() {
         )
       )
       toast.success(`Added ${hostname} to fleet`)
+      await invalidateMachines()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not add host")
     } finally {
@@ -116,24 +119,55 @@ export function DiscoverPage() {
 
     setBulkAdding(true)
     let added = 0
+    let skipped = 0
+    let failed = 0
     try {
       for (const host of pending) {
         const hostname = defaultDiscoveredHostName(host)
-        await createMachine({
-          name: hostname,
-          hostname,
-          address: host.address,
-        })
-        setDiscoveredHosts((current) =>
-          current.map((item) =>
-            item.address === host.address ? { ...item, already_registered: true } : item
+        try {
+          await createMachine({
+            name: hostname,
+            hostname,
+            address: host.address,
+          })
+          setDiscoveredHosts((current) =>
+            current.map((item) =>
+              item.address === host.address
+                ? { ...item, already_registered: true }
+                : item
+            )
           )
-        )
-        added += 1
+          added += 1
+        } catch (err) {
+          const message = err instanceof Error ? err.message : ""
+          if (
+            message.toLowerCase().includes("already") ||
+            message.toLowerCase().includes("exists") ||
+            message.toLowerCase().includes("duplicate")
+          ) {
+            skipped += 1
+            setDiscoveredHosts((current) =>
+              current.map((item) =>
+                item.address === host.address
+                  ? { ...item, already_registered: true }
+                  : item
+              )
+            )
+          } else {
+            failed += 1
+          }
+        }
       }
-      toast.success(`Added ${added} host(s) to fleet`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Bulk add failed")
+      if (failed === 0 && skipped === 0) {
+        toast.success(`Added ${added} host(s) to fleet`)
+      } else {
+        toast.message(
+          `Bulk add finished — ${added} added, ${skipped} skipped, ${failed} failed`
+        )
+      }
+      if (added > 0 || skipped > 0) {
+        await invalidateMachines()
+      }
     } finally {
       setBulkAdding(false)
     }

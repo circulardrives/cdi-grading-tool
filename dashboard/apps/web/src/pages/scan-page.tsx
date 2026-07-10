@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   AlertCircleIcon,
@@ -41,51 +41,51 @@ import {
   mockDataRequestFields,
   useMockDataSettings,
 } from "@/components/mock-data-provider"
-import { getHealth, listMachines, scanDevices } from "@/lib/api"
+import {
+  useHealthQuery,
+  useInvalidateCdiQueries,
+  useMachinesQuery,
+} from "@/hooks/use-cdi-queries"
+import { scanDevices } from "@/lib/api"
 import { getSelectedHostId, setSelectedHostId } from "@/lib/selected-host"
-import type { HealthResponse, Machine, ScanResponse } from "@/lib/types"
+import type { ScanResponse } from "@/lib/types"
 
 const LOCAL_SCAN_TARGET = "local"
 
 export function ScanPage() {
   const { useMockData, mockDataPath } = useMockDataSettings()
-  const [hosts, setHosts] = useState<Machine[]>([])
-  const [loading, setLoading] = useState(true)
+  const { invalidateAfterScan } = useInvalidateCdiQueries()
+  const machinesQuery = useMachinesQuery()
+  const healthQuery = useHealthQuery()
   const [scanning, setScanning] = useState(false)
   const [scanTarget, setScanTarget] = useState<string>(() => getSelectedHostId() ?? LOCAL_SCAN_TARGET)
   const [ignoreAta, setIgnoreAta] = useState(false)
   const [ignoreNvme, setIgnoreNvme] = useState(false)
   const [ignoreScsi, setIgnoreScsi] = useState(false)
-  const [health, setHealth] = useState<HealthResponse | null>(null)
   const [lastResult, setLastResult] = useState<ScanResponse | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
+
+  const hosts = useMemo(() => machinesQuery.data ?? [], [machinesQuery.data])
+  const health = healthQuery.data ?? null
+  const loading = machinesQuery.isLoading || healthQuery.isLoading
 
   const selectedHost = useMemo(
     () => (scanTarget === LOCAL_SCAN_TARGET ? null : hosts.find((host) => host.id === scanTarget) ?? null),
     [hosts, scanTarget]
   )
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [hostList, healthResult] = await Promise.all([listMachines(), getHealth()])
-      setHosts(hostList)
-      setHealth(healthResult)
-
-      if (scanTarget !== LOCAL_SCAN_TARGET && !hostList.some((host) => host.id === scanTarget)) {
-        const fallback = getSelectedHostId() ?? (hostList[0]?.id ?? LOCAL_SCAN_TARGET)
-        setScanTarget(fallback)
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load scan context")
-    } finally {
-      setLoading(false)
-    }
-  }, [scanTarget])
-
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    if (
+      machinesQuery.isLoading ||
+      scanTarget === LOCAL_SCAN_TARGET ||
+      hosts.length === 0
+    ) {
+      return
+    }
+    if (!hosts.some((host) => host.id === scanTarget)) {
+      setScanTarget(getSelectedHostId() ?? (hosts[0]?.id ?? LOCAL_SCAN_TARGET))
+    }
+  }, [machinesQuery.isLoading, hosts, scanTarget])
 
   const selectTarget = (value: string) => {
     setScanTarget(value)
@@ -96,23 +96,26 @@ export function ScanPage() {
     }
   }
 
+  const refresh = async () => {
+    await Promise.all([machinesQuery.refetch(), healthQuery.refetch()])
+  }
+
   const runScan = async () => {
     setScanning(true)
     setScanError(null)
     try {
+      const machineId = scanTarget !== LOCAL_SCAN_TARGET ? scanTarget : null
       const result = await scanDevices({
         ignore_ata: ignoreAta,
         ignore_nvme: ignoreNvme,
         ignore_scsi: ignoreScsi,
-        ...(scanTarget !== LOCAL_SCAN_TARGET ? { machine_id: scanTarget } : {}),
+        ...(machineId ? { machine_id: machineId } : {}),
         ...mockDataRequestFields(useMockData, mockDataPath),
       })
       setLastResult(result)
+      await invalidateAfterScan(machineId)
       const label = selectedHost?.name ?? "local API"
       toast.success(`Scan complete for ${label} — ${result.summary.total} drive(s)`)
-      if (scanTarget !== LOCAL_SCAN_TARGET) {
-        await refresh()
-      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Scan failed"
       setScanError(message)

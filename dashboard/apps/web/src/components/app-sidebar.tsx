@@ -26,6 +26,25 @@ import { Badge } from "@workspace/ui/components/badge"
 
 import { CdiLogo, CdiLogoMark } from "@/components/cdi-logo"
 import { useMockDataSettings } from "@/components/mock-data-provider"
+import { appConfig } from "@/lib/config"
+
+function formatApiHostLabel(apiHost: string): string {
+  try {
+    const url = new URL(apiHost)
+    return url.host || apiHost.replace(/^https?:\/\//, "")
+  } catch {
+    return apiHost.replace(/^https?:\/\//, "")
+  }
+}
+
+function isLocalApiHost(apiHost: string): boolean {
+  const host = formatApiHostLabel(apiHost).toLowerCase()
+  return (
+    host.startsWith("127.0.0.1") ||
+    host.startsWith("localhost") ||
+    host.startsWith("[::1]")
+  )
+}
 
 const navItems = [
   {
@@ -75,6 +94,8 @@ const navItems = [
 export function AppSidebar() {
   const location = useLocation()
   const { useMockData } = useMockDataSettings()
+  const apiHostLabel = formatApiHostLabel(appConfig.apiHost)
+  const localApi = isLocalApiHost(appConfig.apiHost)
 
   return (
     <Sidebar collapsible="icon" variant="inset">
@@ -133,8 +154,10 @@ export function AppSidebar() {
       <SidebarFooter>
         <div className="flex flex-col gap-2 px-2 py-1">
           <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
-            <Badge variant="outline">Local API</Badge>
-            <span className="truncate font-mono">127.0.0.1:8844</span>
+            <Badge variant="outline">{localApi ? "Local API" : "API host"}</Badge>
+            <span className="truncate font-mono" title={appConfig.apiHost}>
+              {apiHostLabel}
+            </span>
           </div>
           {useMockData ? (
             <Badge variant="secondary" className="w-fit">

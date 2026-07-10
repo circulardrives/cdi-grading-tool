@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   AlertCircleIcon,
@@ -47,7 +47,12 @@ import {
   mockDataRequestFields,
   useMockDataSettings,
 } from "@/components/mock-data-provider"
-import { getDevices, listMachines, scanDevices } from "@/lib/api"
+import {
+  useDevicesQuery,
+  useInvalidateCdiQueries,
+  useMachinesQuery,
+} from "@/hooks/use-cdi-queries"
+import { scanDevices } from "@/lib/api"
 import { getDetailedColumns, getSimpleColumns } from "@/lib/drive-columns"
 import {
   countByDriveClass,
@@ -55,62 +60,56 @@ import {
   getReportCategory,
 } from "@/lib/drive-labels"
 import { getSelectedHostId, setSelectedHostId } from "@/lib/selected-host"
-import type { DeviceRecord, DriveClass, DriveViewMode, Machine } from "@/lib/types"
+import type { DriveClass, DriveViewMode } from "@/lib/types"
 
 export function DriveHealthPage() {
   const { useMockData, mockDataPath } = useMockDataSettings()
-  const [devices, setDevices] = useState<DeviceRecord[]>([])
-  const [hosts, setHosts] = useState<Machine[]>([])
+  const { invalidateAfterScan } = useInvalidateCdiQueries()
   const [selectedHostId, setSelectedHostIdState] = useState<string | null>(
     () => getSelectedHostId()
   )
-  const [scannedAt, setScannedAt] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<DriveViewMode>("simple")
   const [activeClass, setActiveClass] = useState<DriveClass | "all">("all")
+
+  const machinesQuery = useMachinesQuery()
+  const devicesQuery = useDevicesQuery(selectedHostId, true)
+
+  const noScanCached = Boolean(
+    selectedHostId &&
+      devicesQuery.error instanceof Error &&
+      devicesQuery.error.message.includes("No scan cached")
+  )
+
+  const hosts = useMemo(() => machinesQuery.data ?? [], [machinesQuery.data])
+  const devices = useMemo(
+    () => (noScanCached ? [] : (devicesQuery.data?.devices ?? [])),
+    [devicesQuery.data?.devices, noScanCached]
+  )
+  const scannedAt = devicesQuery.data?.scanned_at ?? null
+  const loading = machinesQuery.isLoading || devicesQuery.isLoading
 
   const selectedHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId]
   )
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [hostList, result] = await Promise.all([
-        listMachines(),
-        selectedHostId
-          ? getDevices(false, selectedHostId)
-          : getDevices(false),
-      ])
-      setHosts(hostList)
-      setDevices(result.devices)
-      setScannedAt(result.scanned_at)
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Could not load attached drives"
-      if (selectedHostId && message.includes("No scan cached")) {
-        setDevices([])
-        setScannedAt(null)
-        setError(null)
-      } else {
-        setError(message)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedHostId])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
+  const error =
+    noScanCached
+      ? null
+      : devicesQuery.error instanceof Error
+        ? devicesQuery.error.message
+        : machinesQuery.error instanceof Error
+          ? machinesQuery.error.message
+          : null
 
   const selectHost = (hostId: string | null) => {
     setSelectedHostIdState(hostId)
     setSelectedHostId(hostId)
+  }
+
+  const refresh = async () => {
+    await Promise.all([machinesQuery.refetch(), devicesQuery.refetch()])
   }
 
   const runScan = async () => {
@@ -128,8 +127,7 @@ export function DriveHealthPage() {
         machine_id: selectedHostId,
         ...mockDataRequestFields(useMockData, mockDataPath),
       })
-      setDevices(result.devices)
-      setScannedAt(result.scanned_at)
+      await invalidateAfterScan(selectedHostId)
       toast.success(`Scan complete — ${result.summary.total} drive(s) graded`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Scan failed")
@@ -215,8 +213,9 @@ export function DriveHealthPage() {
           <AlertTitle>Host context: {selectedHost.name}</AlertTitle>
           <AlertDescription>
             Showing drives from the latest scan for{" "}
-            <span className="font-mono">{selectedHost.hostname}</span>. v1 scans always run on the
-            local API; remote agents via host address are planned.
+            <span className="font-mono">{selectedHost.hostname}</span>. Selecting a host filters
+            by <span className="font-mono">machine_id</span> on the configured API; host addresses
+            are registry-only and do not switch backends.
           </AlertDescription>
         </Alert>
       ) : null}

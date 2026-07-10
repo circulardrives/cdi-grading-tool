@@ -27,6 +27,7 @@ import {
   EmptyTitle,
 } from "@workspace/ui/components/empty"
 import { Skeleton } from "@workspace/ui/components/skeleton"
+import { Switch } from "@workspace/ui/components/switch"
 import {
   Table,
   TableBody,
@@ -40,61 +41,85 @@ import {
   mockDataRequestFields,
   useMockDataSettings,
 } from "@/components/mock-data-provider"
-import { getDevices, getHealth, scanDevices } from "@/lib/api"
-import type { HealthResponse, ScanResponse } from "@/lib/types"
+import {
+  useDevicesQuery,
+  useHealthQuery,
+  useInvalidateCdiQueries,
+} from "@/hooks/use-cdi-queries"
+import { scanDevices } from "@/lib/api"
+import { healthBadgeVariant } from "@/lib/health-badges"
+import { getSelectedHostId } from "@/lib/selected-host"
 
-function statusBadgeVariant(status?: string) {
-  const normalized = status?.toLowerCase() ?? ""
-  if (normalized.includes("fail") || normalized.includes("critical")) {
-    return "destructive" as const
-  }
-  if (normalized.includes("warn")) {
-    return "secondary" as const
-  }
-  return "outline" as const
-}
+const AUTO_REFRESH_MS = 30_000
 
 export function DashboardPage() {
   const { useMockData, mockDataPath } = useMockDataSettings()
-  const [health, setHealth] = useState<HealthResponse | null>(null)
-  const [scan, setScan] = useState<ScanResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { invalidateAfterScan } = useInvalidateCdiQueries()
   const [scanning, setScanning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [healthResult, devicesResult] = await Promise.all([
-        getHealth(),
-        getDevices(false),
-      ])
-      setHealth(healthResult)
-      setScan(devicesResult)
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to load dashboard data"
-      setError(message)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const healthQuery = useHealthQuery()
+  const devicesQuery = useDevicesQuery(getSelectedHostId())
+
+  const health = healthQuery.data ?? null
+  const scan = devicesQuery.data ?? null
+  const loading = healthQuery.isLoading || devicesQuery.isLoading
+  const error =
+    healthQuery.error instanceof Error
+      ? healthQuery.error.message
+      : devicesQuery.error instanceof Error
+        ? devicesQuery.error.message
+        : null
 
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    if (healthQuery.isSuccess || devicesQuery.isSuccess) {
+      setLastRefreshedAt(new Date())
+    }
+  }, [healthQuery.dataUpdatedAt, devicesQuery.dataUpdatedAt, healthQuery.isSuccess, devicesQuery.isSuccess])
+
+  const refresh = useCallback(async () => {
+    await Promise.all([healthQuery.refetch(), devicesQuery.refetch()])
+  }, [healthQuery, devicesQuery])
+
+  useEffect(() => {
+    if (!autoRefresh) {
+      return
+    }
+
+    const tick = () => {
+      if (document.visibilityState !== "visible") {
+        return
+      }
+      void refresh()
+    }
+
+    const id = window.setInterval(tick, AUTO_REFRESH_MS)
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void refresh()
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [autoRefresh, refresh])
 
   const runScan = async () => {
     setScanning(true)
     try {
+      const machineId = getSelectedHostId()
       const result = await scanDevices({
         ignore_ata: false,
         ignore_nvme: false,
         ignore_scsi: false,
+        ...(machineId ? { machine_id: machineId } : {}),
         ...mockDataRequestFields(useMockData, mockDataPath),
       })
-      setScan(result)
+      await invalidateAfterScan(machineId)
       toast.success(`Scan complete — ${result.summary.total} device(s) found`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Scan failed")
@@ -118,8 +143,22 @@ export function DashboardPage() {
               Monitor API readiness, run inventory scans, and inspect the latest
               drive telemetry from the local CDI backend.
             </p>
+            {lastRefreshedAt ? (
+              <p className="text-muted-foreground mt-1 text-xs">
+                Last refreshed {lastRefreshedAt.toLocaleTimeString()}
+                {autoRefresh ? " · auto-refresh on" : ""}
+              </p>
+            ) : null}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-muted-foreground flex items-center gap-2 text-sm">
+              <Switch
+                checked={autoRefresh}
+                onCheckedChange={setAutoRefresh}
+                aria-label="Auto-refresh when tab is visible"
+              />
+              Live refresh
+            </label>
             <Button variant="outline" onClick={() => void refresh()} disabled={loading}>
               <RefreshCwIcon data-icon="inline-start" />
               Refresh
@@ -246,7 +285,12 @@ export function DashboardPage() {
                     <TableCell>{device.model_number ?? "—"}</TableCell>
                     <TableCell>{device.transport_protocol ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant={statusBadgeVariant(device.health_status)}>
+                      <Badge
+                        variant={healthBadgeVariant(
+                          device.health_status,
+                          device.health_grade
+                        )}
+                      >
                         {device.health_grade ?? device.health_status ?? "—"}
                       </Badge>
                     </TableCell>
