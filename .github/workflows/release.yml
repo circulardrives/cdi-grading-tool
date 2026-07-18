@@ -56,9 +56,10 @@ jobs:
           python -m venv /tmp/cdi-lock-venv
           /tmp/cdi-lock-venv/bin/pip install --upgrade pip
           /tmp/cdi-lock-venv/bin/pip install "$(ls dist/cdi_health-*.whl)[api]"
+          # Filter the project itself in every form pip freeze can emit:
+          # "cdi-health==x", "cdi_health==x", "cdi-health @ file://...", "cdi_health @ file://..."
           /tmp/cdi-lock-venv/bin/pip freeze \
-            | grep -v -E '^(cdi-health|cdi_health)==' \
-            | grep -v -E '^cdi-health @' \
+            | grep -v -E '^cdi[-_]health(==| @)' \
             > build/pkg/opt/cdi-health/pkg/requirements-lock.txt
           test -s build/pkg/opt/cdi-health/pkg/requirements-lock.txt
 
