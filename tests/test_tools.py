@@ -85,16 +85,13 @@ class TestSmartctl:
         path = smartctl.get_smartctl_path()
         assert path == "/usr/sbin/smartctl"
 
-    @patch("shutil.which")
-    def test_get_smartctl_path_fallback(self, mock_which: MagicMock) -> None:
-        """Test fallback to 'smartctl' when not found."""
-        mock_which.return_value = None
-
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 1
-            smartctl = Smartctl("/dev/sda")
-            path = smartctl.get_smartctl_path()
-            assert path == "smartctl"
+    @patch("os.path.exists", return_value=False)
+    @patch("shutil.which", return_value=None)
+    def test_get_smartctl_path_fallback(self, mock_which: MagicMock, mock_exists: MagicMock) -> None:
+        """Test fallback to 'smartctl' when not on PATH or in common install dirs."""
+        smartctl = Smartctl("/dev/sda")
+        path = smartctl.get_smartctl_path()
+        assert path == "smartctl"
 
 
 class TestSG3Utils:

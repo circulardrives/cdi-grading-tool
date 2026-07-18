@@ -182,10 +182,11 @@ jobs:
           name: packages
           path: dist/
 
+      # No checkout in this job, so pip caching (which needs a dependency
+      # file in the workspace) must stay disabled.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       - name: Install OS tools
         run: |

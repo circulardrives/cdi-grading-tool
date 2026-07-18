@@ -13,13 +13,13 @@ for arg in "$@"; do
 done
 
 case "${HOST_ARG:-0.0.0.0}" in
-  127.0.0.1|localhost|::1) ;;
-  *)
-    if [ -z "$TOKEN" ]; then
-      echo "cdi-health-api: CDI_HEALTH_API_TOKEN is required when binding ${HOST_ARG:-0.0.0.0}" >&2
-      exit 1
-    fi
-    ;;
+127.0.0.1 | localhost | ::1) ;;
+*)
+  if [ -z "$TOKEN" ]; then
+    echo "cdi-health-api: CDI_HEALTH_API_TOKEN is required when binding ${HOST_ARG:-0.0.0.0}" >&2
+    exit 1
+  fi
+  ;;
 esac
 
 exec "$@"
