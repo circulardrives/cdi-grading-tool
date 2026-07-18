@@ -1,12 +1,10 @@
 # Overlay for scanning drives attached to the Docker host.
 # Requires Linux, root in the API container, and access to block devices.
 #
-#   docker compose -f deploy/docker/docker-compose.yml \
+#   CDI_HEALTH_API_TOKEN=... docker compose -f deploy/docker/docker-compose.yml \
 #     -f deploy/docker/docker-compose.hardware.yml up --build
 #
-# Rebuild the dashboard for live hardware scans (mock is opt-in in the UI):
-#   docker compose -f deploy/docker/docker-compose.yml \
-#     -f deploy/docker/docker-compose.hardware.yml up --build
+# CDI_HEALTH_API_TOKEN is required (inherited from the base compose file).
 
 services:
   api:
@@ -15,6 +13,7 @@ services:
     environment:
       CDI_HEALTH_API_ALLOW_NON_ROOT: "0"
       CDI_HEALTH_API_MOCK_DATA: ""
+      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:?Set CDI_HEALTH_API_TOKEN in .env}
     command:
       [
         "python",
@@ -36,3 +35,5 @@ services:
     build:
       args:
         VITE_CDI_USE_MOCK_DATA: ${VITE_CDI_USE_MOCK_DATA:-0}
+    environment:
+      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:?Set CDI_HEALTH_API_TOKEN in .env}

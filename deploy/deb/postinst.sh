@@ -4,6 +4,7 @@ set -e
 
 ROOT=/opt/cdi-health
 WHEEL=$(ls "${ROOT}"/pkg/cdi_health-*.whl 2>/dev/null | head -1)
+LOCK="${ROOT}/pkg/requirements-lock.txt"
 
 install_venv() {
   if [ -z "$WHEEL" ] || ! command -v python3 >/dev/null 2>&1; then
@@ -15,15 +16,19 @@ install_venv() {
     return 1
   fi
 
-  if [ -x "${ROOT}/venv/bin/pip" ]; then
-    "${ROOT}/venv/bin/pip" install -q --upgrade pip
-    "${ROOT}/venv/bin/pip" install -q --upgrade "${WHEEL}[api]"
-    return 0
+  if [ ! -f "$LOCK" ]; then
+    echo "cdi-health: missing ${LOCK}; cannot install reproducible dependencies" >&2
+    return 1
   fi
 
-  python3 -m venv "${ROOT}/venv"
+  if [ ! -x "${ROOT}/venv/bin/pip" ]; then
+    python3 -m venv "${ROOT}/venv"
+  fi
+
   "${ROOT}/venv/bin/pip" install -q --upgrade pip
-  "${ROOT}/venv/bin/pip" install -q "${WHEEL}[api]"
+  # Install locked runtime deps first, then the wheel without resolving deps again.
+  "${ROOT}/venv/bin/pip" install -q -r "${LOCK}"
+  "${ROOT}/venv/bin/pip" install -q --no-deps --force-reinstall "${WHEEL}"
 }
 
 if [ -x "${ROOT}/scripts/install-host-dependencies.sh" ]; then

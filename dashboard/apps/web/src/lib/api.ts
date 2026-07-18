@@ -25,12 +25,72 @@ class ApiError extends Error {
   }
 }
 
+function formatValidationLocation(loc: unknown): string {
+  if (!Array.isArray(loc)) {
+    return ""
+  }
+  const parts = loc
+    .filter((part) => part !== "body" && part !== "query" && part !== "path")
+    .map(String)
+  return parts.length > 0 ? parts.join(".") : ""
+}
+
+function normalizeErrorDetail(detail: unknown): string | null {
+  if (detail == null) {
+    return null
+  }
+  if (typeof detail === "string") {
+    return detail
+  }
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === "string") {
+          return item
+        }
+        if (item && typeof item === "object") {
+          const entry = item as { msg?: unknown; loc?: unknown; message?: unknown }
+          const msg =
+            typeof entry.msg === "string"
+              ? entry.msg
+              : typeof entry.message === "string"
+                ? entry.message
+                : null
+          if (!msg) {
+            return null
+          }
+          const location = formatValidationLocation(entry.loc)
+          return location ? `${location}: ${msg}` : msg
+        }
+        return null
+      })
+      .filter((msg): msg is string => Boolean(msg))
+    return messages.length > 0 ? messages.join("; ") : null
+  }
+  if (typeof detail === "object") {
+    const entry = detail as { msg?: unknown; message?: unknown }
+    if (typeof entry.msg === "string") {
+      return entry.msg
+    }
+    if (typeof entry.message === "string") {
+      return entry.message
+    }
+    try {
+      return JSON.stringify(detail)
+    } catch {
+      return null
+    }
+  }
+  return String(detail)
+}
+
 async function parseErrorMessage(response: Response): Promise<string> {
   let message = `Request failed (${response.status})`
   try {
-    const payload: { detail?: string } = await response.json()
-    if (payload.detail) {
-      message = payload.detail
+    const payload: { detail?: unknown } = await response.json()
+    const normalized = normalizeErrorDetail(payload.detail)
+    if (normalized) {
+      message = normalized
     }
   } catch {
     /* ignore non-json errors */

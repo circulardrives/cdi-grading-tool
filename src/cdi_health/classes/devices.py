@@ -33,20 +33,35 @@ from concurrent.futures import ThreadPoolExecutor
 # Data Classes
 from dataclasses import dataclass
 
-# Configuration
-from cdi_health.classes.config import get_config
-
 # Exceptions
 from cdi_health.classes.exceptions import CommandException, DevicesException
 
 # Helpers
-from cdi_health.classes.helpers import Helper
+from cdi_health.classes.helpers import clean_string
 
 # Tools
-from cdi_health.classes.tools import Command, SeaTools, SG3Utils, Smartctl
+from cdi_health.classes.tools import Command, SG3Utils, Smartctl, resolve_tool_path
 
-# Constants
-from cdi_health.constants import Protocol
+# Logging
+from cdi_health.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+def int_or_none(value) -> int | None:
+    """
+    Coerce a numeric JSON value to int; None for missing/non-numeric values
+    (e.g. "Not Reported"), so numeric comparisons never see strings.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.lstrip("-").isdigit():
+            return int(stripped)
+    return None
 
 
 class Device:
@@ -54,51 +69,11 @@ class Device:
     Device Class
     """
 
-    # Protocol Map
+    # Protocol Map (values reachable via smartctl --scan-open)
     protocol_map = {
         "ATA": "ATA",
-        "FusionIO": "FusionIO",
         "NVMe": "NVMe",
         "SCSI": "SCSI",
-        "SD": "SD",
-        "USB": "USB",
-    }
-
-    # Rotation Rate Map
-    rotation_rate_map = {
-        0: "SSD",
-        5400: "HDD",
-        5700: "HDD",
-        7200: "HDD",
-        10000: "HDD",
-        15030: "HDD",
-        10500: "HDD",
-        15000: "HDD",
-        "Not Reported": "Not Reported",
-    }
-
-    # Grading Map
-    grading_map = {
-        "smart": {
-            "equality": "==",
-            "value": "Pass",
-        },
-        "smart_self_test": {
-            "equality": "==",
-            "value": "Pass",
-        },
-        "smart_conveyance_self_test": {
-            "equality": "==",
-            "value": "Pass",
-        },
-        "health": {
-            "equality": ">=",
-            "value": 80,
-        },
-        "reallocated_sectors": {
-            "equality": "<=",
-            "value": 50,
-        },
     }
 
     def __init__(
@@ -117,18 +92,28 @@ class Device:
         # Properties
         self.dut: str = device_id
 
-        # Use provided SG3Utils or create new one
+        # Use provided SG3Utils or create a single instance (tool paths are
+        # class-cached; reuse the same object when the mapped path matches).
         if sg3utils_provider:
-            self.dut_sg: str = sg3utils_provider.sg_map26()
-            self.state: str = sg3utils_provider.test_unit_ready()
+            sg_mapped = sg3utils_provider.sg_map26()
+            self.dut_sg: str = sg_mapped if sg_mapped else self.dut
+            self.state: str = sg3utils_provider.test_unit_ready() or "Not Ready"
         else:
-            self.dut_sg: str = SG3Utils(self.dut).sg_map26()
-            self.state: str = SG3Utils(self.dut_sg).test_unit_ready()
+            sg3 = SG3Utils(self.dut)
+            sg_mapped = sg3.sg_map26()
+            if not sg_mapped:
+                # Mapping can fail for devices without an sg node (e.g. behind
+                # some USB bridges); fall back to the block device path rather
+                # than propagating False into tool commands.
+                logger.warning("sg_map26 failed for %s; falling back to block device path", self.dut)
+            self.dut_sg: str = sg_mapped if sg_mapped else self.dut
+            if self.dut_sg != self.dut:
+                sg3 = SG3Utils(self.dut_sg)
+            self.state: str = sg3.test_unit_ready() or "Not Ready"
 
         # Store providers for later use
         self._smartctl_provider = smartctl_provider
         self._sg3utils_provider = sg3utils_provider
-        self.wwn: str = "Not Reported"
         self.vendor: str = "Not Reported"
         self.model_number: str = "Not Reported"
         self.serial_number: str = "Not Reported"
@@ -186,44 +171,6 @@ class Device:
         self.smart_long_self_test_duration: str = None
         self.smart_conveyance_self_test_duration: str = None
 
-        # Security Support
-        self.security_supported: bool = False
-        self.security_enabled: bool = False
-        self.security_locked: bool = False
-        self.security_frozen: bool = False
-
-        # Secure Erase Support
-        self.secure_erase_supported: bool = False
-        self.enhanced_secure_erase_supported: bool = None
-
-        # Secure Erase Duration
-        self.secure_erase_duration = False
-        self.enhanced_secure_erase_duration = None
-
-        # Sanitize Support
-        self.sanitize_supported = False
-        self.sanitize_block_erase_supported = False
-        self.sanitize_cryptographic_erase_supported = False
-        self.sanitize_overwrite_erase_supported = False
-        self.sanitize_exit_failure_mode_supported = False
-
-        # SCSI Format Unit Support
-        self.scsi_format_unit_supported = False
-
-        # NVMe Format Unit Support
-        self.nvme_format_unit_supported = False
-        self.nvme_format_unit_cryptographic_erase_supported = False
-        self.nvme_format_unit_user_data_erase_supported = False
-
-        # NIST/IEEE Support
-        self.can_nist_clear = False
-        self.can_nist_purge = False
-        self.can_ieee_clear = False
-        self.can_ieee_purge = False
-
-        # Estimated Erasure Duration
-        self.estimated_erasure_duration = None
-
         # CDI Grading
         self.cdi_eligible = False  # Defaults to False until eligible
         self.cdi_certified = False  # Defaults to False until certified
@@ -232,7 +179,6 @@ class Device:
         # Generic Attributes
         self.pending_sectors = None
         self.reallocated_sectors = None
-        self.reallocated_event_count = None
         self.uncorrectable_errors = None
 
         # Counters
@@ -243,8 +189,6 @@ class Device:
         # SSD Attributes
         self.ssd_percentage_used_endurance = None
         self.ssd_media_wearout_indicator = None
-        self.ssd_wear_levelling = None
-        self.ssd_life_left = None
 
         # NVMe-specific attributes
         self.percentage_used = None
@@ -270,19 +214,8 @@ class Device:
         self.lowest_average_short_temperature = None
         self.highest_average_long_temperature = None
         self.lowest_average_long_temperature = None
-        self.time_over_temperature = None
-
-        # Temperature Log
-        self.temperature_log = None
-
-        # Outputs
-        self.outputs = dict()
-
-        # Flags
-        self.flags = list()
 
         # Tools - use provided providers or create new instances
-        self.seatools = SeaTools(device_id=self.dut_sg)
         if self._smartctl_provider:
             self.smartctl = self._smartctl_provider
         else:
@@ -303,8 +236,6 @@ class Device:
         # Attributes to Modify
         attributes_to_modify = [
             "smartctl",
-            "seatools",
-            "sgutils",
         ]
 
         # Object Copy
@@ -366,19 +297,29 @@ class Device:
             # Collect SCSI Information
             SCSIProtocol(device=self, smartctl=self.smartctl_json)
 
-    def refresh(self):
+        # Grade the Device - protocols we cannot collect metrics for stay "U"
+        if self.is_ata or self.is_nvme or self.is_scsi:
+            self.apply_health_grade()
+
+    def apply_health_grade(self) -> None:
         """
-        Refresh Device
+        Derive CDI grading from the health score calculator so cdi_grade /
+        cdi_certified can never disagree with health_grade / is_certified.
+        The protocol handlers only collect metrics; this is the single
+        grading source of truth.
         """
 
-        # Reset Output
-        self.outputs = dict()
+        # Local import: scoring is a leaf module, but importing lazily keeps
+        # module import order flexible for future refactors
+        from cdi_health.classes.scoring import calculate_health_score
 
-        # Reset Flags
-        self.flags = list()
+        # Calculate Health Score
+        health = calculate_health_score(self.to_dict(pop=True))
 
-        # Initialize
-        self.initialize()
+        # Apply CDI Grading
+        self.cdi_grade = health.grade
+        self.cdi_certified = health.is_certified
+        self.cdi_eligible = health.grade != "F"
 
     """ Helpers """
 
@@ -422,7 +363,6 @@ class Device:
         :param model: the model number of the device
         :return: a brand if it exists
         Todo - Add more known Model Numbers that start with XXX - helps with ATA devices that don't share a Vendor in the Model Number
-        Todo - See known_brands_list in constants.py
         """
 
         """
@@ -572,24 +512,48 @@ class Device:
         :return: Media Type
         """
 
-        # Check Rotation Rate
-        if "rotation_rate" in self.smartctl_json:
-            # Set Media Type
-            return self.rotation_rate_map.get(
-                # Get Rotation Rate
-                self.smartctl_json.get("rotation_rate", "Not Reported"),
-                # Fallback
-                "Not Reported",
-            )
-        else:
-            # If Transport Protocol is NVMe
-            if self.transport_protocol == "NVMe":
-                # Set Media Type to SSD
-                return "SSD"
-            # If Transport Protocol is ATA
-            elif self.transport_protocol == "ATA":
-                # Set Media Type to HDD
-                return "HDD"
+        # Rotation rate is authoritative when reported: 0 = solid state, >0 = rpm
+        rotation_rate = self.smartctl_json.get("rotation_rate")
+        if isinstance(rotation_rate, int) and not isinstance(rotation_rate, bool):
+            return "SSD" if rotation_rate == 0 else "HDD"
+
+        # NVMe is always solid state
+        if self.transport_protocol == "NVMe":
+            return "SSD"
+
+        # ATA without rotation_rate: look for SSD evidence before assuming HDD,
+        # otherwise SATA SSDs get graded on the HDD sector-defect curve
+        if self.transport_protocol == "ATA":
+            return "SSD" if self.has_ata_ssd_indicators else "HDD"
+
+        return "Not Reported"
+
+    @property
+    def has_ata_ssd_indicators(self) -> bool:
+        """
+        SSD evidence for ATA devices that do not report rotation_rate.
+        :return: True if SMART data indicates solid state media
+        """
+
+        # Wear/endurance SMART attributes that only exist on SSDs. IDs 202/231
+        # are excluded because they mean different things on some HDDs.
+        ssd_attribute_ids = {169, 177, 230, 232, 233}
+        ssd_name_tokens = ("wear", "ssd", "nand", "percent_lifetime", "lifetime_remain")
+
+        for attribute in self.smartctl_json.get("ata_smart_attributes", {}).get("table", []) or []:
+            if attribute.get("id") in ssd_attribute_ids:
+                return True
+            if any(token in str(attribute.get("name", "")).lower() for token in ssd_name_tokens):
+                return True
+
+        # ATA Device Statistics log page 7 only exists on solid state devices
+        for page in self.smartctl_json.get("ata_device_statistics", {}).get("pages", []) or []:
+            if page.get("name") == "Solid State Device Statistics":
+                return True
+
+        # SSD-only form factors
+        form_factor = str(self.smartctl_json.get("form_factor", {}).get("name", "")).lower()
+        return any(token in form_factor for token in ("m.2", "msata"))
 
     @property
     def determine_transport_protocol(self) -> str:
@@ -615,16 +579,7 @@ class Device:
         :return: True if ready, False otherwise
         """
 
-        return True
-
-    @property
-    def is_mounted(self) -> bool:
-        """
-        Determines if Device is mounted
-        :return: True if mounted, False otherwise
-        """
-
-        return True
+        return self.state == "Ready"
 
     @property
     def is_hdd(self) -> bool:
@@ -701,125 +656,11 @@ class Device:
         # Return False
         return False
 
-    @property
-    def is_usb(self) -> bool:
-        """
-        Determines if Device is SCSI
-        :return:
-        """
-
-        # If Transport Protocol is USB
-        if self.transport_protocol == "USB":
-            # Return True
-            return True
-
-        # Return False
-        return False
-
-    """ Grading Methods """
-
-    def determine_grade(self):
-        pass
-
-    @property
-    def is_grade_a(self) -> bool:
-        """
-        Determines if the device is CDI grade A
-        :return:
-        """
-
-        # If CDI Grade is A
-        if self.cdi_grade == "A":
-            # Return True
-            return True
-
-        # Return False
-        return False
-
-    @property
-    def is_grade_b(self) -> bool:
-        """
-        Determines if the device is CDI grade B
-        :return:
-        """
-
-        # If CDI Grade is A
-        if self.cdi_grade == "B":
-            # Return True
-            return True
-
-        # Return False
-        return False
-
-    @property
-    def is_grade_c(self) -> bool:
-        """
-        Determines if the device is CDI grade C
-        :return:
-        """
-
-        # If CDI Grade is A
-        if self.cdi_grade == "C":
-            # Return True
-            return True
-
-        # Return False
-        return False
-
-    @property
-    def is_grade_d(self) -> bool:
-        """
-        Determines if the device is CDI grade C
-        :return:
-        """
-
-        # If CDI Grade is A
-        if self.cdi_grade == "D":
-            # Return True
-            return True
-
-        # Return False
-        return False
-
-    @property
-    def is_grade_f(self) -> bool:
-        """
-        Determines if the device is CDI grade F
-        :return:
-        """
-
-        # If CDI Grade is A
-        if self.cdi_grade == "F":
-            # Return True
-            return True
-
-        # Return False
-        return False
-
-    @property
-    def is_certified_for_reuse(self) -> bool:
-        """
-        Determines if certified for reuse against CDI standard
-        :return:
-        """
-
-        # If CDI Grade is Certified
-        if self.cdi_certified:
-            # Return True
-            return True
-
-        # Return False
-        return False
-
 
 class Devices:
     """
     Devices Class
     """
-
-    # Commands
-    scan_devices_command: str = "/usr/bin/sudo smartctl --scan-open -j"
-    scan_devices_alt_command: str = "/usr/bin/sudo lsblk -d -b -e 1,7,11,252 -O -J"
 
     def __init__(
         self,
@@ -840,6 +681,10 @@ class Devices:
         self.ata_devices: list = list()
         self.nvme_devices: list = list()
         self.scsi_devices: list = list()
+
+        # Resolve smartctl once for the scan command
+        smartctl_path = Smartctl().get_smartctl_path()
+        self.scan_devices_command = f"sudo {smartctl_path} --scan-open -j"
 
         # Prepare Command
         self.scan_command = Command(command=self.scan_devices_command)
@@ -964,8 +809,10 @@ class Devices:
         # Reset Devices
         self.devices = list()
 
-        # Create Threads and Analyse Devices
-        with ThreadPoolExecutor() as analysis:
+        # Create Threads and Analyse Devices. Cap concurrency: each worker runs
+        # several privileged subprocesses, and unbounded parallelism overwhelms
+        # USB bridges and expander backplanes on high-drive-count benches.
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(self.scanned)))) as analysis:
             # Devices List
             devices_list = list(
                 # Map List Comprehension
@@ -977,12 +824,11 @@ class Devices:
         # Return
         return True
 
-    @staticmethod
-    def analyse_device(device_id: str):
+    def analyse_device(self, device_id: str):
         """
         Analyse Device
         :param device_id: Device ID
-        :return: a Device instance
+        :return: a Device dictionary | False on failure (recorded in self.failures)
         """
 
         # Try
@@ -991,8 +837,17 @@ class Devices:
             device = Device(device_id=device_id).to_dict(pop=True)
 
         # If CommandException
-        except CommandException:
-            # False
+        except CommandException as exception:
+            # Record and surface the failure instead of silently dropping the drive
+            logger.warning("Device analysis failed for %s: %s", device_id, exception)
+            self.failures.append({"name": device_id, "error": str(exception)})
+            return False
+
+        # If unexpected Exception (e.g. malformed smartctl JSON structure)
+        except Exception as exception:
+            # One bad drive must not kill the whole scan
+            logger.warning("Unexpected error analysing %s: %s", device_id, exception, exc_info=True)
+            self.failures.append({"name": device_id, "error": f"{type(exception).__name__}: {exception}"})
             return False
 
         # Get Drive
@@ -1015,45 +870,16 @@ class Devices:
         :return bool:
         """
 
-        # If any Device is Not Ready in Device List
-        if not any(device.is_ready for device in self.devices):
-            # Return False
-            return False
-
-        # Else
-        else:
-            # Return True
+        # analyse_devices() stores dicts (to_dict), not Device objects
+        if not self.devices:
             return True
 
-    @property
-    def are_hdds(self) -> bool:
-        """
-        Checks to see if all Devices in Device List are HDDs
-        :return bool:
-        """
+        def _device_ready(device) -> bool:
+            if isinstance(device, dict):
+                return device.get("state") == "Ready"
+            return bool(getattr(device, "is_ready", False))
 
-        # Return Boolean
-        return all(device.is_hdd for device in self.devices)
-
-    @property
-    def are_nvme(self) -> bool:
-        """
-        Checks to see if all Devices in Device List are NVMe
-        :return bool:
-        """
-
-        # Return Boolean
-        return all(device.is_nvme for device in self.devices)
-
-    @property
-    def are_ssds(self) -> bool:
-        """
-        Checks to see if all Devices in Device List are SSDs
-        :return bool:
-        """
-
-        # Return Boolean
-        return all(device.is_ssd for device in self.devices)
+        return all(_device_ready(device) for device in self.devices)
 
 
 @dataclass
@@ -1061,9 +887,6 @@ class ATAProtocol:
     """
     ATA Protocol
     """
-
-    # Set Helper
-    helper: Helper = Helper()
 
     def __init__(self, device: Device, smartctl: dict):
         """
@@ -1081,12 +904,12 @@ class ATAProtocol:
             # Determine Vendor
             brand = device.determine_brand_by_model_number_starts_with(model_name)
             if brand is not None:
-                device.vendor = self.helper.clean_string(brand.upper())
+                device.vendor = clean_string(brand.upper())
             else:
                 device.vendor = "UNKNOWN"  # or set to some default value
 
         # Identifiers
-        device.model_number: str = self.helper.clean_string(device.determine_model_by_model_number(model_name).upper())
+        device.model_number: str = clean_string(device.determine_model_by_model_number(model_name).upper())
         device.serial_number: str = smartctl.get("serial_number", "Not Reported")
         device.firmware_revision: str = smartctl.get("firmware_version", "Not Reported")
         device.transport_revision: str = smartctl.get("ata_version", dict()).get("string", "Not Reported")
@@ -1192,17 +1015,19 @@ class ATAProtocol:
         # Get Reallocated Sectors
         device.reallocated_sectors = self.get_smart_attribute_by_id(attribute_id=5, attributes=device.smart_attributes)
 
-        # Get Pending Sectors
-        device.pending_reallocated_sectors = self.get_smart_attribute_by_id(
+        # Get Pending Sectors (canonical name; keep legacy alias for consumers)
+        device.pending_sectors = self.get_smart_attribute_by_id(
             attribute_id=197,
             attributes=device.smart_attributes,
         )
+        device.pending_reallocated_sectors = device.pending_sectors
 
-        # Get Offline Uncorrectable Sectors
-        device.offline_uncorrectable_sectors = self.get_smart_attribute_by_id(
+        # Get Offline Uncorrectable / Uncorrectable Errors (canonical + alias)
+        device.uncorrectable_errors = self.get_smart_attribute_by_id(
             attribute_id=198,
             attributes=device.smart_attributes,
         )
+        device.offline_uncorrectable_sectors = device.uncorrectable_errors
 
         # Get Device Start/Stop Count
         device.start_stop_count = self.get_smart_attribute_by_id(attribute_id=4, attributes=device.smart_attributes)
@@ -1343,119 +1168,29 @@ class ATAProtocol:
                 # Extract Table
                 temperature_table = page.get("table", [])
 
-                # Iterate Table
+                # Statistic Name to Device Attribute Map
+                temperature_attribute_map = {
+                    "Specified Maximum Operating Temperature": "maximum_temperature",
+                    "Specified Minimum Operating Temperature": "minimum_temperature",
+                    "Current Temperature": "current_temperature",
+                    "Highest Temperature": "highest_temperature",
+                    "Lowest Temperature": "lowest_temperature",
+                    "Average Short Term Temperature": "average_short_temperature",
+                    "Average Long Term Temperature": "average_long_temperature",
+                    "Highest Average Short Term Temperature": "highest_average_short_temperature",
+                    "Lowest Average Short Term Temperature": "lowest_average_short_temperature",
+                    "Highest Average Long Term Temperature": "highest_average_long_temperature",
+                    "Lowest Average Long Term Temperature": "lowest_average_long_temperature",
+                }
+
+                # Iterate Table - coerce to int | None so comparisons never see strings
                 for temperature in temperature_table:
-                    # If Specified Maximum Operating Temperature
-                    if temperature.get("name") == "Specified Maximum Operating Temperature":
-                        # Get Specified Maximum Operating Temperature
-                        device.maximum_temperature = temperature.get("value", "Not Reported")
+                    attribute = temperature_attribute_map.get(temperature.get("name"))
+                    if attribute:
+                        setattr(device, attribute, int_or_none(temperature.get("value")))
 
-                    # If Specified Minimum Operating Temperature
-                    if temperature.get("name") == "Specified Minimum Operating Temperature":
-                        # Get Specified Minimum Operating Temperature
-                        device.minimum_temperature = temperature.get("value", "Not Reported")
-
-                    # If Current Temperature
-                    if temperature.get("name") == "Current Temperature":
-                        # Get Current Temperature
-                        device.current_temperature = temperature.get("value", "Not Reported")
-
-                    # If Highest Temperature
-                    if temperature.get("name") == "Highest Temperature":
-                        # Get Highest Temperature
-                        device.highest_temperature = temperature.get("value", "Not Reported")
-
-                    # If Lowest Temperature
-                    if temperature.get("name") == "Lowest Temperature":
-                        # Get Lowest Temperature
-                        device.lowest_temperature = temperature.get("value", "Not Reported")
-
-                    # If Average Short Term Temperature
-                    if temperature.get("name") == "Average Short Term Temperature":
-                        # Get Current Temperature
-                        device.average_short_temperature = temperature.get("value", "Not Reported")
-
-                    # If Average Long Term Temperature
-                    if temperature.get("name") == "Average Long Term Temperature":
-                        # Get Current Temperature
-                        device.average_long_temperature = temperature.get("value", "Not Reported")
-
-                    # If Highest Average Short Term Temperature
-                    if temperature.get("name") == "Highest Average Short Term Temperature":
-                        # Get Current Temperature
-                        device.highest_average_short_temperature = temperature.get("value", "Not Reported")
-
-                    # If Lowest Average Short Term Temperature
-                    if temperature.get("name") == "Lowest Average Short Term Temperature":
-                        # Get Current Temperature
-                        device.lowest_average_short_temperature = temperature.get("value", "Not Reported")
-
-                    # If Highest Average Long Term Temperature
-                    if temperature.get("name") == "Highest Average Long Term Temperature":
-                        # Get Current Temperature
-                        device.highest_average_long_temperature = temperature.get("value", "Not Reported")
-
-                    # If Lowest Average Long Term Temperature
-                    if temperature.get("name") == "Lowest Average Long Term Temperature":
-                        # Get Current Temperature
-                        device.lowest_average_long_temperature = temperature.get("value", "Not Reported")
-
-        # Get configuration for thresholds
-        config = get_config()
-
-        # Set A Grade Default
-        device.cdi_grade = "A"
-        device.cdi_eligible = True
-        device.cdi_certified = True
-
-        # If S.M.A.R.T Fail
-        if not device.smart_status:
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Maximum Reallocated Sectors exceeded
-        if device.reallocated_sectors >= config.maximum_reallocated_sectors:
-            # Set State to Failed
-            device.state = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Maximum Pending Sectors exceeded
-        if device.pending_reallocated_sectors >= config.maximum_pending_sectors:
-            # Set State to Failed
-            device.state = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Maximum Uncorrectable Errors exceeded
-        if device.offline_uncorrectable_sectors >= config.maximum_uncorrectable_errors:
-            # Set State to Failed
-            device.state = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Temperatures is not None
-        if device.highest_temperature is not None and device.maximum_temperature is not None:
-            # If Maximum Temperature exceeded
-            if device.highest_temperature > device.maximum_temperature:
-                # Set State to Failed
-                device.state = f"Fail"
-
-                # Set F Grade
-                device.cdi_grade = "F"
-                device.cdi_eligible = False
-                device.cdi_certified = False
+        # Grading is applied centrally via Device.apply_health_grade() so the
+        # scan-time grade can never disagree with the health score.
 
     @staticmethod
     def get_smart_attribute_by_id(
@@ -1501,7 +1236,7 @@ class ATAProtocol:
                         return att["threshold"]
 
                     # If Flags
-                    if threshold:
+                    if flags:
                         # Return Flags
                         return att["flags"]
 
@@ -1518,9 +1253,6 @@ class ATAProtocol:
 
 @dataclass
 class NVMeProtocol:
-    # Set Helper
-    helper: Helper = Helper()
-
     @staticmethod
     def nvme_namespace_block_path(dut: str) -> str:
         """Resolve block device path for nvme-cli (e.g. /dev/nvme0 -> /dev/nvme0n1)."""
@@ -1548,12 +1280,12 @@ class NVMeProtocol:
             # Determine Vendor
             brand = device.determine_brand_by_model_number_starts_with(model_name)
             if brand is not None:
-                device.vendor = self.helper.clean_string(brand.upper())
+                device.vendor = clean_string(brand.upper())
             else:
                 device.vendor = "UNKNOWN"  # or set to some default value
 
         # Model Number
-        device.model_number = self.helper.clean_string(device.determine_model_by_model_number(model_name).upper())
+        device.model_number = clean_string(device.determine_model_by_model_number(model_name).upper())
 
         # Serial Number
         device.serial_number = smartctl.get("serial_number", "Not Reported")
@@ -1622,8 +1354,9 @@ class NVMeProtocol:
 
         # Else
         else:
-            # Prepare Command
-            nvme_list = Command(f"/usr/bin/sudo /usr/sbin/nvme list -o json {device.dut}")
+            # Prepare Command (PATH-resolved tools; bare sudo strips when root)
+            nvme_path = resolve_tool_path("nvme", fallback="/usr/sbin/nvme")
+            nvme_list = Command(f"sudo {nvme_path} list -o json {device.dut}")
             output, errors, return_code = nvme_list.execute()
 
             if not output or return_code != 0:
@@ -1634,18 +1367,19 @@ class NVMeProtocol:
             except json.JSONDecodeError as e:
                 raise CommandException(f"Failed to parse nvme list JSON: {e}. Output: {output[:200]}")
 
-            # Find the device matching our device path (e.g., /dev/nvme1 should match /dev/nvme1n1)
+            # Match controller (/dev/nvme1) to namespace (/dev/nvme1n1) without
+            # matching /dev/nvme10n1; prefer serial when smartctl reported one.
             device_info = None
+            serial = smartctl.get("serial_number")
+            dut_ns_re = re.compile(rf"^{re.escape(device.dut)}n\d+$")
             for dev in output.get("Devices", []):
                 dev_path = dev.get("DevicePath", "")
-                # Match if device path starts with our device (e.g., /dev/nvme1 matches /dev/nvme1n1)
-                if dev_path.startswith(device.dut):
+                if serial and dev.get("SerialNumber") == serial:
                     device_info = dev
                     break
-
-            # Fallback to first device if not found
-            if device_info is None and output.get("Devices"):
-                device_info = output["Devices"][0]
+                if dut_ns_re.match(dev_path) or dev_path == device.dut:
+                    device_info = dev
+                    break
 
             if device_info is None:
                 raise CommandException(f"Device {device.dut} not found in nvme list output")
@@ -1686,7 +1420,8 @@ class NVMeProtocol:
                 device.nvme_namespaces = {}
             else:
                 # Get Namespaces
-                get_namespaces = Command(f"/usr/bin/sudo /usr/bin/smartctl -x -j {device.dut}n1")
+                smartctl_path = Smartctl().get_smartctl_path()
+                get_namespaces = Command(f"sudo {smartctl_path} -x -j {device.dut}n1")
 
                 # Execute
                 output, errors, return_code = get_namespaces.execute()
@@ -1724,6 +1459,8 @@ class NVMeProtocol:
             device.critical_warning = nvme_health.get("critical_warning", 0)
             # Media Errors
             device.media_errors = nvme_health.get("media_errors", 0)
+            # Composite temperature (Celsius in smartctl JSON)
+            device.current_temperature = int_or_none(nvme_health.get("temperature"))
             # Data Units Written (for data written calculation)
             data_units_written = nvme_health.get("data_units_written", 0)
             if data_units_written:
@@ -1731,15 +1468,33 @@ class NVMeProtocol:
                 device.data_written_bytes = data_units_written * 512 * 1000  # 1000 = multiplier in smartctl
                 device.data_written_tb = device.data_written_bytes / (1000**4)
 
+        # Top-level temperature dict may carry warning/critical thresholds
+        temp_info = smartctl.get("temperature")
+        if isinstance(temp_info, dict):
+            if device.current_temperature is None:
+                device.current_temperature = int_or_none(temp_info.get("current"))
+            if device.maximum_temperature is None:
+                device.maximum_temperature = int_or_none(
+                    temp_info.get("sensor_critical") or temp_info.get("drive_trip")
+                )
+
         nvme_err = smartctl.get("nvme_error_information_log")
         device.nvme_error_information_log = nvme_err if isinstance(nvme_err, dict) and nvme_err else None
 
-        # S.M.A.R.T Support
-        device.smart_supported = smartctl.get("smart_support", dict()).get("available", "Not Reported")
-        device.smart_enabled = smartctl.get("smart_support", dict()).get("enabled", "Not Reported")
+        # S.M.A.R.T Support / Status — normalize to bool | None (not "Not Reported")
+        smart_support = smartctl.get("smart_support") or {}
+        device.smart_supported = smart_support.get("available")
+        if device.smart_supported is not None:
+            device.smart_supported = bool(device.smart_supported)
+        device.smart_enabled = smart_support.get("enabled")
+        if device.smart_enabled is not None:
+            device.smart_enabled = bool(device.smart_enabled)
 
-        # S.M.A.R.T Status
-        device.smart_status = smartctl.get("smart_status", dict()).get("passed", "Not Reported")
+        smart_status = smartctl.get("smart_status") or {}
+        if "passed" in smart_status:
+            device.smart_status = bool(smart_status.get("passed"))
+        else:
+            device.smart_status = None
 
         # Extract NVMe Self-Test Log (Log Page 0x06)
         nvme_self_test_log = smartctl.get("nvme_self_test_log", {})
@@ -1787,7 +1542,8 @@ class NVMeProtocol:
         else:
             try:
                 ns_path = NVMeProtocol.nvme_namespace_block_path(device.dut)
-                ocp_cmd = Command(f"/usr/bin/sudo /usr/sbin/nvme ocp smart-add-log {ns_path} -o json")
+                nvme_path = resolve_tool_path("nvme", fallback="/usr/sbin/nvme")
+                ocp_cmd = Command(f"sudo {nvme_path} ocp smart-add-log {ns_path} -o json")
                 ocp_out, _ocp_err, ocp_rc = ocp_cmd.execute()
                 if ocp_out and ocp_rc == 0:
                     try:
@@ -1799,53 +1555,8 @@ class NVMeProtocol:
             except CommandException:
                 pass
 
-        # Set A Grade Default
-        device.cdi_grade = "A"
-        device.cdi_eligible = True
-        device.cdi_certified = True
-
-        # If S.M.A.R.T Fail
-        if not device.smart_status:
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Self-Test Failed - Drive is bad, set to F Grade
-        # A failed self-test means the drive cannot reliably store/retrieve data
-        if device.nvme_self_test_failed_count > 0:
-            # Set F Grade
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # NVMe critical health signals are hard fail-gates.
-        spare_threshold = (
-            device.available_spare_threshold
-            if device.available_spare_threshold is not None
-            else get_config().minimum_ssd_available_spare
-        )
-        if (
-            (device.critical_warning or 0) > 0
-            or (device.media_errors or 0) > 0
-            or (device.available_spare is not None and device.available_spare < spare_threshold)
-        ):
-            device.state = f"Fail"
-            device.cdi_grade = "F"
-            device.cdi_eligible = False
-            device.cdi_certified = False
-
-        # If Temperatures is not None
-        if device.highest_temperature is not None and device.maximum_temperature is not None:
-            # If Maximum Temperature exceeded
-            if device.highest_temperature > device.maximum_temperature:
-                # Set State to Failed
-                device.state = f"Fail"
-
-                # Set F Grade
-                device.cdi_grade = "F"
-                device.cdi_eligible = False
-                device.cdi_certified = False
+        # Grading is applied centrally via Device.apply_health_grade() so the
+        # scan-time grade can never disagree with the health score.
 
 
 @dataclass
@@ -1996,55 +1707,9 @@ class SCSIProtocol:
             # Set Uncorrectable Errors
             uncorrectable_errors: int = -1
 
-        # Convert Uncorrectable Errors
-        device.offline_uncorrectable_sectors: int = int(uncorrectable_errors)
+        # Convert Uncorrectable Errors (canonical + legacy alias for scoring)
+        device.uncorrectable_errors: int = int(uncorrectable_errors)
+        device.offline_uncorrectable_sectors: int = device.uncorrectable_errors
 
-        # Get configuration for thresholds
-        config = get_config()
-
-        # Set A Grade Default
-        device.cdi_grade: str = "A"
-        device.cdi_eligible: bool = True
-        device.cdi_certified: bool = True
-
-        # If S.M.A.R.T Fail
-        if not device.smart_status:
-            # Set State to Failed
-            device.state: str = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade: str = "F"
-            device.cdi_eligible: bool = False
-            device.cdi_certified: bool = False
-
-        # If Maximum Grown Defects exceeded
-        if device.reallocated_sectors >= config.maximum_grown_defects:
-            # Set State to Failed
-            device.state: str = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade: str = "F"
-            device.cdi_eligible: bool = False
-            device.cdi_certified: bool = False
-
-        # If Maximum Uncorrected Errors exceeded
-        if device.offline_uncorrectable_sectors >= config.maximum_scsi_uncorrected_errors:
-            # Set State to Failed
-            device.state: str = f"Fail"
-
-            # Set F Grade
-            device.cdi_grade: str = "F"
-            device.cdi_eligible: bool = False
-            device.cdi_certified: bool = False
-
-        # If Temperatures is not None
-        if device.highest_temperature is not None and device.maximum_temperature is not None:
-            # If Maximum Temperature exceeded
-            if device.highest_temperature > device.maximum_temperature:
-                # Set State to Failed
-                device.state: str = f"Fail"
-
-                # Set F Grade
-                device.cdi_grade: str = "F"
-                device.cdi_eligible: bool = False
-                device.cdi_certified: bool = False
+        # Grading is applied centrally via Device.apply_health_grade() so the
+        # scan-time grade can never disagree with the health score.

@@ -19,13 +19,16 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import ValidationError
 
 from cdi_health.api.discovery import DISCOVER_COOLDOWN_SECONDS, DiscoveryError, discover_hosts
 from cdi_health.api.jobs import JobStore
@@ -46,16 +49,21 @@ from cdi_health.api.schemas import (
     SelfTestStartRequest,
 )
 from cdi_health.api.security import (
+    BIND_HOST_ENV,
     allow_non_root_mode,
     api_token_is_enabled,
     assert_root_access,
+    assert_token_required_for_bind,
+    client_is_loopback,
     is_root_user,
+    optional_api_token,
     verify_api_token,
 )
 from cdi_health.api.services import (
     abort_selftest,
     generate_report,
     get_selftest_status,
+    http_error_detail,
     media_type_for_report,
     resolve_report_file,
     run_scan,
@@ -64,6 +72,12 @@ from cdi_health.api.services import (
 )
 from cdi_health.cli import check_prerequisites
 
+logger = logging.getLogger(__name__)
+
+SELFTEST_MAX_WORKERS = 2
+SELFTEST_MAX_QUEUED = 4
+API_VERSION = "1.0.0"
+
 
 class ApiState:
     """Shared runtime state for the CDI Health API process."""
@@ -71,18 +85,26 @@ class ApiState:
     def __init__(self):
         self.job_store = JobStore()
         self.machine_store = MachineStore()
+        # General work (scan/report) — keep separate from long-running self-tests.
         self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cdi-api")
+        self.selftest_executor = ThreadPoolExecutor(
+            max_workers=SELFTEST_MAX_WORKERS,
+            thread_name_prefix="cdi-selftest",
+        )
         self.latest_scan: dict | None = None
         self.report_paths: set[str] = set()
         self.lock = Lock()
         self.last_discover_at: float | None = None
+        self.discover_in_progress = False
+        self.latest_discover: dict | None = None
+        self.selftest_inflight = 0
 
 
 def create_app() -> FastAPI:
     """Create and configure the CDI Health API application."""
     app = FastAPI(
         title="CDI Health API",
-        version="1.0.0",
+        version=API_VERSION,
         description="Local backend API for CDI drive scan, self-test, and reporting workflows.",
     )
     app.state.runtime = ApiState()
@@ -103,19 +125,38 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def _startup() -> None:
         assert_root_access()
+        # Defense in depth when launched outside server.main (e.g. uvicorn factory).
+        bind_host = os.getenv(BIND_HOST_ENV)
+        if bind_host:
+            assert_token_required_for_bind(bind_host)
 
     @app.on_event("shutdown")
     def _shutdown() -> None:
         app.state.runtime.executor.shutdown(wait=False, cancel_futures=False)
+        app.state.runtime.selftest_executor.shutdown(wait=False, cancel_futures=False)
 
-    @app.get("/api/v1/health", response_model=HealthResponse)
-    def health() -> HealthResponse:
+    def _raise_mapped(exc: Exception, *, context: str) -> None:
+        status_code, detail = http_error_detail(exc, context=context)
+        logger.exception("%s failed: %s", context, exc)
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+
+    @app.get("/api/v1/health", response_model=HealthResponse, response_model_exclude_none=True)
+    def health(
+        request: Request,
+        token_ok: bool = Depends(optional_api_token),
+    ) -> HealthResponse:
+        # When token auth is enabled, unauthenticated (non-loopback) callers
+        # get a minimal public payload only.
+        if api_token_is_enabled() and not token_ok and not client_is_loopback(request):
+            return HealthResponse(status="ok", version=API_VERSION)
+
         missing_required_tools = check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False)
         message = None
         if not is_root_user() and allow_non_root_mode():
             message = "Running in non-root development mode."
         return HealthResponse(
             status="ok",
+            version=API_VERSION,
             is_root=is_root_user(),
             allow_non_root_mode=allow_non_root_mode(),
             api_token_enabled=api_token_is_enabled(),
@@ -139,7 +180,7 @@ def create_app() -> FastAPI:
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            _raise_mapped(exc, context="scan")
 
     @app.get("/api/v1/devices", response_model=ScanResponse)
     def devices(
@@ -175,12 +216,17 @@ def create_app() -> FastAPI:
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            _raise_mapped(exc, context="devices")
 
     @app.get("/api/v1/machines", response_model=list[MachineResponse])
-    def list_machines(_: None = Depends(verify_api_token)) -> list[MachineResponse]:
+    def list_machines(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        _: None = Depends(verify_api_token),
+    ) -> list[MachineResponse]:
         machines = app.state.runtime.machine_store.list_machines()
-        return [MachineResponse.model_validate(machine) for machine in machines]
+        page = machines[offset : offset + limit]
+        return [MachineResponse.model_validate(machine) for machine in page]
 
     @app.post("/api/v1/machines", response_model=MachineResponse)
     def create_machine(
@@ -220,6 +266,11 @@ def create_app() -> FastAPI:
         runtime = app.state.runtime
         now = time.monotonic()
         with runtime.lock:
+            if runtime.discover_in_progress:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Discovery already in progress. Retry shortly.",
+                )
             if runtime.last_discover_at is not None:
                 elapsed = now - runtime.last_discover_at
                 if elapsed < DISCOVER_COOLDOWN_SECONDS:
@@ -228,6 +279,7 @@ def create_app() -> FastAPI:
                         status_code=429,
                         detail=f"Discovery rate limit exceeded. Retry in {retry_after}s.",
                     )
+            runtime.discover_in_progress = True
             runtime.last_discover_at = now
 
         machines = runtime.machine_store.list_machines()
@@ -240,25 +292,29 @@ def create_app() -> FastAPI:
                 probe_token=request.probe_token,
                 registered_machines=machines,
             )
+            with runtime.lock:
+                runtime.latest_discover = result
+            return DiscoverResponse.model_validate(result)
         except DiscoveryError as exc:
+            logger.info("Discovery rejected: %s", exc)
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        return DiscoverResponse.model_validate(result)
+        finally:
+            with runtime.lock:
+                runtime.discover_in_progress = False
 
     @app.get("/api/v1/discover", response_model=DiscoverResponse)
     def discover_get(
-        subnet: str | None = None,
-        port: int = 8844,
-        timeout_seconds: float = 1.5,
         _: None = Depends(verify_api_token),
     ) -> DiscoverResponse:
-        return _run_discovery(
-            DiscoverRequest(
-                subnet=subnet,
-                port=port,
-                timeout_seconds=timeout_seconds,
+        """Return the cached last discovery result (no side effects)."""
+        with app.state.runtime.lock:
+            cached = app.state.runtime.latest_discover
+        if cached is None:
+            raise HTTPException(
+                status_code=404,
+                detail="No discovery result cached. POST /api/v1/discover to scan.",
             )
-        )
+        return DiscoverResponse.model_validate(cached)
 
     @app.post("/api/v1/discover", response_model=DiscoverResponse)
     def discover_post(
@@ -270,6 +326,14 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/selftests", response_model=JobResponse)
     def start_selftests(request: SelfTestStartRequest, _: None = Depends(verify_api_token)) -> JobResponse:
         runtime = app.state.runtime
+        with runtime.lock:
+            if runtime.selftest_inflight >= SELFTEST_MAX_QUEUED:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Self-test worker pool is saturated. Retry later.",
+                )
+            runtime.selftest_inflight += 1
+
         payload = request.model_dump(mode="python")
         job = runtime.job_store.create("selftest", payload=payload)
 
@@ -280,28 +344,41 @@ def create_app() -> FastAPI:
                 result = run_selftest_start(parsed_request)
                 runtime.job_store.complete(job_id, result)
             except Exception as exc:
-                runtime.job_store.fail(job_id, str(exc))
+                logger.exception("Self-test job %s failed", job_id)
+                runtime.job_store.fail(job_id, "Self-test job failed")
+            finally:
+                with runtime.lock:
+                    runtime.selftest_inflight = max(0, runtime.selftest_inflight - 1)
 
-        runtime.executor.submit(_run_job, job.job_id, payload)
+        runtime.selftest_executor.submit(_run_job, job.job_id, payload)
         return JobResponse.model_validate(job.to_dict())
 
     @app.get("/api/v1/selftests/status")
     def selftest_status(device: str | None = None, _: None = Depends(verify_api_token)) -> dict:
         try:
+            if device is not None:
+                # Re-validate via schema so injection attempts fail with 422/400.
+                SelfTestAbortRequest(device=device)
             return get_selftest_status(device=device)
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail="Invalid device path") from exc
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            _raise_mapped(exc, context="self-test status")
 
     @app.post("/api/v1/selftests/abort")
     def selftest_abort(request: SelfTestAbortRequest, _: None = Depends(verify_api_token)) -> dict:
         try:
             return abort_selftest(request.device)
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            _raise_mapped(exc, context="self-test abort")
 
     @app.get("/api/v1/jobs", response_model=list[JobResponse])
-    def list_jobs(_: None = Depends(verify_api_token)) -> list[JobResponse]:
-        jobs = [job.to_dict() for job in app.state.runtime.job_store.list()]
+    def list_jobs(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        _: None = Depends(verify_api_token),
+    ) -> list[JobResponse]:
+        jobs = [job.to_dict() for job in app.state.runtime.job_store.list(limit=limit, offset=offset)]
         return [JobResponse.model_validate(job) for job in jobs]
 
     @app.get("/api/v1/jobs/{job_id}", response_model=JobResponse)
@@ -319,7 +396,7 @@ def create_app() -> FastAPI:
                 app.state.runtime.report_paths.add(result["output_file"])
             return ReportResponse.model_validate(result)
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            _raise_mapped(exc, context="report")
 
     @app.get("/api/v1/reports/{filename}")
     def download_report(

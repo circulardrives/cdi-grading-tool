@@ -180,8 +180,7 @@ class MockSmartctl:
         self.dut = device_id
         self._mock_data = mock_data or {}
 
-        # Match real Smartctl interface
-        self.acceptable_return_codes = [0, 4, 64, 192, 196, 216]
+        # Match real Smartctl interface used by get_all_as_json
         self.bitmask_codes = {
             0: "Command line did not parse correctly",
             1: "Device open failed",
@@ -202,86 +201,6 @@ class MockSmartctl:
         if self._mock_data:
             return self._mock_data
         return False
-
-    def get_all_as_text(self) -> str | bool:
-        """
-        Get all device information as text (mock version).
-
-        :return: Mock output as formatted text
-        """
-        if self._mock_data:
-            return json.dumps(self._mock_data, indent=2)
-        return False
-
-    def get_health(self, as_json: bool = True):
-        """
-        Get device health (mock version).
-
-        :return: Mock health command result
-        """
-
-        class MockCommand:
-            def __init__(self, data):
-                self._data = data
-
-            def get_return_code(self):
-                return self._data.get("smartctl", {}).get("exit_status", 0)
-
-            def get_output(self):
-                health = {"smart_status": self._data.get("smart_status", {})}
-                return json.dumps(health).encode("utf-8")
-
-        return MockCommand(self._mock_data)
-
-    def get_version(self) -> str | bool:
-        """
-        Get smartctl version (mock version).
-        """
-        return "smartctl 7.4 (mock)"
-
-    # Self-test methods (mock versions that do nothing)
-    def abort_self_test(self):
-        """Mock abort self-test."""
-        return self._mock_command_result()
-
-    def execute_self_test_offline(self, captive: bool = False, force: bool = False):
-        """Mock offline self-test."""
-        return self._mock_command_result()
-
-    def execute_self_test_short(self, captive: bool = False, force: bool = False):
-        """Mock short self-test."""
-        return self._mock_command_result()
-
-    def execute_self_test_long(self, captive: bool = False, force: bool = False):
-        """Mock long self-test."""
-        return self._mock_command_result()
-
-    def execute_self_test_conveyance(self, captive: bool = False, force: bool = False):
-        """Mock conveyance self-test."""
-        return self._mock_command_result()
-
-    def execute_self_test_selective(self, starting_lba=0, ending_lba=100, **kwargs):
-        """Mock selective self-test."""
-        return self._mock_command_result()
-
-    def execute_self_test_vendor_specific(self, vendor_specific_command: str = "0x00", **kwargs):
-        """Mock vendor-specific self-test."""
-        return self._mock_command_result()
-
-    def _mock_command_result(self):
-        """Create a mock command result."""
-
-        class MockCommand:
-            def get_return_code(self):
-                return 0
-
-            def get_output(self):
-                return b"{}"
-
-            def has_errors(self):
-                return False
-
-        return MockCommand()
 
 
 class MockSG3Utils:
@@ -330,30 +249,6 @@ class MockSG3Utils:
         :return: Always returns "Ready" for mock
         """
         return "Ready"
-
-
-class MockSeaTools:
-    """
-    Mock SeaTools class for testing without real hardware.
-    """
-
-    def __init__(self, device_id: str = None):
-        """
-        Initialize mock SeaTools.
-
-        :param device_id: Device path
-        """
-        self.dut = device_id
-        self.seachest_basics_path = "openSeaChest_Basics"
-        self.seachest_smart_path = "openSeaChest_SMART"
-
-    def get_all_as_text(self) -> str | bool:
-        """
-        Get all device info as text (mock version).
-
-        :return: Mock SeaTools output
-        """
-        return f"Mock SeaTools output for {self.dut}"
 
 
 def create_mock_device(
@@ -406,7 +301,6 @@ def create_mock_device(
     _init_device_defaults(device)
 
     # Set tool instances
-    device.seatools = MockSeaTools(device_id=device.dut_sg)
     device.smartctl = mock_smartctl
 
     # Initialize device using the mock data
@@ -421,12 +315,12 @@ def _init_device_defaults(device: Device) -> None:
 
     :param device: Device instance to initialize
     """
-    device.wwn = "Not Reported"
     device.vendor = "Not Reported"
     device.model_number = "Not Reported"
     device.serial_number = "Not Reported"
     device.firmware_revision = "Not Reported"
     device.media_type = "Not Reported"
+    device.interface_link = "Not Reported"
     device.transport_protocol = "Not Reported"
     device.transport_version = "Not Reported"
     device.transport_revision = "Not Reported"
@@ -449,6 +343,13 @@ def _init_device_defaults(device: Device) -> None:
 
     # NVMe Namespaces
     device.nvme_namespaces = None
+    device.ocp_smart_log = None
+    device.nvme_smart_health_information_log = None
+    device.nvme_error_information_log = None
+    device.nvme_self_test_log = None
+    device.nvme_self_test_current_status = None
+    device.nvme_self_test_history = []
+    device.nvme_self_test_failed_count = 0
 
     # S.M.A.R.T
     device.smart_supported = False
@@ -463,40 +364,6 @@ def _init_device_defaults(device: Device) -> None:
     device.smart_long_self_test_duration = None
     device.smart_conveyance_self_test_duration = None
 
-    # Security Support
-    device.security_supported = False
-    device.security_enabled = False
-    device.security_locked = False
-    device.security_frozen = False
-
-    # Secure Erase Support
-    device.secure_erase_supported = False
-    device.enhanced_secure_erase_supported = None
-    device.secure_erase_duration = False
-    device.enhanced_secure_erase_duration = None
-
-    # Sanitize Support
-    device.sanitize_supported = False
-    device.sanitize_block_erase_supported = False
-    device.sanitize_cryptographic_erase_supported = False
-    device.sanitize_overwrite_erase_supported = False
-    device.sanitize_exit_failure_mode_supported = False
-
-    # Format Unit Support
-    device.scsi_format_unit_supported = False
-    device.nvme_format_unit_supported = False
-    device.nvme_format_unit_cryptographic_erase_supported = False
-    device.nvme_format_unit_user_data_erase_supported = False
-
-    # NIST/IEEE Support
-    device.can_nist_clear = False
-    device.can_nist_purge = False
-    device.can_ieee_clear = False
-    device.can_ieee_purge = False
-
-    # Estimated Erasure Duration
-    device.estimated_erasure_duration = None
-
     # CDI Grading
     device.cdi_eligible = False
     device.cdi_certified = False
@@ -505,7 +372,6 @@ def _init_device_defaults(device: Device) -> None:
     # Generic Attributes
     device.pending_sectors = None
     device.reallocated_sectors = None
-    device.reallocated_event_count = None
     device.uncorrectable_errors = None
 
     # Counters
@@ -516,8 +382,18 @@ def _init_device_defaults(device: Device) -> None:
     # SSD Attributes
     device.ssd_percentage_used_endurance = None
     device.ssd_media_wearout_indicator = None
-    device.ssd_wear_levelling = None
-    device.ssd_life_left = None
+
+    # NVMe-specific attributes
+    device.percentage_used = None
+    device.available_spare = None
+    device.available_spare_threshold = None
+    device.critical_warning = None
+    device.media_errors = None
+    device.data_written_bytes = None
+    device.data_written_tb = None
+
+    # SCSI/SAS supplemental counters
+    device.non_medium_errors = None
 
     # Temperatures
     device.current_temperature = None
@@ -531,12 +407,6 @@ def _init_device_defaults(device: Device) -> None:
     device.lowest_average_short_temperature = None
     device.highest_average_long_temperature = None
     device.lowest_average_long_temperature = None
-    device.time_over_temperature = None
-    device.temperature_log = None
-
-    # Outputs and Flags
-    device.outputs = {}
-    device.flags = []
 
     # Smartctl JSON
     device.smartctl_json = None
@@ -629,18 +499,3 @@ class MockDevices:
     def are_ready(self) -> bool:
         """Check if all devices are ready."""
         return all(d.get("state") == "Ready" for d in self.devices)
-
-    @property
-    def are_hdds(self) -> bool:
-        """Check if all devices are HDDs."""
-        return all(d.get("media_type") == "HDD" for d in self.devices)
-
-    @property
-    def are_ssds(self) -> bool:
-        """Check if all devices are SSDs."""
-        return all(d.get("media_type") == "SSD" for d in self.devices)
-
-    @property
-    def are_nvme(self) -> bool:
-        """Check if all devices are NVMe."""
-        return all(d.get("transport_protocol") == "NVMe" for d in self.devices)

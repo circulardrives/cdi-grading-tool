@@ -20,10 +20,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Any
 from uuid import uuid4
+
+DEFAULT_JOB_TTL_SECONDS = 3600
+DEFAULT_MAX_JOBS = 200
 
 
 def utc_now() -> datetime:
@@ -63,11 +66,44 @@ class JobRecord:
 
 
 class JobStore:
-    """Thread-safe in-memory job registry."""
+    """Thread-safe in-memory job registry with TTL and max-size eviction."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        ttl_seconds: int = DEFAULT_JOB_TTL_SECONDS,
+        max_jobs: int = DEFAULT_MAX_JOBS,
+    ):
         self._jobs: dict[str, JobRecord] = {}
         self._lock = Lock()
+        self.ttl_seconds = ttl_seconds
+        self.max_jobs = max_jobs
+
+    def _is_terminal(self, job: JobRecord) -> bool:
+        return job.status in {"completed", "failed"}
+
+    def _evict_locked(self) -> None:
+        """Drop expired terminal jobs, then oldest terminal jobs over max size."""
+        now = utc_now()
+        ttl = timedelta(seconds=self.ttl_seconds)
+        expired = [
+            job_id
+            for job_id, job in self._jobs.items()
+            if self._is_terminal(job) and job.completed_at is not None and now - job.completed_at > ttl
+        ]
+        for job_id in expired:
+            del self._jobs[job_id]
+
+        if len(self._jobs) <= self.max_jobs:
+            return
+
+        terminal = sorted(
+            (job for job in self._jobs.values() if self._is_terminal(job)),
+            key=lambda j: j.completed_at or j.updated_at,
+        )
+        overflow = len(self._jobs) - self.max_jobs
+        for job in terminal[:overflow]:
+            del self._jobs[job.job_id]
 
     def create(self, job_type: str, payload: dict[str, Any] | None = None) -> JobRecord:
         """Create a new queued job."""
@@ -81,6 +117,7 @@ class JobStore:
             payload=payload or {},
         )
         with self._lock:
+            self._evict_locked()
             self._jobs[job.job_id] = job
         return job
 
@@ -104,6 +141,7 @@ class JobStore:
             job.error = None
             job.updated_at = now
             job.completed_at = now
+            self._evict_locked()
             return job
 
     def fail(self, job_id: str, error: str) -> JobRecord:
@@ -115,15 +153,28 @@ class JobStore:
             job.error = error
             job.updated_at = now
             job.completed_at = now
+            self._evict_locked()
             return job
 
     def get(self, job_id: str) -> JobRecord | None:
         """Get job by id."""
         with self._lock:
+            self._evict_locked()
             return self._jobs.get(job_id)
 
-    def list(self) -> list[JobRecord]:
-        """List jobs ordered by creation time descending."""
+    def list(self, *, limit: int | None = None, offset: int = 0) -> list[JobRecord]:
+        """List jobs ordered by creation time descending, with optional pagination."""
         with self._lock:
+            self._evict_locked()
             jobs = list(self._jobs.values())
-        return sorted(jobs, key=lambda j: j.created_at, reverse=True)
+        ordered = sorted(jobs, key=lambda j: j.created_at, reverse=True)
+        if offset:
+            ordered = ordered[offset:]
+        if limit is not None:
+            ordered = ordered[:limit]
+        return ordered
+
+    def active_count(self) -> int:
+        """Return the number of queued or running jobs."""
+        with self._lock:
+            return sum(1 for job in self._jobs.values() if job.status in {"queued", "running"})

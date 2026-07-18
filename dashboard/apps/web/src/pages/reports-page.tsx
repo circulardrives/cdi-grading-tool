@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
+  AlertCircleIcon,
   DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
@@ -57,14 +58,17 @@ import {
   useMockDataSettings,
 } from "@/components/mock-data-provider"
 import {
+  useDevicesQuery,
+  useHealthQuery,
+  useInvalidateCdiQueries,
+} from "@/hooks/use-cdi-queries"
+import {
   downloadReportFile,
   generateReport,
-  getDevices,
-  getHealth,
   openReportFile,
   reportFilename,
 } from "@/lib/api"
-import type { DeviceRecord, ReportHistoryEntry } from "@/lib/types"
+import type { ReportHistoryEntry } from "@/lib/types"
 
 const HISTORY_KEY = "cdi-report-history"
 
@@ -86,6 +90,9 @@ function saveReportHistory(entries: ReportHistoryEntry[]): void {
 
 export function ReportsPage() {
   const { useMockData, mockDataPath } = useMockDataSettings()
+  const { invalidateDevices, invalidateHealth } = useInvalidateCdiQueries()
+  const healthQuery = useHealthQuery()
+  const devicesQuery = useDevicesQuery()
   const [format, setFormat] = useState<"html" | "pdf" | "csv">("html")
   const [outputPath, setOutputPath] = useState("")
   const [device, setDevice] = useState("")
@@ -93,24 +100,19 @@ export function ReportsPage() {
   const [ignoreNvme, setIgnoreNvme] = useState(false)
   const [ignoreScsi, setIgnoreScsi] = useState(false)
   const [running, setRunning] = useState(false)
-  const [history, setHistory] = useState<ReportHistoryEntry[]>([])
-  const [devices, setDevices] = useState<DeviceRecord[]>([])
-  const [pdfAvailable, setPdfAvailable] = useState(true)
+  const [history, setHistory] = useState<ReportHistoryEntry[]>(() =>
+    loadReportHistory()
+  )
   const [reportAction, setReportAction] = useState<string | null>(null)
 
-  useEffect(() => {
-    setHistory(loadReportHistory())
-    void getHealth()
-      .then((health) => setPdfAvailable(health.weasyprint_available))
-      .catch(() => {
-        /* health optional for report form */
-      })
-    void getDevices(false)
-      .then((scan) => setDevices(scan.devices))
-      .catch(() => {
-        /* devices optional for report form */
-      })
-  }, [])
+  const devices = devicesQuery.data?.devices ?? []
+  const pdfAvailable = healthQuery.data?.weasyprint_available === true
+  const preloadError =
+    healthQuery.error instanceof Error
+      ? healthQuery.error.message
+      : devicesQuery.error instanceof Error
+        ? devicesQuery.error.message
+        : null
 
   const runReport = async () => {
     setRunning(true)
@@ -133,6 +135,7 @@ export function ReportsPage() {
       const nextHistory = [entry, ...history].slice(0, 20)
       setHistory(nextHistory)
       saveReportHistory(nextHistory)
+      await Promise.all([invalidateDevices(), invalidateHealth()])
       toast.success(`Report generated — ${result.devices_count} device(s)`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Report generation failed")
@@ -183,13 +186,27 @@ export function ReportsPage() {
         </div>
       </section>
 
+      {preloadError ? (
+        <Alert variant="destructive">
+          <AlertCircleIcon />
+          <AlertTitle>Could not preload report context</AlertTitle>
+          <AlertDescription>{preloadError}</AlertDescription>
+        </Alert>
+      ) : null}
+
       {format === "pdf" && !pdfAvailable ? (
         <Alert variant="destructive">
           <AlertTitle>PDF preflight failed</AlertTitle>
           <AlertDescription>
-            WeasyPrint is not available on this grading host. Install with{" "}
-            <span className="font-mono">pip install weasyprint</span> before
-            generating PDF reports.
+            {healthQuery.isLoading
+              ? "Checking WeasyPrint availability on this grading host…"
+              : "WeasyPrint is not available on this grading host. Install with "}
+            {!healthQuery.isLoading ? (
+              <>
+                <span className="font-mono">pip install weasyprint</span> before
+                generating PDF reports.
+              </>
+            ) : null}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -208,14 +225,14 @@ export function ReportsPage() {
           <CardContent className="flex flex-col gap-4">
             <FieldGroup>
               <Field>
-                <FieldLabel>Output format</FieldLabel>
+                <FieldLabel htmlFor="report-format">Output format</FieldLabel>
                 <Select
                   value={format}
                   onValueChange={(value) =>
                     setFormat(value as "html" | "pdf" | "csv")
                   }
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger id="report-format" className="w-full">
                     <SelectValue placeholder="Select format" />
                   </SelectTrigger>
                   <SelectContent>
@@ -273,7 +290,11 @@ export function ReportsPage() {
               </Field>
             </FieldGroup>
 
-            <Button onClick={() => void runReport()} disabled={running}>
+            <Button
+              onClick={() => void runReport()}
+              disabled={running}
+              aria-busy={running}
+            >
               {running ? (
                 <Spinner data-icon="inline-start" />
               ) : (
@@ -281,6 +302,9 @@ export function ReportsPage() {
               )}
               {running ? "Generating…" : "Execute report"}
             </Button>
+            <span className="sr-only" aria-live="polite">
+              {running ? "Generating report" : reportAction ? "Working on report" : ""}
+            </span>
           </CardContent>
         </Card>
 
@@ -312,6 +336,7 @@ export function ReportsPage() {
                     variant="outline"
                     size="sm"
                     disabled={reportAction === `${history[0].id}-open`}
+                    aria-busy={reportAction === `${history[0].id}-open`}
                     onClick={() => void handleOpenReport(history[0])}
                   >
                     {reportAction === `${history[0].id}-open` ? (
@@ -325,6 +350,7 @@ export function ReportsPage() {
                     variant="outline"
                     size="sm"
                     disabled={reportAction === `${history[0].id}-download`}
+                    aria-busy={reportAction === `${history[0].id}-download`}
                     onClick={() => void handleDownloadReport(history[0])}
                   >
                     {reportAction === `${history[0].id}-download` ? (
@@ -391,6 +417,7 @@ export function ReportsPage() {
                           variant="outline"
                           size="sm"
                           disabled={reportAction === `${entry.id}-open`}
+                          aria-busy={reportAction === `${entry.id}-open`}
                           onClick={() => void handleOpenReport(entry)}
                         >
                           Open
@@ -399,6 +426,7 @@ export function ReportsPage() {
                           variant="outline"
                           size="sm"
                           disabled={reportAction === `${entry.id}-download`}
+                          aria-busy={reportAction === `${entry.id}-download`}
                           onClick={() => void handleDownloadReport(entry)}
                         >
                           Download

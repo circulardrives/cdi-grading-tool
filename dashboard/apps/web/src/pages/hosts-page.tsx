@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   HardDriveIcon,
@@ -66,9 +66,12 @@ import { Textarea } from "@workspace/ui/components/textarea"
 
 import { PageHeader } from "@/components/page-header"
 import {
+  useInvalidateCdiQueries,
+  useMachinesQuery,
+} from "@/hooks/use-cdi-queries"
+import {
   createMachine,
   deleteMachine,
-  listMachines,
   updateMachine,
 } from "@/lib/api"
 import {
@@ -81,8 +84,10 @@ import { getSelectedHostId, setSelectedHostId } from "@/lib/selected-host"
 import type { Machine, MachineCreateRequest } from "@/lib/types"
 
 export function HostsPage() {
-  const [hosts, setHosts] = useState<Machine[]>([])
-  const [loading, setLoading] = useState(true)
+  const machinesQuery = useMachinesQuery()
+  const { invalidateMachines } = useInvalidateCdiQueries()
+  const hosts = useMemo(() => machinesQuery.data ?? [], [machinesQuery.data])
+  const loading = machinesQuery.isLoading
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingHost, setEditingHost] = useState<Machine | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Machine | null>(null)
@@ -96,21 +101,16 @@ export function HostsPage() {
     [hosts, selectedHostId]
   )
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    try {
-      const result = await listMachines()
-      setHosts(result)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load hosts")
-    } finally {
-      setLoading(false)
+  const refresh = async () => {
+    const result = await machinesQuery.refetch()
+    if (result.error) {
+      toast.error(
+        result.error instanceof Error
+          ? result.error.message
+          : "Failed to load hosts"
+      )
     }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
+  }
 
   const openCreateDialog = () => {
     setEditingHost(null)
@@ -152,16 +152,13 @@ export function HostsPage() {
     try {
       if (editingHost) {
         const updated = await updateMachine(editingHost.id, payload)
-        setHosts((current) =>
-          current.map((host) => (host.id === updated.id ? updated : host))
-        )
         toast.success(`Updated host "${updated.name}"`)
       } else {
         const created = await createMachine(payload)
-        setHosts((current) => [created, ...current])
         selectHost(created.id)
         toast.success(`Added host "${created.name}"`)
       }
+      await invalidateMachines()
       setDialogOpen(false)
       setForm(emptyHostForm)
       setEditingHost(null)
@@ -177,10 +174,10 @@ export function HostsPage() {
 
     try {
       await deleteMachine(deleteTarget.id)
-      setHosts((current) => current.filter((host) => host.id !== deleteTarget.id))
       if (selectedHostId === deleteTarget.id) {
         selectHost(null)
       }
+      await invalidateMachines()
       toast.success(`Removed host "${deleteTarget.name}"`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not remove host")
@@ -211,10 +208,11 @@ export function HostsPage() {
 
       <Alert>
         <ServerIcon />
-        <AlertTitle>Active host context</AlertTitle>
+        <AlertTitle>Active host context (registry only)</AlertTitle>
         <AlertDescription>
-          The selected host is stored in this browser session and used by Scan and Drive Health.
-          Register each rack host here; use Discover to find CDI APIs on your LAN.
+          Selecting a host filters Scan and Drive Health by <span className="font-mono">machine_id</span>{" "}
+          against the single configured API. Host addresses are stored for inventory only — they do not
+          switch the dashboard to a remote backend yet. Use Discover to find CDI APIs on your LAN.
         </AlertDescription>
       </Alert>
 
@@ -320,6 +318,7 @@ export function HostsPage() {
                           {host.address ? (
                             <span className="text-muted-foreground font-mono text-xs">
                               {host.address}
+                              <span className="ml-1 font-sans">(registry only)</span>
                             </span>
                           ) : null}
                         </div>
@@ -376,8 +375,8 @@ export function HostsPage() {
           <DialogHeader>
             <DialogTitle>{editingHost ? "Edit host" : "Add host"}</DialogTitle>
             <DialogDescription>
-              Register a grading host in your fleet. Use address for a future remote CDI API
-              endpoint (IP or host:port).
+              Register a grading host in the fleet registry. Address is optional metadata only —
+              the dashboard always talks to the configured local API proxy.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -402,7 +401,9 @@ export function HostsPage() {
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="host-address">Address (optional)</FieldLabel>
+              <FieldLabel htmlFor="host-address">
+                Address (registry only)
+              </FieldLabel>
               <Input
                 id="host-address"
                 value={form.address}
@@ -410,7 +411,15 @@ export function HostsPage() {
                   setForm((current) => ({ ...current, address: e.target.value }))
                 }
                 placeholder="10.0.0.12:8844"
+                aria-describedby="host-address-hint"
               />
+              <p
+                id="host-address-hint"
+                className="text-muted-foreground text-xs"
+              >
+                Stored for inventory. Does not route API calls — selecting this host only
+                filters data by machine_id on the configured API.
+              </p>
             </Field>
             <Field>
               <FieldLabel htmlFor="host-location">Rack / location</FieldLabel>

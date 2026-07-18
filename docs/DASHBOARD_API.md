@@ -5,8 +5,8 @@
 - Backend runs locally on the same host that has attached drives.
 - Backend binds to `127.0.0.1` by default and is not intended for public hosting.
 - Backend process runs as root for real device access (`smartctl`, `nvme`, `sg3-utils`).
-- Optional static token auth can be enabled with `CDI_HEALTH_API_TOKEN` (or `--api-token`).
-- Host registry and per-host scan snapshots persist under a configurable data directory (default: `./.cdi-health`, env `CDI_HEALTH_DATA_DIR`, or `--data-dir`).
+- Static token auth via `CDI_HEALTH_API_TOKEN` (or `--api-token`) is **required** whenever `--host` is not loopback; the process fails fast at startup otherwise.
+- Host registry, scan snapshots, and generated reports persist under a configurable data directory (default: `./.cdi-health`, env `CDI_HEALTH_DATA_DIR`, or `--data-dir`). Reports are constrained to `{data_dir}/reports/`.
 
 ## Components
 
@@ -15,20 +15,20 @@
 - `cdi_health.api.machines`: JSON-backed fleet host registry and scan association.
 - `cdi_health.api.discovery`: LAN subnet scanning and CDI Health API probing.
 - `cdi_health.api.jobs`: In-memory async job tracking for long-running actions.
-- `cdi_health.api.security`: Root enforcement and optional token validation.
+- `cdi_health.api.security`: Root enforcement, bind-host token checks, and token validation.
 
 ## HTTP Endpoints
 
-- `GET /api/v1/health`
+- `GET /api/v1/health` — always returns `{status, version}`; full diagnostics when auth is disabled, or with a valid token / loopback client when auth is enabled
 - `POST /api/v1/scan` — optional `machine_id` associates the scan with a registered host
 - `GET /api/v1/devices` — optional `machine_id` returns cached scan for that host; `refresh=true` rescans
-- `GET /api/v1/machines` — list registered grading hosts
+- `GET /api/v1/machines` — list registered grading hosts (`limit`/`offset` pagination)
 - `POST /api/v1/machines` — register a host
 - `GET /api/v1/machines/{id}` — host detail
 - `PATCH /api/v1/machines/{id}` — update host metadata
 - `DELETE /api/v1/machines/{id}` — remove host and cached scan snapshot
-- `GET /api/v1/discover` — scan LAN for CDI APIs (optional `subnet`, `port`, `timeout_seconds`)
-- `POST /api/v1/discover` — same scan with JSON body (`subnet`, `subnets`, `port`, `timeout_seconds`, `probe_token`)
+- `GET /api/v1/discover` — return cached last discovery result (no side effects; 404 if none)
+- `POST /api/v1/discover` — run LAN scan (`subnet`, `subnets`, `port`, `timeout_seconds`, `probe_token`); 429 while a scan is in progress or within cooldown
 - `POST /api/v1/selftests`
 - `GET /api/v1/selftests/status`
 - `POST /api/v1/selftests/abort`
@@ -58,10 +58,10 @@ Each device object includes:
 the job completes after tests are **started**; poll `GET /api/v1/selftests/status`
 or `GET /api/v1/jobs/{job_id}` until `in_progress` is false, then read
 `latest_result` for pass/fail details.
-- `GET /api/v1/jobs`
+- `GET /api/v1/jobs` — list jobs (`limit`/`offset`; completed jobs expire via TTL/max-size eviction)
 - `GET /api/v1/jobs/{job_id}`
-- `POST /api/v1/reports`
-- `GET /api/v1/reports/{filename}`
+- `POST /api/v1/reports` — writes only under `{data_dir}/reports/` (basename or in-dir path)
+- `GET /api/v1/reports/{filename}` — serves registered reports under the reports directory
 
 ## Host Registry Model
 
@@ -103,7 +103,7 @@ at that API; the **Hosts & Scans** page triggers discovery through the backend.
 - Requires the same auth as other mutating endpoints when `CDI_HEALTH_API_TOKEN` is set.
 - Only private/link-local IPv4 ranges (`10/8`, `172.16/12`, `192.168/16`, `169.254/16`).
 - Max **256** addresses per subnet (/24 or smaller), max **4** subnets per request.
-- Rate limit: one discovery scan every **10** seconds per API process.
+- Concurrency: only one discovery scan at a time (429 while in progress); cooldown of **10** seconds between scans.
 
 **Example**
 

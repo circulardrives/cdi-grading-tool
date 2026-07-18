@@ -22,3 +22,14 @@ repos:
     hooks:
       - id: shfmt
         args: ["--diff", "--write", "-i", "2"]
+  # Manual stage only: mypy currently reports many pre-existing errors (~255).
+  # Run with: pre-commit run mypy --all-files --hook-stage manual
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.15.0
+    hooks:
+      - id: mypy
+        stages: [manual]
+        pass_filenames: false
+        args: [src/cdi_health, --ignore-missing-imports]
+        additional_dependencies:
+          - types-pyyaml

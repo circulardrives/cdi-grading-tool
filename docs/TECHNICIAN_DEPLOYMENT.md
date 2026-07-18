@@ -76,7 +76,7 @@ Stop:
 
 **Build locally** (optional): `./scripts/docker-up.sh --build` or `./scripts/docker-up.sh --host --build`
 
-Copy `deploy/docker/.env.example` to `deploy/docker/.env` to set `DASHBOARD_PORT` or an optional `CDI_HEALTH_API_TOKEN`.
+Copy `deploy/docker/.env.example` to `deploy/docker/.env` to set `DASHBOARD_PORT` and a required `CDI_HEALTH_API_TOKEN`. Compose fails fast if the token is missing; nginx injects `X-API-Token` for `/api/cdi` (the SPA must not embed the token).
 
 For live drive scanning on the bench itself, use Option B (`.deb`) below.
 
@@ -127,15 +127,18 @@ Layout:
 
 Systemd unit **`cdi-health-api.service`** may be installed under `/usr/lib/systemd/system/`; enable it if you want the API on boot (see below). It stores state in **`/var/lib/cdi-health`** and does not require a git clone.
 
-**LAN discovery:** the default unit binds to `127.0.0.1` only. For a bench to appear in **Discover** from a technician laptop (Docker host overlay), expose the API on the lab network:
+**LAN discovery:** the default unit binds to `127.0.0.1` only. For a bench to appear in **Discover** from a technician laptop, use the shipped LAN drop-in (requires a token in `/etc/default/cdi-health-api`):
 
 ```bash
+sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.env.example /etc/default/cdi-health-api
+# edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN to a strong random value
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
-printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/cdi-health-api --host 0.0.0.0 --port 8844 --data-dir /var/lib/cdi-health\n' | sudo tee /etc/systemd/system/cdi-health-api.service.d/override.conf
+sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.service.d/lan.conf \
+  /etc/systemd/system/cdi-health-api.service.d/lan.conf
 sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
 ```
 
-Trusted lab networks only.
+The API refuses non-loopback binds without `CDI_HEALTH_API_TOKEN`. Trusted lab networks only.
 
 For **fixture demos** on a laptop, use **Option A** with `docker compose -f deploy/docker/docker-compose.yml up -d --build` and enable **Use mock data** on Discover, or `./scripts/start-local-mock.sh` from a dev clone.
 
@@ -242,8 +245,9 @@ Then edit the file and replace `cdiapi` with your service account.
 
 ## Security Notes
 
-- Keep API bound to `127.0.0.1`.
-- Use `CDI_HEALTH_API_TOKEN` if dashboard/API run as separate users.
+- Keep API bound to `127.0.0.1` unless you intentionally enable the LAN drop-in.
+- `CDI_HEALTH_API_TOKEN` is **mandatory** for any non-loopback bind (`0.0.0.0`, host network, LAN IP). The process exits at startup if the token is missing.
+- Prefer terminating auth at nginx: inject `X-API-Token` from a server-only env var; never bake the token into the dashboard JS bundle.
 - Do not expose either service directly to untrusted networks.
 
 ## Troubleshooting

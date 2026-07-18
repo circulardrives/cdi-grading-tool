@@ -40,19 +40,61 @@ from datetime import datetime
 from cdi_health.classes.exceptions import CommandException
 
 
+def resolve_tool_path(tool_name: str, fallback: str | None = None) -> str:
+    """
+    Resolve an executable path from PATH, then common install locations.
+
+    :param tool_name: Binary name (e.g. "nvme", "smartctl", "sudo")
+    :param fallback: Path to return if discovery fails (defaults to tool_name)
+    :return: Absolute path when found, otherwise fallback or bare tool name
+    """
+    path = shutil.which(tool_name)
+    if path:
+        return path
+
+    for base in ("/usr/bin", "/usr/sbin", "/bin", "/sbin"):
+        candidate = os.path.join(base, tool_name)
+        if os.path.exists(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+
+    try:
+        result = subprocess.run(
+            ["whereis", tool_name],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            for candidate in result.stdout.strip().split()[1:]:
+                if candidate.startswith("/") and "man" not in candidate.lower():
+                    if os.path.exists(candidate) and os.access(candidate, os.X_OK):
+                        return candidate
+    except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
+        pass
+
+    return fallback if fallback is not None else tool_name
+
+
 class Command:
     """
     Command Class
     """
 
-    def __init__(self, command: str = None):
+    # Default timeout for subprocesses; generous enough for slow spun-down HDDs
+    # responding to smartctl --xall, but bounded so a wedged drive or bridge
+    # cannot stall a scan thread forever.
+    DEFAULT_TIMEOUT: int = 120
+
+    def __init__(self, command: str = None, timeout: int | None = DEFAULT_TIMEOUT):
         """
         Constructor
-        :param command:
+        :param command: command string to run
+        :param timeout: seconds before the subprocess is killed (None disables)
         """
 
         # Properties
         self.command = " ".join(command.split()) if command else None
+        self.timeout = timeout
         self.arguments = None
         self.process = None
         self.process_id = None
@@ -98,7 +140,12 @@ class Command:
             self.arguments = self.process.args
 
             # Capture Output
-            self.output, self.errors = self.process.communicate()
+            try:
+                self.output, self.errors = self.process.communicate(timeout=self.timeout)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.communicate()
+                raise CommandException(f"Command timed out after {self.timeout}s: {self.command}")
 
             # Capture Return Code
             self.return_code = self.process.returncode
@@ -122,6 +169,10 @@ class Command:
         except FileNotFoundError:
             # Raise Command Exception
             raise CommandException("Command not found")
+
+        # If Command Exception (e.g. timeout) - propagate unchanged
+        except CommandException:
+            raise
 
         # If Exception
         except Exception:
@@ -210,22 +261,6 @@ class Command:
 
         return self.duration
 
-    def get_dictionary(self):
-        """
-        Get Dictionary
-        :return:
-        """
-
-        # Return Dictionary
-        return dict(
-            arguments=self.get_arguments(),
-            return_code=self.get_return_code(),
-            process_id=self.get_process_id(),
-            output=self.get_output(),
-            errors=self.get_errors(),
-            duration=self.get_duration(),
-        )
-
     def has_errors(self):
         """
         Has Errors Property
@@ -238,148 +273,14 @@ class Command:
 
         return False
 
-    def terminate(self):
-        """
-        Terminate Command
-        :return:
-        """
-
-        # If Process
-        if self.process:
-            # Terminate Process
-            self.process.terminate()
-
-        # Return True
-        return True
-
-
-class SeaTools:
-    """
-    SeaTools Class
-    """
-
-    def __init__(self, device_id: str = None):
-        """
-        SeaTools
-        :param device_id:
-        """
-
-        # Get the full paths for SeaChest binaries
-        self.seachest_basics_path = self.get_seachest_path("openSeaChest_Basics")
-        self.seachest_smart_path = self.get_seachest_path("openSeaChest_SMART")
-
-        # Device ID
-        self.dut = device_id
-
-        # Initialize commands with proper paths
-        self.init_commands()
-
-    def get_seachest_path(self, tool_name: str) -> str:
-        """
-        Get the full path of SeaChest tools.
-
-        Searches in the following order:
-        1. PATH (via shutil.which) - works for deb-installed packages in /usr/local/bin
-        2. Standard installation paths (/usr/local/bin, /usr/bin)
-        3. whereis command
-        4. Returns tool name as fallback (will use from PATH at runtime)
-
-        Args:
-            tool_name: Name of the tool (e.g., "openSeaChest_Basics", "openSeaChest_SMART")
-
-        Returns:
-            Full path of the tool or tool name if not found
-        """
-        import os
-
-        from cdi_health.logger import get_logger
-
-        logger = get_logger(__name__)
-
-        # Standard installation paths (deb packages install to /usr/local/bin)
-        standard_paths = [
-            "/usr/local/bin",  # Default deb installation path
-            "/usr/bin",  # Alternative installation path
-            "/opt/seagate/openSeaChest/bin",  # Custom installation path
-        ]
-
-        try:
-            # Method 1: Check PATH using shutil.which (works for deb-installed packages)
-            path = shutil.which(tool_name)
-            if path:
-                logger.debug("Found %s via PATH: %s", tool_name, path)
-                return path
-
-            # Method 2: Check standard installation paths
-            for base_path in standard_paths:
-                full_path = os.path.join(base_path, tool_name)
-                if os.path.exists(full_path) and os.access(full_path, os.X_OK):
-                    logger.debug("Found %s in standard path: %s", tool_name, full_path)
-                    return full_path
-
-            # Method 3: Try whereis command as fallback
-            result = subprocess.run(
-                ["whereis", tool_name],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-
-            if result.returncode == 0:
-                paths = result.stdout.strip().split()
-                for path in paths[1:]:  # Skip tool name, check paths
-                    if path.startswith("/") and "man" not in path.lower():
-                        if os.path.exists(path) and os.access(path, os.X_OK):
-                            logger.debug("Found %s via whereis: %s", tool_name, path)
-                            return path
-
-        except subprocess.TimeoutExpired:
-            logger.warning("whereis command timed out while searching for %s", tool_name)
-        except Exception as exception:
-            logger.debug("Error finding %s path: %s", tool_name, exception)
-
-        # Fallback: return tool name (will be used from PATH at runtime if available)
-        logger.debug("Could not find full path for %s, using name (will search PATH at runtime)", tool_name)
-        return tool_name
-
-    def init_commands(self):
-        """
-        Initialize all commands with dynamically found paths.
-        """
-
-        # Helper Commands
-        self.get_version_command = f"sudo {self.seachest_basics_path} --version"
-        self.get_devices_command = f"{self.seachest_basics_path} --scan"
-        self.get_device_information_command = f"{self.seachest_basics_path} --deviceInfo --device"
-
-    def get_all_as_text(self):
-        """
-        Get All as Text
-        :return:
-        """
-
-        # Prepare Command String
-        get_all_command = f"{self.get_device_information_command} {self.dut}"
-
-        # Prepare Command
-        command = Command(get_all_command)
-
-        # Run Command
-        command.run()
-
-        # If Error
-        if command.get_return_code() != 0:
-            # Return False
-            return False
-
-        # Return
-        return command.get_output().strip().decode("utf-8")
-
 
 class SG3Utils:
     """
     SG3Utils Class
     """
+
+    # Tool paths are process-wide; cache so each Device does not re-run whereis.
+    _path_cache: dict[str, str] = {}
 
     def __init__(self, device_id: str):
         """
@@ -398,10 +299,9 @@ class SG3Utils:
         Get the full path of sg3_utils tools.
 
         Searches in the following order:
-        1. PATH (via shutil.which) - works for package-installed tools
-        2. Standard installation paths (/usr/bin, /usr/sbin)
-        3. whereis command
-        4. Returns tool name as fallback (will use from PATH at runtime)
+        1. Class-level cache from a prior lookup
+        2. PATH / standard paths / whereis via resolve_tool_path
+        3. Returns tool name as fallback (will use from PATH at runtime)
 
         Args:
             tool_name: Name of the tool (e.g., "sg_map26", "sg_turs")
@@ -409,56 +309,13 @@ class SG3Utils:
         Returns:
             Full path of the tool or tool name if not found
         """
-        import os
+        cached = SG3Utils._path_cache.get(tool_name)
+        if cached:
+            return cached
 
-        from cdi_health.logger import get_logger
-
-        logger = get_logger(__name__)
-
-        # Standard installation paths for sg3-utils
-        standard_paths = [
-            "/usr/bin",  # Standard deb installation path
-            "/usr/sbin",  # Alternative installation path
-        ]
-
-        try:
-            # Method 1: Check PATH using shutil.which
-            path = shutil.which(tool_name)
-            if path:
-                logger.debug("Found %s via PATH: %s", tool_name, path)
-                return path
-
-            # Method 2: Check standard installation paths
-            for base_path in standard_paths:
-                full_path = os.path.join(base_path, tool_name)
-                if os.path.exists(full_path) and os.access(full_path, os.X_OK):
-                    logger.debug("Found %s in standard path: %s", tool_name, full_path)
-                    return full_path
-
-            # Method 3: Try whereis command as fallback
-            result = subprocess.run(
-                ["whereis", tool_name],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-
-            if result.returncode == 0:
-                paths = result.stdout.strip().split()
-                for path in paths[1:]:  # Skip tool name, check paths
-                    if path.startswith("/") and "man" not in path.lower():
-                        if os.path.exists(path) and os.access(path, os.X_OK):
-                            logger.debug("Found %s via whereis: %s", tool_name, path)
-                            return path
-
-        except subprocess.TimeoutExpired:
-            logger.warning("whereis command timed out while searching for %s", tool_name)
-        except Exception as exception:
-            logger.debug("Error finding %s path: %s", tool_name, exception)
-
-        # Fallback: return tool name (will be used from PATH at runtime if available)
-        logger.debug("Could not find full path for %s, using name (will search PATH at runtime)", tool_name)
-        return tool_name
+        path = resolve_tool_path(tool_name, fallback=tool_name)
+        SG3Utils._path_cache[tool_name] = path
+        return path
 
     def sg_map26(self) -> str | bool:
         """
@@ -516,8 +373,8 @@ class SG3Utils:
 
         # Command Exception
         except CommandException:
-            # Return False
-            return False
+            # Return
+            return "Not Ready"
 
 
 class Smartctl:
@@ -537,10 +394,7 @@ class Smartctl:
         # Set Device ID
         self.dut = device_id
 
-        # Set Acceptable Return Codes
-        self.acceptable_return_codes = [0, 4, 64, 192, 196, 216]
-
-        # Set Bit Mask Codes
+        # Set Bit Mask Codes (used by get_all_as_json for hard-failure messages)
         self.bitmask_codes = {
             0: "Command line did not parse correctly",
             1: "Device open failed, or device did not return an IDENTIFY DEVICE structure",
@@ -552,126 +406,20 @@ class Smartctl:
             7: "S.M.A.R.T Self-test Log contains 1 or more record of failed self-tests",
         }
 
-        # Initialize Commands with smartctl path
-        self.init_commands()
+        self.get_all_device_information_command = f"sudo {self.smartctl_path} --xall"
 
     def get_smartctl_path(self) -> str:
         """
-        Get the full path of smartctl using whereis or shutil.which
+        Get the full path of smartctl using PATH discovery.
         :return: Full path of smartctl
         """
-        try:
-            # Try to locate smartctl using shutil.which (more reliable)
-            path = shutil.which("smartctl")
-            if path:
-                return path
+        return resolve_tool_path("smartctl", fallback="smartctl")
 
-            # Fallback to using whereis
-            result = subprocess.run(["whereis", "smartctl"], capture_output=True, text=True)
-            paths = result.stdout.strip().split()
-
-            # Extract the first valid executable path (excluding man pages)
-            for path in paths[1:]:  # Skip 'smartctl:' prefix
-                if path.startswith("/") and "man" not in path:
-                    return path
-        except Exception as e:
-            print(f"Error finding smartctl path: {e}")
-
-        # Default to 'smartctl' if no valid path is found
-        return "smartctl"
-
-    def init_commands(self):
-        """
-        Initialize all commands with the correct smartctl path
-        """
-
-        # Helper Commands
-        self.get_version_command = f"sudo {self.smartctl_path} --version"
-        self.get_devices_command = f"sudo {self.smartctl_path} --scan"
-        self.get_devices_open_command = f"sudo {self.smartctl_path} --scan-open"
-        self.get_identify_command = f"sudo {self.smartctl_path} --identify"
-        self.get_identity_command = f"sudo {self.smartctl_path} --info"
-        self.get_health_command = f"sudo {self.smartctl_path} --health"
-        self.get_device_information_command = f"sudo {self.smartctl_path} --all"
-        self.get_all_device_information_command = f"sudo {self.smartctl_path} --xall"
-
-        # S.M.A.R.T Commands
-        self.set_enable_smart_command = f"sudo {self.smartctl_path} --smart=on"
-        self.set_disable_smart_command = f"sudo {self.smartctl_path} --smart=off"
-        self.set_enable_smart_automatic_offline_testing_command = f"sudo {self.smartctl_path} --offlineauto=on"
-        self.set_disable_smart_automatic_offline_testing_command = f"sudo {self.smartctl_path} --offlineauto=off"
-        self.set_enable_smart_automatic_attribute_autosave_command = f"sudo {self.smartctl_path} --saveauto=on"
-        self.set_disable_smart_automatic_attribute_autosave_command = f"sudo {self.smartctl_path} --saveauto=off"
-        self.set_enable_smart_all_options = f"sudo {self.smartctl_path} --smart=off --offlineauto=off --saveauto=off"
-        self.set_disable_smart_all_options = f"sudo {self.smartctl_path} --smart=off --offlineauto=off --saveauto=off"
-
-        # Self Test Commands
-        self.abort_self_test_command = f"sudo {self.smartctl_path} --abort --json=ov"
-        self.execute_self_test_offline_command = f"sudo {self.smartctl_path} --test=offline --json=ov"
-        self.execute_self_test_short_command = f"sudo {self.smartctl_path} --test=short --json=ov"
-        self.execute_self_test_long_command = f"sudo {self.smartctl_path} --test=long --json=ov"
-        self.execute_self_test_conveyance_command = f"sudo {self.smartctl_path} --test=conveyance --json=ov"
-        self.execute_self_test_selective_command = f"sudo {self.smartctl_path} --test=select"
-        self.execute_self_test_vendor_specific_command = f"sudo {self.smartctl_path} --test=vendor"
-
-    """
-    Helpers
-    """
-
-    def get_version(self) -> str | bool:
-        """
-        Get Version
-        :return: Version if successful | False if not
-        """
-
-        # Prepare Command String
-        get_version_command = f"{self.get_version_command} {self.dut}"
-
-        # Prepare Command
-        command = Command(get_version_command)
-
-        # Run Command
-        command.run()
-
-        # If Return Code is not Zero
-        if command.get_return_code() not in self.acceptable_return_codes:
-            # Return False
-            return False
-
-        # Return Smartctl Output as Text
-        return command.get_output().strip().decode("utf-8")
-
-    """
-    Device Information Commands
-    """
-
-    def get_all_as_text(self):
-        """
-        Get All as Text
-        :return:
-        """
-
-        # Prepare Command String
-        get_all_command = f"{self.get_all_device_information_command} {self.dut}"
-
-        # Prepare Command
-        command = Command(get_all_command)
-
-        # Run Command
-        command.run()
-
-        # If Return Code is not Zero
-        if command.get_return_code() not in self.acceptable_return_codes:
-            # Return False
-            return False
-
-        # Return Smartctl Output as Text
-        return command.get_output().strip().decode("utf-8")
-
-    def get_all_as_json(self) -> dict | bool:
+    def get_all_as_json(self) -> dict:
         """
         Get All as JSON
-        :return: dict if OK | False if not
+        :return: dict of smartctl JSON output
+        :raises CommandException: on hard smartctl failure or unparseable output
         """
 
         # Prepare Command String
@@ -683,198 +431,38 @@ class Smartctl:
         # Run Command
         command.run()
 
-        # If Return Code is not Zero
-        if command.get_return_code() != 0:
-            # Loop through Bitmask
-            for bit_position, error_message in self.bitmask_codes.items():
-                # Check if Bit is Set
-                if command.get_return_code() & (1 << bit_position):
-                    # Print Error
-                    # print(f"{self.dut} - {error_message}")
-                    pass
+        # Return Code
+        return_code = command.get_return_code()
 
-        # Return Smartctl Output as JSON
-        return json.loads(command.get_output().strip().decode("utf-8"))
+        # Bits 0 (command line did not parse) and 1 (device open failed) are hard
+        # failures. Higher bits indicate a failing/failed disk but smartctl still
+        # emits valid JSON, which is exactly what a grading scan needs to see.
+        if return_code is not None and return_code & 0b11:
+            messages = [message for bit, message in self.bitmask_codes.items() if return_code & (1 << bit)]
+            errors = command.get_errors()
+            if isinstance(errors, bytes):
+                errors = errors.decode("utf-8", errors="replace")
+            raise CommandException(
+                f"smartctl failed for {self.dut} (return code {return_code}): "
+                f"{'; '.join(messages) or 'unknown error'}"
+                f"{f' | stderr: {errors.strip()[:200]}' if errors and errors.strip() else ''}"
+            )
 
-    def get_health(self, as_json=True):
-        """
-        Get Health
-        :return: Command
-        """
+        # Decode Output
+        output = command.get_output()
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        output = (output or "").strip()
 
-        # Prepare Command String
-        get_health = f"{self.get_health_command} {'--json=ov' if as_json else ''} {self.dut}"
+        # If Empty Output
+        if not output:
+            raise CommandException(f"smartctl returned empty output for {self.dut} (return code {return_code})")
 
-        # Prepare Command
-        command = Command(get_health)
+        # Try Decode JSON
+        try:
+            # Return Smartctl Output as JSON
+            return json.loads(output)
 
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    """
-    Self-test Commands
-    """
-
-    def abort_self_test(self):
-        """
-        Execute Abort Self-test
-        :return: Command
-        """
-
-        # Prepare Command String
-        short_self_test = f"{self.abort_self_test_command} {self.dut}"
-
-        # Prepare Command
-        command = Command(short_self_test)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    def execute_self_test_offline(self, captive: bool = False, force: bool = False) -> Command:
-        """
-        Execute Offline Self-test
-        :param force: force the execution of a new test, aborting the current test (if any)
-        :param captive: run the offline test in captive mode (defaults to background mode)
-        :return: Command
-        """
-
-        # Prepare Command String
-        short_self_test = (
-            f"{self.execute_self_test_offline_command} {'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
-        )
-
-        # Prepare Command
-        command = Command(short_self_test)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    def execute_self_test_short(self, captive: bool = False, force: bool = False) -> Command:
-        """
-        Execute Short Self-test
-        :param force: force the execution of a new test, aborting the current test (if any)
-        :param captive: run the short test in captive mode (defaults to background mode)
-        :return: Command
-        """
-
-        # Prepare Command String
-        short_self_test = (
-            f"{self.execute_self_test_short_command} {'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
-        )
-
-        # Prepare Command
-        command = Command(short_self_test)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    def execute_self_test_long(self, captive: bool = False, force: bool = False) -> Command:
-        """
-        Execute Extended Self-test
-        WARNING - This test will take a long time to complete as it processes the entire device
-        :param force: force the execution of a new test, aborting the current test (if any)
-        :param captive: run the extended test in captive mode (defaults to background mode)
-        :return: Command
-        """
-
-        # Prepare Command String
-        extended_self_test_command = (
-            f"{self.execute_self_test_long_command} {'force' if force else ''} {'-C' if captive else ''} {self.dut}"
-        )
-
-        # Prepare Command
-        command = Command(extended_self_test_command)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    def execute_self_test_conveyance(self, captive: bool = False, force: bool = False) -> Command:
-        """
-        Execute Conveyance Self-test
-        :param force: force the execution of a new test, aborting the current test (if any)
-        :param captive: run the conveyance test in captive mode (defaults to background mode)
-        :return: Command
-        """
-
-        # Prepare Command String
-        conveyance_self_test_command = f"{self.execute_self_test_conveyance_command} {'force' if force else ''} {'-C' if captive else ''} {self.dut}"
-
-        # Prepare Command
-        command = Command(conveyance_self_test_command)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    def execute_self_test_selective(
-        self,
-        starting_lba=0,
-        ending_lba=100,
-        captive: bool = False,
-        force: bool = False,
-        after_select: bool = False,
-    ):
-        """
-        Execute Selective Self-test
-        :param starting_lba: the lba to start test from
-        :param ending_lba: the lba to end test on
-        :param captive: run the conveyance test in captive mode (defaults to background mode)
-        :param force: force the execution of a new test, aborting the current test (if any)
-        :param after_select: perform an after-select test (defaults to False)
-        :return: Command
-        """
-
-        # Prepare Command String
-        selective_self_test_command = f"{self.execute_self_test_selective_command},{starting_lba}-{ending_lba} {'afterselect,on' if after_select else ' '}{'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
-
-        # Prepare Command
-        command = Command(selective_self_test_command)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
-
-    def execute_self_test_vendor_specific(
-        self,
-        vendor_specific_command: str = "0x00",
-        captive: bool = False,
-        force: bool = False,
-    ) -> Command:
-        """
-        Execute Vendor Self-test
-        :param vendor_specific_command: the Vendor specific command to pass with the Self-test
-        :param force: force the execution of a new test, aborting the current test (if any)
-        :param captive: run the vendor specific test in captive mode (defaults to background mode)
-        :return: Command
-        """
-
-        # Prepare Command String
-        short_self_test = f"{self.execute_self_test_vendor_specific_command},{vendor_specific_command} {'force' if force else ' '}{'-C' if captive else ' '}{self.dut}"
-
-        # Prepare Command
-        command = Command(short_self_test)
-
-        # Run Command
-        command.run()
-
-        # Return
-        return command
+        # If JSON Decode Error
+        except json.JSONDecodeError as exception:
+            raise CommandException(f"Failed to parse smartctl JSON for {self.dut}: {exception}. Output: {output[:200]}")

@@ -23,10 +23,13 @@ import argparse
 import os
 
 from cdi_health.api.machines import DEFAULT_DATA_DIR_ENV
+from cdi_health.api.security import (
+    ALLOW_NON_ROOT_ENV,
+    API_TOKEN_ENV,
+    BIND_HOST_ENV,
+    assert_token_required_for_bind,
+)
 from cdi_health.api.services import DEFAULT_MOCK_DATA_ENV
-
-ALLOW_NON_ROOT_ENV = "CDI_HEALTH_API_ALLOW_NON_ROOT"
-API_TOKEN_ENV = "CDI_HEALTH_API_TOKEN"
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -46,7 +49,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-token",
         metavar="TOKEN",
-        help="Optional static API token (sent by client via X-API-Token header)",
+        help="Static API token (required when --host is not loopback; sent via X-API-Token)",
     )
     parser.add_argument(
         "--mock-data",
@@ -74,6 +77,12 @@ def main() -> int:
         os.environ[DEFAULT_MOCK_DATA_ENV] = args.mock_data
     if args.data_dir:
         os.environ[DEFAULT_DATA_DIR_ENV] = args.data_dir
+
+    os.environ[BIND_HOST_ENV] = args.host
+    try:
+        assert_token_required_for_bind(args.host)
+    except RuntimeError as exc:
+        parser.error(str(exc))
 
     try:
         import uvicorn

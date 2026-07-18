@@ -1,13 +1,31 @@
+import { lazy, Suspense } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
 
+import { Spinner } from "@workspace/ui/components/spinner"
+
 import { AppLayout } from "@/components/app-layout"
-import { DashboardPage } from "@/pages/dashboard-page"
-import { DiscoverPage } from "@/pages/discover-page"
-import { DriveHealthPage } from "@/pages/drive-health-page"
-import { HostsPage } from "@/pages/hosts-page"
-import { ReportsPage } from "@/pages/reports-page"
-import { ScanPage } from "@/pages/scan-page"
-import { SelfTestPage } from "@/pages/self-test-page"
+
+const DashboardPage = lazy(() =>
+  import("@/pages/dashboard-page").then((m) => ({ default: m.DashboardPage }))
+)
+const DiscoverPage = lazy(() =>
+  import("@/pages/discover-page").then((m) => ({ default: m.DiscoverPage }))
+)
+const DriveHealthPage = lazy(() =>
+  import("@/pages/drive-health-page").then((m) => ({ default: m.DriveHealthPage }))
+)
+const HostsPage = lazy(() =>
+  import("@/pages/hosts-page").then((m) => ({ default: m.HostsPage }))
+)
+const ReportsPage = lazy(() =>
+  import("@/pages/reports-page").then((m) => ({ default: m.ReportsPage }))
+)
+const ScanPage = lazy(() =>
+  import("@/pages/scan-page").then((m) => ({ default: m.ScanPage }))
+)
+const SelfTestPage = lazy(() =>
+  import("@/pages/self-test-page").then((m) => ({ default: m.SelfTestPage }))
+)
 
 const pageTitles: Record<string, string> = {
   "/": "Fleet Status",
@@ -17,6 +35,14 @@ const pageTitles: Record<string, string> = {
   "/drives": "Drive Health",
   "/reports": "Health Reports",
   "/self-test": "NVMe Self-Test",
+}
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <Spinner />
+    </div>
+  )
 }
 
 function LayoutShell() {
@@ -29,19 +55,21 @@ function LayoutShell() {
 export function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<LayoutShell />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="hosts" element={<HostsPage />} />
-          <Route path="discover" element={<DiscoverPage />} />
-          <Route path="scan" element={<ScanPage />} />
-          <Route path="drives" element={<DriveHealthPage />} />
-          <Route path="reports" element={<ReportsPage />} />
-          <Route path="self-test" element={<SelfTestPage />} />
-          <Route path="machines" element={<Navigate to="/hosts" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
+          <Route element={<LayoutShell />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="hosts" element={<HostsPage />} />
+            <Route path="discover" element={<DiscoverPage />} />
+            <Route path="scan" element={<ScanPage />} />
+            <Route path="drives" element={<DriveHealthPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="self-test" element={<SelfTestPage />} />
+            <Route path="machines" element={<Navigate to="/hosts" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }

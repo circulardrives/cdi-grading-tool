@@ -69,13 +69,8 @@ except ImportError:
 # Required tools for real device scanning
 REQUIRED_TOOLS = {
     "nvme": ["nvme", "smartctl"],  # NVMe requires both nvme and smartctl
-    "ata": ["smartctl"],  # ATA can use smartctl (openSeaChest is optional)
+    "ata": ["smartctl"],
     "scsi": ["sg_map26", "sg_turs"],
-}
-
-# Optional tools (warn if missing but don't fail)
-OPTIONAL_TOOLS = {
-    "ata": ["openSeaChest_Basics", "openSeaChest_SMART"],  # Optional for ATA
 }
 
 # Default required tools (always checked)
@@ -102,7 +97,6 @@ def check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) 
         for tool in REQUIRED_TOOLS["ata"]:
             if tool not in DEFAULT_REQUIRED_TOOLS and not shutil.which(tool):
                 missing.append(tool)
-        # Note: openSeaChest tools are optional for ATA devices
 
     # Check SCSI tools if not ignoring SCSI
     if not ignore_scsi:
@@ -111,6 +105,26 @@ def check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) 
                 missing.append(tool)
 
     return missing
+
+
+def load_threshold_config(config_path: str | None) -> None:
+    """
+    Load threshold configuration.
+
+    Uses the explicit --config path when given, otherwise falls back to the
+    packaged thresholds.yaml so the shipped defaults are actually applied.
+    """
+    from cdi_health.classes.config import configure_thresholds, get_default_config_path
+
+    if config_path:
+        configure_thresholds(config_path)
+        logger.info("Loaded configuration from: %s", config_path)
+        return
+
+    default_path = get_default_config_path()
+    if default_path:
+        configure_thresholds(default_path)
+        logger.debug("Loaded default configuration from: %s", default_path)
 
 
 def scan_devices_real(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) -> list[dict]:
@@ -122,6 +136,16 @@ def scan_devices_real(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) ->
         ignore_nvme=ignore_nvme,
         ignore_scsi=ignore_scsi,
     )
+
+    # Surface drives that could not be opened or analysed so they are not
+    # silently missing from results (the worst failure mode on a grading bench).
+    if devices.failures:
+        logger.warning("%d device(s) could not be analysed:", len(devices.failures))
+        for failure in devices.failures:
+            name = failure.get("name", "<unknown>")
+            error = failure.get("error") or failure.get("open_error") or "unknown error"
+            logger.warning("  %s: %s", name, error)
+
     return devices.devices
 
 
@@ -203,12 +227,8 @@ def cmd_scan(args: Namespace) -> int:
             logger.info("Please install them before scanning real devices.")
             return 1
 
-    # Load custom configuration if provided
-    if args.config:
-        from cdi_health.classes.config import configure_thresholds
-
-        configure_thresholds(args.config)
-        logger.info("Loaded configuration from: %s", args.config)
+    # Load configuration (custom via --config, or packaged defaults)
+    load_threshold_config(args.config)
 
     # Scan devices
     try:
@@ -262,6 +282,90 @@ def cmd_scan(args: Namespace) -> int:
     return 0
 
 
+def cmd_validate(args: Namespace) -> int:
+    """
+    Validate scan output schema/consistency via validate_devices_output().
+
+    Supports the same --mock-data / --mock-file scanning path as ``scan``.
+    Exits non-zero when any device has validation errors.
+
+    Args:
+        args: Parsed command-line arguments
+
+    Returns:
+        Exit code (0 for success, 1 on validation or scan errors)
+    """
+    from cdi_health.classes.validation import validate_devices_output
+
+    setup_logging(verbose=args.verbose, no_color=args.no_color)
+
+    if args.no_color:
+        Colors.disable()
+    else:
+        Colors.auto_detect()
+
+    mock_mode = args.mock_data is not None or args.mock_file is not None
+
+    if not mock_mode:
+        missing = check_prerequisites(
+            ignore_ata=args.ignore_ata,
+            ignore_nvme=args.ignore_nvme,
+            ignore_scsi=args.ignore_scsi,
+        )
+        if missing:
+            logger.error("Required tools not found: %s", ", ".join(missing))
+            logger.info("Please install them before scanning real devices.")
+            return 1
+
+    load_threshold_config(args.config)
+
+    try:
+        if args.mock_file:
+            devices = scan_single_mock(args.mock_file)
+        elif args.mock_data:
+            devices = scan_devices_mock(
+                args.mock_data,
+                ignore_ata=args.ignore_ata,
+                ignore_nvme=args.ignore_nvme,
+                ignore_scsi=args.ignore_scsi,
+            )
+        else:
+            devices = scan_devices_real(
+                ignore_ata=args.ignore_ata,
+                ignore_nvme=args.ignore_nvme,
+                ignore_scsi=args.ignore_scsi,
+            )
+    except Exception as e:
+        print(f"Error scanning devices: {e}", file=sys.stderr)
+        return 1
+
+    if not devices:
+        print("No devices found.")
+        return 0
+
+    results = validate_devices_output(devices)
+    error_count = 0
+    warning_count = 0
+
+    for result in results:
+        warning_count += len(result.warnings)
+        if result.errors:
+            error_count += len(result.errors)
+            dut = result.device_id or "unknown"
+            print(f"{dut}: {len(result.errors)} error(s)", file=sys.stderr)
+            for issue in result.errors:
+                print(f"  ERROR [{issue.field}] {issue.message}", file=sys.stderr)
+            if args.verbose:
+                for issue in result.warnings:
+                    print(f"  WARN  [{issue.field}] {issue.message}", file=sys.stderr)
+        elif args.verbose:
+            for issue in result.warnings:
+                print(f"{result.device_id}: WARN [{issue.field}] {issue.message}")
+
+    print(f"Validated {len(devices)} device(s): {error_count} error(s), {warning_count} warning(s)")
+    return 1 if error_count else 0
+
+
 def cmd_report(args: Namespace) -> int:
     """
     Execute report command.
@@ -289,11 +393,8 @@ def cmd_report(args: Namespace) -> int:
             logger.error("Required tools not found: %s", ", ".join(missing))
             return 1
 
-    # Load custom configuration if provided
-    if args.config:
-        from cdi_health.classes.config import configure_thresholds
-
-        configure_thresholds(args.config)
+    # Load configuration (custom via --config, or packaged defaults)
+    load_threshold_config(args.config)
 
     # Scan devices
     try:
@@ -1013,11 +1114,7 @@ def cmd_export_mock(args: Namespace) -> int:
         logger.info("Install smartctl/nvme-cli (and sg utils for SCSI) before exporting.")
         return 1
 
-    if args.config:
-        from cdi_health.classes.config import configure_thresholds
-
-        configure_thresholds(args.config)
-        logger.info("Loaded configuration from: %s", args.config)
+    load_threshold_config(args.config)
 
     try:
         devices = scan_devices_real(
@@ -1122,6 +1219,9 @@ Examples:
   # Test with mock data
   cdi-health scan --mock-data src/cdi_health/mock_data
 
+  # Validate scan output schema (CI-friendly; non-zero on errors)
+  cdi-health validate --mock-data src/cdi_health/mock_data
+
   # Generate HTML report
   cdi-health report --format html --mock-data src/cdi_health/mock_data
 
@@ -1160,6 +1260,18 @@ Examples:
         metavar="PATH",
         help="Only include this device path (matches device ``dut``; NVMe namespace/controller aliases allowed)",
     )
+
+    # Validate command
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Validate scan output schema and consistency",
+        description=(
+            "Run validate_devices_output() over scan results. "
+            "Exits non-zero when any device has validation errors. "
+            "Supports --mock-data / --mock-file like scan."
+        ),
+    )
+    add_common_arguments(validate_parser)
 
     # Report command
     report_parser = subparsers.add_parser(
@@ -1282,6 +1394,8 @@ def main() -> int:
         if not hasattr(args, "output"):
             args.output = "table"
         return cmd_scan(args)
+    elif args.command == "validate":
+        return cmd_validate(args)
     elif args.command == "report":
         return cmd_report(args)
     elif args.command == "selftest":

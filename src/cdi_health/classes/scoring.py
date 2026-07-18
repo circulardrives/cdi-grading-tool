@@ -97,8 +97,8 @@ class HealthScoreCalculator:
     - Temperature Critical: -15 points
     """
 
-    # Score to Grade mapping
-    GRADE_THRESHOLDS = [
+    # Score to Grade mapping (defaults; overridden from config when present)
+    DEFAULT_GRADE_THRESHOLDS = [
         (90, "A", "Excellent"),
         (75, "B", "Good"),
         (60, "C", "Fair"),
@@ -106,16 +106,34 @@ class HealthScoreCalculator:
         (0, "F", "Failed"),
     ]
 
-    # Points deductions
-    SMART_FAILURE_DEDUCTION = 50
-    PER_SECTOR_DEDUCTION = 5
-    THRESHOLD_EXCEEDED_DEDUCTION = 25
-    TEMP_WARNING_DEDUCTION = 5
-    TEMP_CRITICAL_DEDUCTION = 15
+    # Points deductions (defaults; overridden from config when present)
+    DEFAULT_SMART_FAILURE_DEDUCTION = 50
+    DEFAULT_PER_SECTOR_DEDUCTION = 5
+    DEFAULT_THRESHOLD_EXCEEDED_DEDUCTION = 25
+    DEFAULT_TEMP_WARNING_DEDUCTION = 5
+    DEFAULT_TEMP_CRITICAL_DEDUCTION = 15
 
     def __init__(self):
         """Initialize the health score calculator."""
         self.config = get_config()
+        self.GRADE_THRESHOLDS = self._load_grade_thresholds()
+        self.SMART_FAILURE_DEDUCTION = self.config.smart_failure_deduction
+        self.PER_SECTOR_DEDUCTION = self.config.per_sector_deduction
+        self.THRESHOLD_EXCEEDED_DEDUCTION = self.config.threshold_exceeded_deduction
+        self.TEMP_WARNING_DEDUCTION = self.config.temp_warning_deduction
+        self.TEMP_CRITICAL_DEDUCTION = self.config.temp_critical_deduction
+
+    def _load_grade_thresholds(self) -> list[tuple[int, str, str]]:
+        """Build grade bands from config, falling back to CDI defaults."""
+        bands = self.config.grade_score_bands
+        if not bands:
+            return list(self.DEFAULT_GRADE_THRESHOLDS)
+        status_map = {"A": "Excellent", "B": "Good", "C": "Fair", "D": "Poor", "F": "Failed"}
+        ordered = []
+        for grade in ("A", "B", "C", "D", "F"):
+            if grade in bands:
+                ordered.append((int(bands[grade]), grade, status_map.get(grade, "")))
+        return ordered or list(self.DEFAULT_GRADE_THRESHOLDS)
 
     def calculate(self, device: dict) -> HealthScore:
         """
@@ -393,8 +411,11 @@ class HealthScoreCalculator:
         if d:
             deductions.append(d)
 
-        # Uncorrectable errors
-        uncorrectable = device.get("uncorrectable_errors", 0) or 0
+        # Uncorrectable / offline uncorrectable (canonical + legacy alias; score once)
+        uncorrectable_raw = device.get("uncorrectable_errors")
+        if uncorrectable_raw is None:
+            uncorrectable_raw = device.get("offline_uncorrectable_sectors")
+        uncorrectable = int(uncorrectable_raw or 0)
         if uncorrectable > 0:
             threshold = self.config.maximum_uncorrectable_errors
             points = min(uncorrectable * self.PER_SECTOR_DEDUCTION, 50)
@@ -416,34 +437,13 @@ class HealthScoreCalculator:
                 )
             )
 
-        # Offline uncorrectable sectors
-        offline = device.get("offline_uncorrectable_sectors", 0) or 0
-        if offline > 0:
-            threshold = self.config.maximum_uncorrectable_errors
-            points = min(offline * self.PER_SECTOR_DEDUCTION, 50)
-
-            if offline > threshold:
-                points += self.THRESHOLD_EXCEEDED_DEDUCTION
-                severity = "critical"
-            else:
-                severity = "warning"
-
-            deductions.append(
-                ScoreDeduction(
-                    reason="Offline uncorrectable sectors",
-                    points=points,
-                    severity=severity,
-                    field="offline_uncorrectable_sectors",
-                    value=offline,
-                    threshold=threshold,
-                )
-            )
-
         # SSD Percentage Used Endurance (for ATA SSDs)
         # Check both ssd_percentage_used_endurance and percentage_used fields
         pct_used = device.get("ssd_percentage_used_endurance") or device.get("percentage_used")
         if pct_used is not None and pct_used >= 0:
             threshold = self.config.maximum_ssd_percentage_used
+            warn_high = self.config.ssd_wear_warning_high
+            warn_moderate = self.config.ssd_wear_warning_moderate
             if pct_used > threshold:
                 deductions.append(
                     ScoreDeduction(
@@ -455,26 +455,29 @@ class HealthScoreCalculator:
                         threshold=threshold,
                     )
                 )
-            elif pct_used > 90:
+            elif pct_used > warn_high:
                 deductions.append(
                     ScoreDeduction(
                         reason="High SSD percentage used",
-                        points=10,
+                        points=self.config.ssd_wear_high_deduction,
                         severity="warning",
                         field="ssd_percentage_used_endurance",
                         value=pct_used,
                     )
                 )
-            elif pct_used > 80:
+            elif pct_used > warn_moderate:
                 deductions.append(
                     ScoreDeduction(
                         reason="Moderate SSD percentage used",
-                        points=5,
+                        points=self.config.ssd_wear_moderate_deduction,
                         severity="info",
                         field="ssd_percentage_used_endurance",
                         value=pct_used,
                     )
                 )
+
+        # ATA SMART self-test history (same critical fail-gate as NVMe)
+        deductions.extend(self._check_ata_scsi_selftest(device, protocol_label="ATA"))
 
         return deductions
 
@@ -496,12 +499,23 @@ class HealthScoreCalculator:
                     threshold=threshold,
                 )
             )
-        elif pct_used > 90:
+        elif pct_used > self.config.ssd_wear_warning_high:
             deductions.append(
                 ScoreDeduction(
                     reason="High percentage used",
-                    points=10,
+                    points=self.config.ssd_wear_high_deduction,
                     severity="warning",
+                    field="percentage_used",
+                    value=pct_used,
+                    threshold=threshold,
+                )
+            )
+        elif pct_used > self.config.ssd_wear_warning_moderate:
+            deductions.append(
+                ScoreDeduction(
+                    reason="Moderate percentage used",
+                    points=self.config.ssd_wear_moderate_deduction,
+                    severity="info",
                     field="percentage_used",
                     value=pct_used,
                     threshold=threshold,
@@ -646,6 +660,62 @@ class HealthScoreCalculator:
         except (TypeError, ValueError):
             return "fail" in str(value).lower()
 
+    def _check_ata_scsi_selftest(self, device: dict, *, protocol_label: str) -> list[ScoreDeduction]:
+        """
+        Deduct for failed ATA/SCSI SMART self-tests in recent history.
+
+        Uses the same critical deduction as NVMe so a failed self-test is Grade F.
+        Only the most recent 5 entries are considered (aligns with NVMe policy).
+        """
+        entries = device.get("smart_self_tests")
+        if not isinstance(entries, list) or not entries:
+            return []
+
+        for entry in entries[:5]:
+            if not isinstance(entry, dict):
+                continue
+            if self._ata_scsi_selftest_entry_failed(entry):
+                return [
+                    ScoreDeduction(
+                        reason=f"Failed {protocol_label} self-test - Drive is failing",
+                        points=self.SMART_FAILURE_DEDUCTION,
+                        severity="critical",
+                        field="smart_self_tests",
+                        value="Failed",
+                    )
+                ]
+        return []
+
+    @staticmethod
+    def _ata_scsi_selftest_entry_failed(entry: dict) -> bool:
+        """True when an ATA/SCSI self-test entry reports a completed failure."""
+        status = entry.get("status")
+        if isinstance(status, dict):
+            if "passed" in status:
+                # Explicit pass/fail; ignore in-progress / aborted-by-host (passed absent or None)
+                passed = status.get("passed")
+                if passed is None:
+                    return False
+                return passed is False
+            status_string = str(status.get("string") or "").lower()
+            if any(token in status_string for token in ("in progress", "aborted", "interrupted")):
+                return False
+            return "fail" in status_string or "error" in status_string
+
+        # SCSI dumps sometimes use flat result/string fields
+        for key in ("result", "self_test_result", "result_string"):
+            value = entry.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                return value is False
+            text = str(value).lower()
+            if any(token in text for token in ("in progress", "aborted", "interrupted")):
+                return False
+            if "fail" in text or "error" in text:
+                return True
+        return False
+
     def _check_scsi_metrics(self, device: dict) -> list[ScoreDeduction]:
         """Check SCSI-specific metrics."""
         deductions = []
@@ -672,8 +742,10 @@ class HealthScoreCalculator:
         if d:
             deductions.append(d)
 
-        # Uncorrected errors
+        # Uncorrected errors (canonical uncorrectable_errors + legacy aliases)
         uncorrected = device.get("uncorrected_errors")
+        if uncorrected is None:
+            uncorrected = device.get("uncorrectable_errors")
         if uncorrected is None:
             uncorrected = device.get("offline_uncorrectable_sectors")
         uncorrected = uncorrected or 0
@@ -698,13 +770,26 @@ class HealthScoreCalculator:
                 )
             )
 
+        # SCSI self-test history (same critical fail-gate as NVMe/ATA)
+        deductions.extend(self._check_ata_scsi_selftest(device, protocol_label="SCSI"))
+
         return deductions
 
     def _check_temperature(self, device: dict) -> list[ScoreDeduction]:
         """Check temperature metrics."""
         deductions = []
 
-        temp = device.get("current_temperature")
+        # Coerce to int; skip scoring for missing or non-numeric values
+        # (collection/mock data may carry strings like "Not Reported").
+        raw_temp = device.get("current_temperature")
+        if isinstance(raw_temp, bool):
+            temp = None
+        elif isinstance(raw_temp, (int, float)):
+            temp = int(raw_temp)
+        elif isinstance(raw_temp, str) and raw_temp.strip().lstrip("-").isdigit():
+            temp = int(raw_temp.strip())
+        else:
+            temp = None
         if temp is None:
             return deductions
 
@@ -731,6 +816,29 @@ class HealthScoreCalculator:
                     field="current_temperature",
                     value=temp,
                     threshold=warning_temp,
+                )
+            )
+
+        # Historical excursion beyond the drive's own specified maximum
+        # operating temperature (previously a scan-time hard fail-gate in the
+        # protocol handlers; kept critical here to preserve that behavior).
+        highest = device.get("highest_temperature")
+        spec_max = device.get("maximum_temperature")
+        if (
+            isinstance(highest, int)
+            and not isinstance(highest, bool)
+            and isinstance(spec_max, int)
+            and not isinstance(spec_max, bool)
+            and highest > spec_max
+        ):
+            deductions.append(
+                ScoreDeduction(
+                    reason="Highest recorded temperature exceeded specified maximum",
+                    points=self.TEMP_CRITICAL_DEDUCTION,
+                    severity="critical",
+                    field="highest_temperature",
+                    value=highest,
+                    threshold=spec_max,
                 )
             )
 

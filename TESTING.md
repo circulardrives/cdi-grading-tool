@@ -1,6 +1,6 @@
-# Testing Guide
+# Manual / Hardware Testing Guide
 
-This guide helps you test CDI Health functionality, including with mock data and real devices.
+This guide covers manual QA with mock data and real storage devices. For developer pytest usage, coverage, and writing unit tests, see **[DEVELOPMENT.md](DEVELOPMENT.md)**.
 
 ## Quick Start Testing
 

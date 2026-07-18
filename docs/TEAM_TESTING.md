@@ -12,7 +12,7 @@ Use this guide to validate the technician workflow: **Docker dashboard on a lapt
 >
 > We consolidated on **0.9.5** for Docker images, `.deb` packages, and docs. Mock fixture data is **off by default**; enable **Use mock data** on the **Discover** page only for demos.
 >
-> **Bench (Linux):** install or upgrade the `.deb`, enable `cdi-health-api` on `0.0.0.0:8844` so Discover can find it.
+> **Bench (Linux):** install or upgrade the `.deb`, enable the LAN drop-in (`0.0.0.0:8844`) with `CDI_HEALTH_API_TOKEN` set so Discover can find it.
 >
 > **Laptop (Mac or Linux):**
 > 1. `./scripts/docker-lan-discover.sh` → Discover → subnet `192.168.0.0/24` → confirm your bench appears.
@@ -47,16 +47,19 @@ sudo apt install ./cdi-health_0.9.5_all.deb
 cdi-health --version
 sudo systemctl enable --now cdi-health-api
 
-# Expose API on the lab network (required for Discover from a laptop)
+# Expose API on the lab network (requires token — see lan.conf drop-in)
+sudo cp /path/to/cdi-grading-tool/deploy/systemd/cdi-health-api.env.example /etc/default/cdi-health-api
+# edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
-printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/cdi-health-api --host 0.0.0.0 --port 8844 --data-dir /var/lib/cdi-health\n' | sudo tee /etc/systemd/system/cdi-health-api.service.d/override.conf
+sudo cp /path/to/cdi-grading-tool/deploy/systemd/cdi-health-api.service.d/lan.conf \
+  /etc/systemd/system/cdi-health-api.service.d/lan.conf
 sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
 
 curl -s http://127.0.0.1:8844/api/v1/health
 sudo cdi-health scan
 ```
 
-**Pass criteria:** health JSON `status: ok`; scan shows real drive serials and grades.
+**Pass criteria:** health JSON `status: ok` (full detail on loopback); scan shows real drive serials and grades. Token is required for LAN binds.
 
 **Python 3.14+ (Ubuntu 26):** postinst creates `/opt/cdi-health/venv` automatically. If API fails on pydantic, reinstall the 0.9.5 `.deb` from PR #63 build.
 
@@ -97,7 +100,10 @@ open http://127.0.0.1:3000
 3. Optional: compare with direct bench API:
 
 ```bash
-curl -s -X POST http://192.168.0.74:8844/api/v1/scan -H 'Content-Type: application/json' -d '{}'
+curl -s -X POST http://192.168.0.74:8844/api/v1/scan \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Token: $CDI_HEALTH_API_TOKEN" \
+  -d '{}'
 ```
 
 **Pass criteria:** device count and serials match between Docker UI and direct bench curl.

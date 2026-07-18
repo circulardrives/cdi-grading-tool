@@ -9,12 +9,10 @@ COPY dashboard/packages ./packages
 
 ARG VITE_CDI_API_BASE_URL=/api/cdi
 ARG VITE_CDI_USE_MOCK_DATA=0
-ARG VITE_CDI_API_TOKEN=
 ARG VITE_CDI_MOCK_DATA_PATH=/app/src/cdi_health/mock_data
 
 ENV VITE_CDI_API_BASE_URL=${VITE_CDI_API_BASE_URL}
 ENV VITE_CDI_USE_MOCK_DATA=${VITE_CDI_USE_MOCK_DATA}
-ENV VITE_CDI_API_TOKEN=${VITE_CDI_API_TOKEN}
 ENV VITE_CDI_MOCK_DATA_PATH=${VITE_CDI_MOCK_DATA_PATH}
 
 RUN bun install --frozen-lockfile
@@ -22,7 +20,10 @@ RUN bun run build
 
 FROM nginx:1.27-alpine
 
-COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
+# Official nginx image runs envsubst on /etc/nginx/templates/*.template at start.
+# CDI_HEALTH_API_TOKEN is injected into proxy_set_header at runtime (not in the SPA).
+ENV CDI_HEALTH_API_TOKEN=""
+COPY deploy/docker/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
 EXPOSE 80

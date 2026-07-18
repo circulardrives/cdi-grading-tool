@@ -27,7 +27,9 @@ This guide provides information for developers working on CDI Health.
 
 ## Testing
 
-Continuous integration is defined in **`.github/workflows/ci.yml`** (pytest matrix, pre-commit, dashboard `bun run build`, wheel smoke, license headers). Install **`pip install -e '.[dev,api]'`** locally so FastAPI tests (`tests/test_api.py`) collect.
+Continuous integration is defined in **`.github/workflows/ci.yml`** (pytest matrix on Python 3.10–3.13, pre-commit, dashboard lint/typecheck/build, wheel smoke, license headers). Install **`pip install -e '.[dev,api]'`** locally so FastAPI tests (`tests/test_api.py`) collect.
+
+For manual/hardware QA with mock data or real devices, see **[TESTING.md](TESTING.md)**.
 
 ### Dashboard (frontend)
 
@@ -42,6 +44,7 @@ cd dashboard && bun install && bun run dev
 See [dashboard/README.md](dashboard/README.md) and [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md).
 
 ### Running Tests
+
 ```bash
 # All tests
 pytest tests/
@@ -52,22 +55,68 @@ pytest tests/ --cov=cdi_health --cov-report=term-missing
 # Specific test file
 pytest tests/test_scoring.py
 
+# Specific test
+pytest tests/test_scoring.py::TestHealthScoreCalculator::test_calculate_perfect_device
+
 # Verbose output
 pytest tests/ -v
 ```
 
+Coverage is enforced via `--cov-fail-under` in `pyproject.toml` (and CI). Run `pytest --cov=cdi_health --cov-report=html` for a detailed HTML report; do not hardcode coverage percentages in docs.
+
+### Test Structure
+
+Tests are organized by component under `tests/`, including:
+
+- `test_scoring.py` — health scoring
+- `test_tools.py` — tool path detection and command execution
+- `test_cli.py` — CLI argument parsing and command routing
+- `test_api.py` — FastAPI HTTP tests
+- `test_nvme_selftest.py` — NVMe self-test
+- `test_formatter.py` / `test_selftest_formatter.py` — output formatters
+- `test_integration.py` — end-to-end integration tests
+
+Mock fixtures live in `src/cdi_health/mock_data/` (`ata/`, `nvme/`, `scsi/`, `scan_results/`).
+
 ### Writing Tests
-- Place tests in `tests/` directory
-- Name test files `test_*.py`
-- Name test classes `Test*`
-- Name test methods `test_*`
+
+- Place tests in `tests/`; name files `test_*.py`, classes `Test*`, methods `test_*`
 - Use fixtures from `conftest.py` for common test data
+- Mock external calls; keep each test independent
 
-### Test Coverage
-- Aim for 80%+ coverage
-- Critical paths should have 90%+ coverage
-- Run `pytest --cov=cdi_health --cov-report=html` to view detailed coverage
+```python
+from unittest.mock import MagicMock, patch
 
+from cdi_health.classes.scoring import HealthScoreCalculator
+
+
+class TestMyFeature:
+    def test_basic_functionality(self) -> None:
+        calculator = HealthScoreCalculator()
+        result = calculator.calculate({...})
+        assert result.score == 100
+
+
+@patch("shutil.which")
+def test_path_detection(mock_which: MagicMock) -> None:
+    mock_which.return_value = "/usr/bin/tool"
+```
+
+### Debugging Failed Tests
+
+1. Verbose: `pytest tests/ -v`
+2. Short traceback: `pytest tests/ --tb=short`
+3. Single test: `pytest tests/test_file.py::TestClass::test_method -v`
+4. Debugger: `pytest --pdb`
+
+### Docker stack (mock UI / API smoke)
+
+```bash
+./scripts/docker-up.sh --build
+curl -s http://127.0.0.1:3000/api/cdi/api/v1/health
+```
+
+Stop: `docker compose -f deploy/docker/docker-compose.yml down`
 ## Tool Path Detection
 
 ### openSeaChest (Deb Package)
@@ -167,6 +216,12 @@ Hooks will automatically:
 - Run ruff linting
 - Run ruff formatting
 - Check for common issues
+
+Mypy is registered as a **manual** pre-commit stage (the tree still has many typing errors). Run it with:
+
+```bash
+pre-commit run mypy --all-files --hook-stage manual
+```
 
 ## Building and Distribution
 

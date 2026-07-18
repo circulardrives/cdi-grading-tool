@@ -19,5 +19,11 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Shared library, not an app entry: shadcn components intentionally
+      // export cva variants alongside components, so the Vite fast-refresh
+      // boundary rule does not apply here.
+      "react-refresh/only-export-components": "off",
+    },
   },
 ])
