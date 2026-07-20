@@ -522,7 +522,7 @@ class HealthScoreCalculator:
                 )
             )
 
-        # Available spare
+        # Available spare — prefer drive AVSPT; YAML fallback is ~10%, not 97%
         spare = device.get("available_spare")
         if spare is None:
             spare = 100
@@ -541,18 +541,14 @@ class HealthScoreCalculator:
                 )
             )
 
-        # Critical warning
-        critical_warning = device.get("critical_warning", 0) or 0
-        if critical_warning > 0:
-            deductions.append(
-                ScoreDeduction(
-                    reason="NVMe critical warning active",
-                    points=self.SMART_FAILURE_DEDUCTION,
-                    severity="critical",
-                    field="critical_warning",
-                    value=critical_warning,
-                )
-            )
+        # Critical Warning (NVMe Base Spec §5.2.12.1.3) — decode bits
+        deductions.extend(self._check_nvme_critical_warning(device))
+
+        # Endurance Group Critical Warning Summary (EGCWS)
+        deductions.extend(self._check_nvme_egcws(device))
+
+        # Lifetime composite-temp exposure (WCTT / CCTT)
+        deductions.extend(self._check_nvme_temp_time(device))
 
         # Media errors
         media_errors = device.get("media_errors", 0) or 0
@@ -568,8 +564,277 @@ class HealthScoreCalculator:
             )
 
         # Self-test results
-        self_test_deductions = self._check_nvme_selftest(device)
-        deductions.extend(self_test_deductions)
+        deductions.extend(self._check_nvme_selftest(device))
+
+        # OCP C0h predictive-fail (skipped when log absent or disabled)
+        deductions.extend(self._check_ocp_smart(device))
+
+        return deductions
+
+    # NVMe Critical Warning bit labels (Base Spec Figure 210)
+    _NVME_CW_BITS: dict[int, str] = {
+        0: "Available Spare Below Threshold (ASCBT)",
+        1: "Temperature Threshold Condition (TTC)",
+        2: "NVM Subsystem Degraded Reliability (NDR)",
+        3: "All Media Read-Only (AMRO)",
+        4: "Volatile Memory Backup Failed (VMBF)",
+        5: "Persistent Memory Region Read-Only (PMRRO)",
+        6: "Indeterminate Personality State (IPS)",
+    }
+
+    _NVME_EGCWS_BITS: dict[int, str] = {
+        0: "Endurance Group Available Spare Below Threshold",
+        2: "Endurance Group Degraded Reliability",
+        3: "Endurance Group Read-Only",
+    }
+
+    def _check_nvme_critical_warning(self, device: dict) -> list[ScoreDeduction]:
+        """Grade F on any Critical Warning bit; label which bits are set."""
+        critical_warning = device.get("critical_warning", 0) or 0
+        try:
+            cw = int(critical_warning)
+        except (TypeError, ValueError):
+            return []
+        if cw <= 0:
+            return []
+
+        labels = [name for bit, name in self._NVME_CW_BITS.items() if cw & (1 << bit)]
+        unknown = cw & ~sum(1 << b for b in self._NVME_CW_BITS)
+        if unknown:
+            labels.append(f"reserved/unknown bits 0x{unknown:02x}")
+        reason = "NVMe critical warning: " + (", ".join(labels) if labels else f"0x{cw:02x}")
+        return [
+            ScoreDeduction(
+                reason=reason,
+                points=self.SMART_FAILURE_DEDUCTION,
+                severity="critical",
+                field="critical_warning",
+                value=cw,
+            )
+        ]
+
+    def _check_nvme_egcws(self, device: dict) -> list[ScoreDeduction]:
+        """Grade F when Endurance Group Critical Warning Summary has any bit set."""
+        raw = device.get("endurance_group_critical_warning_summary")
+        if raw is None:
+            return []
+        try:
+            egcws = int(raw)
+        except (TypeError, ValueError):
+            return []
+        if egcws <= 0:
+            return []
+
+        labels = [name for bit, name in self._NVME_EGCWS_BITS.items() if egcws & (1 << bit)]
+        reason = "NVMe endurance group critical warning: " + (
+            ", ".join(labels) if labels else f"0x{egcws:02x}"
+        )
+        return [
+            ScoreDeduction(
+                reason=reason,
+                points=self.SMART_FAILURE_DEDUCTION,
+                severity="critical",
+                field="endurance_group_critical_warning_summary",
+                value=egcws,
+            )
+        ]
+
+    def _check_nvme_temp_time(self, device: dict) -> list[ScoreDeduction]:
+        """Score lifetime WCTT / CCTT minutes from SMART health log."""
+        deductions: list[ScoreDeduction] = []
+
+        cctt = device.get("critical_comp_time")
+        try:
+            cctt_i = int(cctt) if cctt is not None else None
+        except (TypeError, ValueError):
+            cctt_i = None
+        if cctt_i is not None and cctt_i > self.config.nvme_cctt_critical_minutes:
+            deductions.append(
+                ScoreDeduction(
+                    reason="Critical composite temperature time (CCTT) > 0",
+                    points=self.TEMP_CRITICAL_DEDUCTION,
+                    severity="critical",
+                    field="critical_comp_time",
+                    value=cctt_i,
+                    threshold=self.config.nvme_cctt_critical_minutes,
+                )
+            )
+
+        wctt = device.get("warning_temp_time")
+        try:
+            wctt_i = int(wctt) if wctt is not None else None
+        except (TypeError, ValueError):
+            wctt_i = None
+        if wctt_i is not None and wctt_i > self.config.nvme_wctt_warning_minutes:
+            deductions.append(
+                ScoreDeduction(
+                    reason="Warning composite temperature time (WCTT) elevated",
+                    points=self.TEMP_WARNING_DEDUCTION,
+                    severity="warning",
+                    field="warning_temp_time",
+                    value=wctt_i,
+                    threshold=self.config.nvme_wctt_warning_minutes,
+                )
+            )
+
+        return deductions
+
+    def _check_ocp_smart(self, device: dict) -> list[ScoreDeduction]:
+        """
+        OCP C0h predictive-fail algorithm (v1, DSSD v2.7 field semantics).
+
+        See docs/NVME_HEALTH_POLICY.md. Skipped when C0h is absent or disabled.
+        """
+        if not self.config.ocp_scoring_enabled:
+            return []
+
+        ocp = device.get("ocp_smart_log")
+        if not isinstance(ocp, dict) or not ocp:
+            return []
+
+        from cdi_health.classes.ocp_smart import ocp_get
+
+        deductions: list[ScoreDeduction] = []
+
+        # Capacitor Health (SMART-19): FFFFh = no PLP; 100 = factory pass margin
+        cap = ocp_get(ocp, "Capacitor health", "capacitor_health")
+        if cap is not None and cap != 0xFFFF and cap < self.config.ocp_capacitor_health_min:
+            deductions.append(
+                ScoreDeduction(
+                    reason="OCP capacitor health below factory pass margin",
+                    points=self.SMART_FAILURE_DEDUCTION,
+                    severity="critical",
+                    field="ocp_capacitor_health",
+                    value=cap,
+                    threshold=self.config.ocp_capacitor_health_min,
+                )
+            )
+
+        # Uncorrectable read errors (SMART-6)
+        unc = ocp_get(ocp, "Uncorrectable read error count", "uncorrectable_read_error_count")
+        if unc is not None and unc > 0:
+            deductions.append(
+                ScoreDeduction(
+                    reason="OCP uncorrectable read errors detected",
+                    points=self.SMART_FAILURE_DEDUCTION,
+                    severity="critical",
+                    field="ocp_uncorrectable_read_error_count",
+                    value=unc,
+                    threshold=0,
+                )
+            )
+
+        # End-to-end: uncorrected = detected - corrected (SMART-8)
+        e2e_det = ocp_get(ocp, "End to end detected errors", "end_to_end_detected_errors")
+        e2e_cor = ocp_get(ocp, "End to end corrected errors", "end_to_end_corrected_errors") or 0
+        if e2e_det is not None and e2e_det > e2e_cor:
+            deductions.append(
+                ScoreDeduction(
+                    reason="OCP end-to-end uncorrected errors",
+                    points=self.SMART_FAILURE_DEDUCTION,
+                    severity="critical",
+                    field="ocp_end_to_end_errors",
+                    value=e2e_det - e2e_cor,
+                    threshold=0,
+                )
+            )
+
+        # Bad user NAND normalized (SMART-3); factory start = 100; 0xFFFF = invalid
+        bad_norm = ocp_get(ocp, "Bad user nand blocks - Normalized", "bad_user_nand_blocks_normalized")
+        if bad_norm is not None and bad_norm != 0xFFFF:
+            if bad_norm < self.config.ocp_bad_user_nand_critical:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="OCP bad user NAND normalized critically low",
+                        points=self.THRESHOLD_EXCEEDED_DEDUCTION,
+                        severity="critical",
+                        field="ocp_bad_user_nand_normalized",
+                        value=bad_norm,
+                        threshold=self.config.ocp_bad_user_nand_critical,
+                    )
+                )
+            elif bad_norm < self.config.ocp_bad_user_nand_warning:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="OCP bad user NAND normalized low",
+                        points=self.TEMP_WARNING_DEDUCTION,
+                        severity="warning",
+                        field="ocp_bad_user_nand_normalized",
+                        value=bad_norm,
+                        threshold=self.config.ocp_bad_user_nand_warning,
+                    )
+                )
+
+        # System data % used (SMART-9): 100 = may no longer function reliably
+        sys_used = ocp_get(ocp, "System data percent used", "system_data_percent_used")
+        if sys_used is not None:
+            if sys_used >= 100:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="OCP system data percent used at/above 100",
+                        points=self.THRESHOLD_EXCEEDED_DEDUCTION,
+                        severity="critical",
+                        field="ocp_system_data_percent_used",
+                        value=sys_used,
+                        threshold=100,
+                    )
+                )
+            elif sys_used >= self.config.ocp_system_data_used_warning:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="OCP system data percent used elevated",
+                        points=self.TEMP_WARNING_DEDUCTION,
+                        severity="warning",
+                        field="ocp_system_data_percent_used",
+                        value=sys_used,
+                        threshold=self.config.ocp_system_data_used_warning,
+                    )
+                )
+
+        # Incomplete shutdowns (SMART-15) — warning tier
+        incomplete = ocp_get(ocp, "Incomplete shutdowns", "incomplete_shutdowns")
+        if incomplete is not None and incomplete >= self.config.ocp_incomplete_shutdowns_warning:
+            deductions.append(
+                ScoreDeduction(
+                    reason="OCP incomplete shutdowns elevated",
+                    points=self.TEMP_WARNING_DEDUCTION,
+                    severity="warning",
+                    field="ocp_incomplete_shutdowns",
+                    value=incomplete,
+                    threshold=self.config.ocp_incomplete_shutdowns_warning,
+                )
+            )
+
+        # Thermal throttling (SMART-12) — warning only
+        throttle_events = ocp_get(
+            ocp, "Number of Thermal throttling events", "number_of_thermal_throttling_events"
+        )
+        throttle_status = ocp_get(ocp, "Current throttling status", "current_throttling_status")
+        if throttle_status is not None and throttle_status >= 2:
+            deductions.append(
+                ScoreDeduction(
+                    reason="OCP thermal throttling active (level ≥ 2)",
+                    points=self.TEMP_WARNING_DEDUCTION,
+                    severity="warning",
+                    field="ocp_current_throttling_status",
+                    value=throttle_status,
+                    threshold=2,
+                )
+            )
+        elif (
+            throttle_events is not None
+            and throttle_events >= self.config.ocp_thermal_throttle_events_warning
+        ):
+            deductions.append(
+                ScoreDeduction(
+                    reason="OCP thermal throttling events elevated",
+                    points=self.TEMP_WARNING_DEDUCTION,
+                    severity="warning",
+                    field="ocp_thermal_throttling_events",
+                    value=throttle_events,
+                    threshold=self.config.ocp_thermal_throttle_events_warning,
+                )
+            )
 
         return deductions
 
@@ -775,62 +1040,82 @@ class HealthScoreCalculator:
 
         return deductions
 
+    @staticmethod
+    def _coerce_temp_celsius(value) -> int | None:
+        """Coerce a temperature field to int °C; None when missing/non-numeric."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            return int(value.strip())
+        return None
+
+    def _resolve_temperature_thresholds(self, device: dict) -> tuple[int | None, int | None]:
+        """
+        Resolve warning / critical °C thresholds for current-temp scoring.
+
+        Prefer drive-reported limits (NVMe WCTEMP/CCTEMP, ATA specified max,
+        SCSI drive_trip). YAML 55/60 is an ATA/SCSI fallback only.
+
+        For NVMe without WCTEMP/CCTEMP, return (None, None) so current-temp
+        does not use the YAML ceiling — CW bit 1 + WCTT/CCTT are the gates.
+        """
+        drive_warning = self._coerce_temp_celsius(device.get("warning_temperature"))
+        drive_max = self._coerce_temp_celsius(device.get("maximum_temperature"))
+        protocol = str(device.get("transport_protocol", "")).upper()
+
+        if drive_warning is None and drive_max is None and protocol == "NVME":
+            return None, None
+
+        warning_temp = drive_warning if drive_warning is not None else self.config.warning_temperature
+        max_temp = drive_max if drive_max is not None else self.config.maximum_operating_temperature
+        if warning_temp >= max_temp:
+            # Mixed sources (e.g. drive critical only) — keep a warning band below critical.
+            warning_temp = max(max_temp - 5, 0)
+        return warning_temp, max_temp
+
     def _check_temperature(self, device: dict) -> list[ScoreDeduction]:
         """Check temperature metrics."""
         deductions = []
 
         # Coerce to int; skip scoring for missing or non-numeric values
         # (collection/mock data may carry strings like "Not Reported").
-        raw_temp = device.get("current_temperature")
-        if isinstance(raw_temp, bool):
-            temp = None
-        elif isinstance(raw_temp, (int, float)):
-            temp = int(raw_temp)
-        elif isinstance(raw_temp, str) and raw_temp.strip().lstrip("-").isdigit():
-            temp = int(raw_temp.strip())
-        else:
-            temp = None
+        temp = self._coerce_temp_celsius(device.get("current_temperature"))
         if temp is None:
-            return deductions
-
-        warning_temp = self.config.warning_temperature
-        max_temp = self.config.maximum_operating_temperature
-
-        if temp > max_temp:
-            deductions.append(
-                ScoreDeduction(
-                    reason="Temperature critical",
-                    points=self.TEMP_CRITICAL_DEDUCTION,
-                    severity="critical",
-                    field="current_temperature",
-                    value=temp,
-                    threshold=max_temp,
+            # Still evaluate historical excursion if present
+            pass
+        else:
+            warning_temp, max_temp = self._resolve_temperature_thresholds(device)
+            if max_temp is not None and temp > max_temp:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="Temperature critical",
+                        points=self.TEMP_CRITICAL_DEDUCTION,
+                        severity="critical",
+                        field="current_temperature",
+                        value=temp,
+                        threshold=max_temp,
+                    )
                 )
-            )
-        elif temp > warning_temp:
-            deductions.append(
-                ScoreDeduction(
-                    reason="Temperature warning",
-                    points=self.TEMP_WARNING_DEDUCTION,
-                    severity="warning",
-                    field="current_temperature",
-                    value=temp,
-                    threshold=warning_temp,
+            elif warning_temp is not None and temp > warning_temp:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="Temperature warning",
+                        points=self.TEMP_WARNING_DEDUCTION,
+                        severity="warning",
+                        field="current_temperature",
+                        value=temp,
+                        threshold=warning_temp,
+                    )
                 )
-            )
 
         # Historical excursion beyond the drive's own specified maximum
         # operating temperature (previously a scan-time hard fail-gate in the
         # protocol handlers; kept critical here to preserve that behavior).
-        highest = device.get("highest_temperature")
-        spec_max = device.get("maximum_temperature")
-        if (
-            isinstance(highest, int)
-            and not isinstance(highest, bool)
-            and isinstance(spec_max, int)
-            and not isinstance(spec_max, bool)
-            and highest > spec_max
-        ):
+        highest = self._coerce_temp_celsius(device.get("highest_temperature"))
+        spec_max = self._coerce_temp_celsius(device.get("maximum_temperature"))
+        if highest is not None and spec_max is not None and highest > spec_max:
             deductions.append(
                 ScoreDeduction(
                     reason="Highest recorded temperature exceeded specified maximum",

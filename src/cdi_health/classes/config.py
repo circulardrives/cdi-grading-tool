@@ -51,12 +51,23 @@ DEFAULT_THRESHOLDS = {
     },
     "nvme": {
         "maximum_percentage_used": 100,
-        "minimum_available_spare": 97,
+        "minimum_available_spare": 10,
         # Wear warning tiers (percentage used); critical still uses maximum_percentage_used
         "wear_warning_moderate": 80,
         "wear_warning_high": 90,
         "wear_moderate_deduction": 5,
         "wear_high_deduction": 10,
+        "wctt_warning_minutes": 0,
+        "cctt_critical_minutes": 0,
+        "ocp": {
+            "enabled": True,
+            "capacitor_health_min": 100,
+            "bad_user_nand_warning": 90,
+            "bad_user_nand_critical": 50,
+            "system_data_used_warning": 90,
+            "incomplete_shutdowns_warning": 10,
+            "thermal_throttle_events_warning": 20,
+        },
     },
     "scsi": {
         "maximum_grown_defects": 10,
@@ -265,8 +276,8 @@ class ThresholdConfig:
 
     @property
     def minimum_ssd_available_spare(self) -> int:
-        """Minimum available spare percentage for NVMe SSDs."""
-        return self.get("nvme", "minimum_available_spare", default=97)
+        """Fallback AVSPT (%) when the drive omits available_spare_threshold."""
+        return self.get("nvme", "minimum_available_spare", default=10)
 
     @property
     def ssd_wear_warning_moderate(self) -> int:
@@ -288,6 +299,51 @@ class ThresholdConfig:
         """Points deducted at the high wear tier."""
         return self.get("nvme", "wear_high_deduction", default=10)
 
+    @property
+    def nvme_wctt_warning_minutes(self) -> int:
+        """Warning Composite Temperature Time (minutes) at or above which to warn."""
+        return self.get("nvme", "wctt_warning_minutes", default=0)
+
+    @property
+    def nvme_cctt_critical_minutes(self) -> int:
+        """Critical Composite Temperature Time (minutes) above which to hard-fail."""
+        return self.get("nvme", "cctt_critical_minutes", default=0)
+
+    @property
+    def ocp_scoring_enabled(self) -> bool:
+        """Whether OCP C0h predictive-fail scoring is enabled."""
+        return bool(self.get("nvme", "ocp", "enabled", default=True))
+
+    @property
+    def ocp_capacitor_health_min(self) -> int:
+        """Minimum Capacitor Health (%); below is critical. FFFFh (no PLP) is skipped."""
+        return self.get("nvme", "ocp", "capacitor_health_min", default=100)
+
+    @property
+    def ocp_bad_user_nand_warning(self) -> int:
+        """Bad user NAND normalized warning floor (factory start = 100)."""
+        return self.get("nvme", "ocp", "bad_user_nand_warning", default=90)
+
+    @property
+    def ocp_bad_user_nand_critical(self) -> int:
+        """Bad user NAND normalized critical floor."""
+        return self.get("nvme", "ocp", "bad_user_nand_critical", default=50)
+
+    @property
+    def ocp_system_data_used_warning(self) -> int:
+        """System data % used warning tier (100 = may no longer be reliable)."""
+        return self.get("nvme", "ocp", "system_data_used_warning", default=90)
+
+    @property
+    def ocp_incomplete_shutdowns_warning(self) -> int:
+        """Incomplete shutdowns count at or above which to warn."""
+        return self.get("nvme", "ocp", "incomplete_shutdowns_warning", default=10)
+
+    @property
+    def ocp_thermal_throttle_events_warning(self) -> int:
+        """Thermal throttling event count at or above which to warn."""
+        return self.get("nvme", "ocp", "thermal_throttle_events_warning", default=20)
+
     # SCSI thresholds
     @property
     def maximum_grown_defects(self) -> int:
@@ -302,12 +358,12 @@ class ThresholdConfig:
     # Temperature thresholds
     @property
     def maximum_operating_temperature(self) -> int:
-        """Maximum operating temperature in Celsius."""
+        """Fallback max operating °C when the drive does not report its own limit."""
         return self.get("temperature", "maximum_operating", default=60)
 
     @property
     def warning_temperature(self) -> int:
-        """Warning temperature in Celsius."""
+        """Fallback warning °C when the drive does not report WCTEMP / equivalent."""
         return self.get("temperature", "warning", default=55)
 
     @property

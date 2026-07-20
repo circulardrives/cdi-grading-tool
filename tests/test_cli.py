@@ -98,6 +98,7 @@ class TestScanCommands:
             ignore_scsi=False,
             output="table",
             details=True,
+            explain=False,
             device=None,
             verbose=False,
             no_color=False,

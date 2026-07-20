@@ -64,6 +64,67 @@ def int_or_none(value) -> int | None:
     return None
 
 
+def kelvin_to_celsius(value) -> int | None:
+    """
+    Convert NVMe Identify Controller temperature (Kelvin) to Celsius.
+    NVMe uses 0 to mean the threshold is not reported.
+    """
+    kelvin = int_or_none(value)
+    if kelvin is None or kelvin == 0:
+        return None
+    return kelvin - 273
+
+
+# smartctl --json=ov text lines (spacing varies slightly by version)
+_NVME_WARNING_COMP_TEMP_RE = re.compile(
+    r"Warning\s+Comp\.\s+Temp(?:erature)?\.?\s+Threshold:\s+(\d+)\s*Celsius",
+    re.IGNORECASE,
+)
+_NVME_CRITICAL_COMP_TEMP_RE = re.compile(
+    r"Critical\s+Comp\.\s+Temp(?:erature)?\.?\s+Threshold:\s+(\d+)\s*Celsius",
+    re.IGNORECASE,
+)
+
+
+def parse_nvme_composite_temp_thresholds(smartctl: dict) -> tuple[int | None, int | None]:
+    """
+    Extract NVMe Warning/Critical Composite Temperature thresholds (°C).
+
+    Prefer smartctl text output (always present with ``--json=ov``), then fall
+    back to ``nvme_cli.id_ctrl`` wctemp/cctemp (Kelvin) from mock/export bundles.
+    """
+    warning_c: int | None = None
+    critical_c: int | None = None
+
+    smartctl_meta = smartctl.get("smartctl")
+    output_lines = smartctl_meta.get("output") if isinstance(smartctl_meta, dict) else None
+    if isinstance(output_lines, list):
+        for line in output_lines:
+            if not isinstance(line, str):
+                continue
+            if warning_c is None:
+                match = _NVME_WARNING_COMP_TEMP_RE.search(line)
+                if match:
+                    warning_c = int(match.group(1))
+            if critical_c is None:
+                match = _NVME_CRITICAL_COMP_TEMP_RE.search(line)
+                if match:
+                    critical_c = int(match.group(1))
+            if warning_c is not None and critical_c is not None:
+                break
+
+    if warning_c is None or critical_c is None:
+        nvme_cli = smartctl.get("nvme_cli")
+        id_ctrl = nvme_cli.get("id_ctrl") if isinstance(nvme_cli, dict) else None
+        if isinstance(id_ctrl, dict):
+            if warning_c is None:
+                warning_c = kelvin_to_celsius(id_ctrl.get("wctemp"))
+            if critical_c is None:
+                critical_c = kelvin_to_celsius(id_ctrl.get("cctemp"))
+
+    return warning_c, critical_c
+
+
 class Device:
     """
     Device Class
@@ -195,16 +256,20 @@ class Device:
         self.available_spare = None
         self.available_spare_threshold = None
         self.critical_warning = None
+        self.endurance_group_critical_warning_summary = None
         self.media_errors = None
         self.data_written_bytes = None
         self.data_written_tb = None
+        self.warning_temp_time = None  # WCTT minutes
+        self.critical_comp_time = None  # CCTT minutes
 
         # SCSI/SAS supplemental counters
         self.non_medium_errors = None
 
         # Temperatures
         self.current_temperature = None
-        self.maximum_temperature = None
+        self.warning_temperature = None  # drive-reported (e.g. NVMe WCTEMP)
+        self.maximum_temperature = None  # drive-reported (e.g. NVMe CCTEMP / ATA spec max)
         self.minimum_temperature = None
         self.highest_temperature = None
         self.lowest_temperature = None
@@ -1455,12 +1520,19 @@ class NVMeProtocol:
             # Spare fields from NVMe SMART / Health Information log page 02h.
             device.available_spare = nvme_health.get("available_spare")
             device.available_spare_threshold = nvme_health.get("available_spare_threshold")
-            # Critical Warning
+            # Critical Warning (byte) + Endurance Group Critical Warning Summary
             device.critical_warning = nvme_health.get("critical_warning", 0)
+            device.endurance_group_critical_warning_summary = nvme_health.get(
+                "endurance_group_critical_warning_summary",
+                nvme_health.get("endurance_group_critical_warning_summary_raw"),
+            )
             # Media Errors
             device.media_errors = nvme_health.get("media_errors", 0)
             # Composite temperature (Celsius in smartctl JSON)
             device.current_temperature = int_or_none(nvme_health.get("temperature"))
+            # Lifetime minutes at/above WCTEMP / CCTEMP (NVMe Base Spec WCTT / CCTT)
+            device.warning_temp_time = int_or_none(nvme_health.get("warning_temp_time"))
+            device.critical_comp_time = int_or_none(nvme_health.get("critical_comp_time"))
             # Data Units Written (for data written calculation)
             data_units_written = nvme_health.get("data_units_written", 0)
             if data_units_written:
@@ -1477,6 +1549,15 @@ class NVMeProtocol:
                 device.maximum_temperature = int_or_none(
                     temp_info.get("sensor_critical") or temp_info.get("drive_trip")
                 )
+
+        # Prefer manufacturer WCTEMP / CCTEMP over CDI YAML fallbacks.
+        # Real over-temp faults also set critical_warning and accumulate
+        # Warning/Critical Comp. Temperature Time — not a fixed 60 °C trip.
+        warning_c, critical_c = parse_nvme_composite_temp_thresholds(smartctl)
+        if warning_c is not None:
+            device.warning_temperature = warning_c
+        if critical_c is not None:
+            device.maximum_temperature = critical_c
 
         nvme_err = smartctl.get("nvme_error_information_log")
         device.nvme_error_information_log = nvme_err if isinstance(nvme_err, dict) and nvme_err else None

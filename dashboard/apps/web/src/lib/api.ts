@@ -3,6 +3,8 @@ import type {
   DiscoverRequest,
   DiscoverResponse,
   HealthResponse,
+  HistoryDetail,
+  HistorySummary,
   JobResponse,
   Machine,
   MachineCreateRequest,
@@ -197,6 +199,34 @@ export function listJobs(): Promise<JobResponse[]> {
 
 export function listMachines(): Promise<Machine[]> {
   return request<Machine[]>("/api/v1/machines")
+}
+
+export function listHistory(
+  machineId?: string | null
+): Promise<HistorySummary[]> {
+  const params = new URLSearchParams()
+  if (machineId) {
+    params.set("machine_id", machineId)
+  }
+  const query = params.toString() ? `?${params.toString()}` : ""
+  return request<HistorySummary[]>(`/api/v1/history${query}`)
+}
+
+export function getHistory(scanId: string): Promise<HistoryDetail> {
+  return request<HistoryDetail>(
+    `/api/v1/history/${encodeURIComponent(scanId)}`
+  )
+}
+
+export function deleteHistory(scanId: string): Promise<{ deleted: boolean; id: string }> {
+  return request<{ deleted: boolean; id: string }>(
+    `/api/v1/history/${encodeURIComponent(scanId)}`,
+    { method: "DELETE" }
+  )
+}
+
+export function clearHistory(): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>("/api/v1/history", { method: "DELETE" })
 }
 
 export function createMachine(body: MachineCreateRequest): Promise<Machine> {

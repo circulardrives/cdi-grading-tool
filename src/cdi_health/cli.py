@@ -269,9 +269,14 @@ def cmd_scan(args: Namespace) -> int:
 
     # Format output
     try:
-        if args.output == "table":
+        if getattr(args, "explain", False) and args.output == "table":
+            from cdi_health.classes.explain import ExplainFormatter
+
+            formatter = ExplainFormatter()
+        elif args.output == "table":
             formatter = get_formatter(args.output, detailed=args.details)
         else:
+            # JSON/YAML always include explainability fields; --explain is a no-op hint.
             formatter = get_formatter(args.output)
         output = formatter.format(devices)
         print(output)
@@ -1216,6 +1221,10 @@ Examples:
   # Scan with JSON output
   cdi-health scan -o json
 
+  # Explain grade/score/certification (deduction breakdown)
+  cdi-health scan --explain --mock-data src/cdi_health/mock_data
+  cdi-health scan --explain --device /dev/nvme0n1
+
   # Test with mock data
   cdi-health scan --mock-data src/cdi_health/mock_data
 
@@ -1254,6 +1263,16 @@ Examples:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Detailed table: POH, errors, Used%% (table output only; default: --details)",
+    )
+    scan_parser.add_argument(
+        "--explain",
+        action="store_true",
+        help=(
+            "Show grading explainability: score/grade/status, certification rationale, "
+            "and full deduction list (reason/field/value/threshold/severity/points). "
+            "For table output this replaces the summary table; JSON/YAML always include "
+            "the same explainability fields."
+        ),
     )
     scan_parser.add_argument(
         "--device",

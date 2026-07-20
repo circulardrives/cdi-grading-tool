@@ -143,6 +143,20 @@ class TestNVMeProtocol:
         assert device.percentage_used == data["nvme_smart_health_information_log"]["percentage_used"]
         assert isinstance(device.smart_status, bool)
 
+    def test_parses_composite_temp_thresholds_from_smartctl_output(self, mock_data_dir: Path) -> None:
+        """NVMe WCTEMP/CCTEMP from smartctl text must drive scoring, not YAML 60 °C."""
+        data = _load_mock(mock_data_dir, "nvme", "SSDPEK1A118GA_healthy.json")
+        device = _device_from_mock(data)
+        assert device.warning_temperature == 70
+        assert device.maximum_temperature == 78
+        assert device.warning_temp_time == 1
+        assert device.critical_comp_time == 0
+        # Drive at 61 °C is below manufacturer WCTEMP — must not Grade F.
+        # WCTT=1 yields a warning deduction only.
+        device.current_temperature = 61
+        device.apply_health_grade()
+        assert device.cdi_grade == "A"
+
 
 class TestSCSIProtocol:
     def test_error_counter_log(self, mock_data_dir: Path) -> None:

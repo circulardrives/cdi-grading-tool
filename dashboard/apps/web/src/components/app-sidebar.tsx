@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom"
 import {
   FileOutputIcon,
   HardDriveIcon,
+  HistoryIcon,
   LayoutDashboardIcon,
   RadarIcon,
   ScanSearchIcon,
@@ -76,6 +77,12 @@ const navItems = [
     label: "Drive Health",
     icon: HardDriveIcon,
     description: "Simple and detailed drive tables",
+  },
+  {
+    to: "/history",
+    label: "History",
+    icon: HistoryIcon,
+    description: "Browse previous scan snapshots",
   },
   {
     to: "/reports",

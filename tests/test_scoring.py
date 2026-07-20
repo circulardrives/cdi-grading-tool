@@ -386,3 +386,235 @@ class TestHealthScoreCalculator:
         assert result.score == 0
         assert result.grade == "F"
         assert any(d.field == "uncorrected_errors" and d.severity == "critical" for d in result.deductions)
+
+    def test_nvme_temp_below_drive_wctemp_is_not_failed(self) -> None:
+        """61 °C against YAML 60 was a false F; drive WCTEMP/CCTEMP must win."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "current_temperature": 61,
+            "warning_temperature": 78,
+            "maximum_temperature": 82,
+            "critical_warning": 0,
+            "percentage_used": 3,
+            "available_spare": 100,
+            "media_errors": 0,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.grade == "A"
+        assert result.score == 100
+        assert not any(d.field == "current_temperature" for d in result.deductions)
+
+    def test_nvme_temp_above_drive_cctemp_is_critical(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "current_temperature": 83,
+            "warning_temperature": 78,
+            "maximum_temperature": 82,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.grade == "F"
+        assert result.score == 0
+        assert any(
+            d.field == "current_temperature" and d.severity == "critical" and d.threshold == 82
+            for d in result.deductions
+        )
+
+    def test_nvme_temp_between_wctemp_and_cctemp_is_warning_not_f(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "current_temperature": 79,
+            "warning_temperature": 78,
+            "maximum_temperature": 82,
+        }
+
+        result = calculator.calculate(device)
+
+        assert result.grade != "F"
+        assert any(
+            d.field == "current_temperature" and d.severity == "warning" and d.threshold == 78
+            for d in result.deductions
+        )
+
+    def test_yaml_temp_fallback_still_applies_without_drive_limits(self) -> None:
+        """ATA/SCSI without drive max still use YAML 55/60; NVMe does not."""
+        calculator = HealthScoreCalculator()
+        ata = {
+            "transport_protocol": "ATA",
+            "smart_status": "PASSED",
+            "current_temperature": 61,
+        }
+        assert calculator.calculate(ata).grade == "F"
+        assert any(
+            d.field == "current_temperature" and d.severity == "critical" and d.threshold == 60
+            for d in calculator.calculate(ata).deductions
+        )
+
+        nvme = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "current_temperature": 61,
+            "critical_warning": 0,
+        }
+        result = calculator.calculate(nvme)
+        assert result.grade == "A"
+        assert not any(d.field == "current_temperature" for d in result.deductions)
+
+    def test_nvme_cctt_forces_grade_f(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "critical_comp_time": 5,
+            "warning_temp_time": 0,
+            "critical_warning": 0,
+        }
+        result = calculator.calculate(device)
+        assert result.grade == "F"
+        assert any(d.field == "critical_comp_time" and d.severity == "critical" for d in result.deductions)
+
+    def test_nvme_wctt_is_warning_not_f(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "warning_temp_time": 53,
+            "critical_comp_time": 0,
+            "critical_warning": 0,
+        }
+        result = calculator.calculate(device)
+        assert result.grade != "F"
+        assert any(d.field == "warning_temp_time" and d.severity == "warning" for d in result.deductions)
+
+    def test_nvme_critical_warning_decodes_bits(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "critical_warning": 0b1010,  # AMRO + TTC
+        }
+        result = calculator.calculate(device)
+        assert result.grade == "F"
+        cw = next(d for d in result.deductions if d.field == "critical_warning")
+        assert "Temperature Threshold Condition" in cw.reason
+        assert "All Media Read-Only" in cw.reason
+
+    def test_nvme_egcws_forces_grade_f(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "critical_warning": 0,
+            "endurance_group_critical_warning_summary": 0b1000,  # EG read-only
+        }
+        result = calculator.calculate(device)
+        assert result.grade == "F"
+        assert any(
+            d.field == "endurance_group_critical_warning_summary" and "Read-Only" in d.reason
+            for d in result.deductions
+        )
+
+    def test_nvme_spare_fallback_uses_ten_not_ninety_seven(self) -> None:
+        calculator = HealthScoreCalculator()
+        # Missing AVSPT: spare 50 must pass with fallback 10
+        ok = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "available_spare": 50,
+            "critical_warning": 0,
+        }
+        assert calculator.calculate(ok).grade == "A"
+
+        bad = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "available_spare": 5,
+            "critical_warning": 0,
+        }
+        result = calculator.calculate(bad)
+        assert result.grade == "F"
+        assert any(d.field == "available_spare" and d.threshold == 10 for d in result.deductions)
+
+    def test_ocp_uncorrectable_reads_force_grade_f(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "critical_warning": 0,
+            "ocp_smart_log": {
+                "Capacitor health": 158,
+                "Uncorrectable read error count": 3,
+                "Bad user nand blocks - Normalized": 100,
+                "System data percent used": 0,
+                "Incomplete shutdowns": 0,
+                "Number of Thermal throttling events": 0,
+                "Current throttling status": 0,
+            },
+        }
+        result = calculator.calculate(device)
+        assert result.grade == "F"
+        assert any(d.field == "ocp_uncorrectable_read_error_count" for d in result.deductions)
+
+    def test_ocp_healthy_log_does_not_deduct(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "critical_warning": 0,
+            "ocp_smart_log": {
+                "Capacitor health": 158,
+                "Uncorrectable read error count": 0,
+                "End to end detected errors": 0,
+                "End to end corrected errors": 0,
+                "Bad user nand blocks - Normalized": 100,
+                "System data percent used": 0,
+                "Incomplete shutdowns": 0,
+                "Number of Thermal throttling events": 2,
+                "Current throttling status": 0,
+            },
+        }
+        result = calculator.calculate(device)
+        assert result.grade == "A"
+        assert result.score == 100
+        assert not any(d.field and d.field.startswith("ocp_") for d in result.deductions)
+
+    def test_ocp_capacitor_health_below_margin_is_critical(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "critical_warning": 0,
+            "ocp_smart_log": {
+                "Capacitor health": 80,
+                "Uncorrectable read error count": 0,
+                "Bad user nand blocks - Normalized": 100,
+            },
+        }
+        result = calculator.calculate(device)
+        assert result.grade == "F"
+        assert any(d.field == "ocp_capacitor_health" for d in result.deductions)
+
+    def test_ocp_ffff_capacitor_skipped(self) -> None:
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "NVME",
+            "smart_status": "PASSED",
+            "critical_warning": 0,
+            "ocp_smart_log": {
+                "Capacitor health": 0xFFFF,
+                "Uncorrectable read error count": 0,
+                "Bad user nand blocks - Normalized": 100,
+            },
+        }
+        result = calculator.calculate(device)
+        assert result.grade == "A"
+        assert not any(d.field == "ocp_capacitor_health" for d in result.deductions)

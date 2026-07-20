@@ -107,6 +107,33 @@ class ScanResponse(BaseModel):
     devices: list[dict[str, Any]]
 
 
+class HistorySummary(BaseModel):
+    """Lightweight scan-history list entry (no device payloads)."""
+
+    id: str
+    scanned_at: datetime
+    created_at: datetime | None = None
+    machine_id: str | None = None
+    mock: bool = False
+    device_count: int
+    summary: ScanSummary
+    grades: dict[str, int] = Field(default_factory=dict)
+
+
+class HistoryDetail(BaseModel):
+    """Full persisted scan snapshot."""
+
+    id: str
+    scanned_at: datetime
+    created_at: datetime | None = None
+    machine_id: str | None = None
+    mock: bool = False
+    device_count: int
+    summary: ScanSummary
+    grades: dict[str, int] = Field(default_factory=dict)
+    devices: list[dict[str, Any]]
+
+
 class ReportRequest(BaseModel):
     """Report generation request payload."""
 

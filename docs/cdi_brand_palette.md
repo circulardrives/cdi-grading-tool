@@ -21,4 +21,9 @@ Canonical definitions for digital and print. The CSS variable file `src/cdi_heal
 
 ## Semantic mapping (reports / UI)
 
-The palette file maps these to UI tokens (`--bg`, `--text`, `--accent`, etc.) tuned for light backgrounds and readable body copy while keeping Simply Green as the primary accent.
+The palette file maps brand HEX colors to:
+
+1. **shadcn-aligned tokens** used by the dashboard (`--background`, `--foreground`, `--primary`, `--muted`, `--card`, `--destructive`, `--radius`, …) so HTML reports match the web UI.
+2. **Legacy report aliases** (`--bg`, `--text`, `--accent`, …) that point at those tokens.
+
+Typography matches the dashboard: **Source Sans 3** (body) and **JetBrains Mono** (tabular/mono). Radius is `0.625rem`. Simply Green remains the primary accent.

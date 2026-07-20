@@ -70,6 +70,21 @@ export type ScanResponse = {
   devices: DeviceRecord[]
 }
 
+export type HistorySummary = {
+  id: string
+  scanned_at: string
+  created_at?: string | null
+  machine_id?: string | null
+  mock: boolean
+  device_count: number
+  summary: ScanSummary
+  grades: Record<string, number>
+}
+
+export type HistoryDetail = HistorySummary & {
+  devices: DeviceRecord[]
+}
+
 export type HealthResponse = {
   status: string
   is_root: boolean

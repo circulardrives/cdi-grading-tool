@@ -72,6 +72,14 @@ import type { ReportHistoryEntry } from "@/lib/types"
 
 const HISTORY_KEY = "cdi-report-history"
 
+/** Prefer crypto.randomUUID; fall back on HTTP LAN where it is unavailable. */
+function newReportId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 function loadReportHistory(): ReportHistoryEntry[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY)
@@ -130,7 +138,7 @@ export function ReportsPage() {
       const entry: ReportHistoryEntry = {
         ...result,
         filename: result.filename || reportFilename(result.output_file),
-        id: crypto.randomUUID(),
+        id: newReportId(),
       }
       const nextHistory = [entry, ...history].slice(0, 20)
       setHistory(nextHistory)

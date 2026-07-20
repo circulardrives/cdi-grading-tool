@@ -31,12 +31,15 @@ from fastapi.responses import FileResponse
 from pydantic import ValidationError
 
 from cdi_health.api.discovery import DISCOVER_COOLDOWN_SECONDS, DiscoveryError, discover_hosts
+from cdi_health.api.history import ScanHistoryStore
 from cdi_health.api.jobs import JobStore
 from cdi_health.api.machines import MachineStore
 from cdi_health.api.schemas import (
     DiscoverRequest,
     DiscoverResponse,
     HealthResponse,
+    HistoryDetail,
+    HistorySummary,
     JobResponse,
     MachineCreate,
     MachineResponse,
@@ -61,6 +64,7 @@ from cdi_health.api.security import (
 )
 from cdi_health.api.services import (
     abort_selftest,
+    apply_scan_defaults,
     generate_report,
     get_selftest_status,
     http_error_detail,
@@ -85,6 +89,7 @@ class ApiState:
     def __init__(self):
         self.job_store = JobStore()
         self.machine_store = MachineStore()
+        self.history_store = ScanHistoryStore()
         # General work (scan/report) — keep separate from long-running self-tests.
         self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cdi-api")
         self.selftest_executor = ThreadPoolExecutor(
@@ -165,17 +170,34 @@ def create_app() -> FastAPI:
             message=message,
         )
 
+    def _persist_successful_scan(
+        runtime: ApiState,
+        result: dict,
+        request: ScanRequest,
+    ) -> None:
+        """Cache latest scan, update host registry, and append scan history."""
+        normalized = apply_scan_defaults(request)
+        mock = bool(normalized.mock_data or normalized.mock_file)
+        with runtime.lock:
+            runtime.latest_scan = result
+            if request.machine_id:
+                machine = runtime.machine_store.record_scan(
+                    request.machine_id, result, success=True
+                )
+                if machine is None:
+                    raise HTTPException(status_code=404, detail="Machine not found")
+        runtime.history_store.record_scan(
+            result,
+            machine_id=request.machine_id,
+            mock=mock,
+        )
+
     @app.post("/api/v1/scan", response_model=ScanResponse)
     def scan(request: ScanRequest, _: None = Depends(verify_api_token)) -> ScanResponse:
         runtime = app.state.runtime
         try:
             result = run_scan(request)
-            with runtime.lock:
-                runtime.latest_scan = result
-                if request.machine_id:
-                    machine = runtime.machine_store.record_scan(request.machine_id, result, success=True)
-                    if machine is None:
-                        raise HTTPException(status_code=404, detail="Machine not found")
+            _persist_successful_scan(runtime, result, request)
             return ScanResponse.model_validate(result)
         except HTTPException:
             raise
@@ -192,12 +214,9 @@ def create_app() -> FastAPI:
         try:
             if machine_id:
                 if refresh:
-                    result = run_scan(ScanRequest(machine_id=machine_id))
-                    with runtime.lock:
-                        runtime.latest_scan = result
-                        machine = runtime.machine_store.record_scan(machine_id, result, success=True)
-                        if machine is None:
-                            raise HTTPException(status_code=404, detail="Machine not found")
+                    scan_request = ScanRequest(machine_id=machine_id)
+                    result = run_scan(scan_request)
+                    _persist_successful_scan(runtime, result, scan_request)
                     return ScanResponse.model_validate(result)
 
                 cached = runtime.machine_store.get_scan(machine_id)
@@ -208,15 +227,56 @@ def create_app() -> FastAPI:
             with runtime.lock:
                 cached = runtime.latest_scan
             if refresh or cached is None:
-                result = run_scan(ScanRequest())
-                with runtime.lock:
-                    runtime.latest_scan = result
+                scan_request = ScanRequest()
+                result = run_scan(scan_request)
+                _persist_successful_scan(runtime, result, scan_request)
                 return ScanResponse.model_validate(result)
             return ScanResponse.model_validate(cached)
         except HTTPException:
             raise
         except Exception as exc:
             _raise_mapped(exc, context="devices")
+
+    @app.get("/api/v1/history", response_model=list[HistorySummary])
+    def list_history(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        machine_id: str | None = None,
+        _: None = Depends(verify_api_token),
+    ) -> list[HistorySummary]:
+        entries = app.state.runtime.history_store.list_scans(
+            limit=limit,
+            offset=offset,
+            machine_id=machine_id,
+        )
+        return [HistorySummary.model_validate(entry) for entry in entries]
+
+    @app.get("/api/v1/history/{scan_id}", response_model=HistoryDetail)
+    def get_history(
+        scan_id: str,
+        _: None = Depends(verify_api_token),
+    ) -> HistoryDetail:
+        entry = app.state.runtime.history_store.get_scan(scan_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="Scan history entry not found")
+        return HistoryDetail.model_validate(entry)
+
+    @app.delete("/api/v1/history/{scan_id}")
+    def delete_history(
+        scan_id: str,
+        _: None = Depends(verify_api_token),
+    ) -> dict[str, object]:
+        deleted = app.state.runtime.history_store.delete_scan(scan_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Scan history entry not found")
+        return {"deleted": True, "id": scan_id}
+
+    @app.delete("/api/v1/history")
+    def clear_history(
+        _: None = Depends(verify_api_token),
+    ) -> dict[str, object]:
+        deleted = app.state.runtime.history_store.clear_scans()
+        return {"deleted": deleted}
 
     @app.get("/api/v1/machines", response_model=list[MachineResponse])
     def list_machines(

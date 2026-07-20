@@ -388,15 +388,19 @@ def _init_device_defaults(device: Device) -> None:
     device.available_spare = None
     device.available_spare_threshold = None
     device.critical_warning = None
+    device.endurance_group_critical_warning_summary = None
     device.media_errors = None
     device.data_written_bytes = None
     device.data_written_tb = None
+    device.warning_temp_time = None
+    device.critical_comp_time = None
 
     # SCSI/SAS supplemental counters
     device.non_medium_errors = None
 
     # Temperatures
     device.current_temperature = None
+    device.warning_temperature = None
     device.maximum_temperature = None
     device.minimum_temperature = None
     device.highest_temperature = None

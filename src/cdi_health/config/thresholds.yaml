@@ -26,18 +26,37 @@ ata:
   maximum_uncorrectable_errors: 10
 
 # NVMe Device Thresholds
+# See docs/NVME_HEALTH_POLICY.md for the full Base Spec 2.3 + OCP v2.7 algorithm.
 nvme:
   # Maximum percentage used endurance (0-100, some drives report >100)
   maximum_percentage_used: 100
 
-  # Minimum available spare percentage
-  minimum_available_spare: 97
+  # Fallback Available Spare Threshold (%) when the drive omits AVSPT.
+  # Real drive AVSPT values are typically 0–12%; prefer the drive value always.
+  minimum_available_spare: 10
 
   # Wear warning tiers (percentage used). Critical still uses maximum_percentage_used.
   wear_warning_moderate: 80
   wear_warning_high: 90
   wear_moderate_deduction: 5
   wear_high_deduction: 10
+
+  # Lifetime composite-temp exposure (SMART 02h WCTT / CCTT), minutes.
+  # CCTT > 0 → critical; WCTT > wctt_warning_minutes → warning.
+  wctt_warning_minutes: 0
+  cctt_critical_minutes: 0
+
+  # OCP SMART Additional Log (C0h) predictive-fail knobs (skipped when C0h absent).
+  ocp:
+    enabled: true
+    # Capacitor Health: FFFFh = no PLP; 100 = factory pass margin (OCP SMART-19).
+    capacitor_health_min: 100
+    # Bad user NAND normalized starts at 100 (0x64) at factory (SMART-3).
+    bad_user_nand_warning: 90
+    bad_user_nand_critical: 50
+    system_data_used_warning: 90
+    incomplete_shutdowns_warning: 10
+    thermal_throttle_events_warning: 20
 
 # SCSI/SAS Device Thresholds
 scsi:
@@ -49,18 +68,21 @@ scsi:
 
 # Temperature Thresholds
 # Policy (unified in HealthScoreCalculator._check_temperature):
-#   1. current_temperature vs warning / maximum_operating → warning (-5) or
-#      critical (-15) deduction. Critical forces Grade F.
+#   1. Prefer drive-reported limits when present:
+#        NVMe: Warning/Critical Comp. Temp. Threshold (WCTEMP/CCTEMP)
+#        ATA:  Specified Maximum Operating Temperature
+#        SCSI: temperature.drive_trip / sensor_critical
+#      current_temperature above warning → -5; above critical → -15 (Grade F).
 #   2. highest_temperature > drive-reported maximum_temperature (spec limit)
-#      → critical deduction (historical excursion fail-gate, formerly applied
-#      only in protocol handlers during scan-time grading).
-# These warning/maximum_operating values are fallbacks when scoring current
-# temperature; the historical gate uses the drive's own reported spec max.
+#      → critical deduction (historical excursion fail-gate).
+#   3. YAML warning / maximum_operating below are ATA/SCSI fallbacks only.
+#      NVMe current-temp scoring uses WCTEMP/CCTEMP when present; when absent it
+#      does not apply this YAML ceiling (CW bit 1 + WCTT/CCTT are the gates).
 temperature:
-  # Maximum operating temperature in Celsius
+  # Fallback maximum operating temperature in Celsius (ATA/SCSI without drive max)
   maximum_operating: 60
 
-  # Warning temperature in Celsius
+  # Fallback warning temperature in Celsius (ATA/SCSI without drive warning)
   warning: 55
 
 # Grading Rules

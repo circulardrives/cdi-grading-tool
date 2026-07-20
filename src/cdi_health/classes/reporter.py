@@ -31,6 +31,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from cdi_health.classes.explain import certification_rationale
 from cdi_health.classes.scoring import HealthScoreCalculator
 
 
@@ -148,7 +149,7 @@ class ReportGenerator:
         HTML(string=html_content).write_pdf(output_path)
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
-        """Add health scores to devices."""
+        """Add health scores and grading rationale to devices."""
         enriched = []
         for device in devices:
             d = device.copy()
@@ -158,6 +159,7 @@ class ReportGenerator:
             d["health_status"] = score.status
             d["health_deductions"] = score.deductions
             d["is_certified"] = score.is_certified
+            d["certification_rationale"] = certification_rationale(score)
             d["report_category"] = self._device_report_category(d)
             enriched.append(d)
         return enriched
@@ -243,7 +245,7 @@ class ReportGenerator:
             <div class="hero-top">
                 <div>
                     <h1>CDI Health Report</h1>
-                    <p class="hero-sub">Offline-friendly report · drives identified by serial number only</p>
+                    <p class="hero-sub">Certification evidence pack · serial-keyed drives · grading rationale included</p>
                     <p class="hero-time">Generated {html.escape(timestamp)}</p>
                 </div>
                 <div class="view-mode-bar" role="toolbar" aria-label="Report layout">
@@ -296,7 +298,7 @@ class ReportGenerator:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CDI Health Report — {html.escape(timestamp)}</title>
     <style>
-        @import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap");
+        @import url("https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap");
         {palette_css}
         {self._get_report_layout_css()}
     </style>
@@ -447,6 +449,116 @@ class ReportGenerator:
             else:
                 parts.append(str(d))
         return " | ".join(parts)
+
+    @staticmethod
+    def _iter_deduction_dicts(deductions) -> list[dict]:
+        """Normalize ScoreDeduction objects or dicts for HTML evidence cards."""
+        out: list[dict] = []
+        if not deductions:
+            return out
+        for d in deductions:
+            if hasattr(d, "reason") and hasattr(d, "points"):
+                out.append(
+                    {
+                        "reason": d.reason,
+                        "points": d.points,
+                        "severity": getattr(d, "severity", "info"),
+                        "field": getattr(d, "field", None),
+                        "value": getattr(d, "value", None),
+                        "threshold": getattr(d, "threshold", None),
+                    }
+                )
+            elif isinstance(d, dict):
+                out.append(d)
+        return out
+
+    @staticmethod
+    def _badge_html(text: str, variant: str) -> str:
+        return f'<span class="badge badge--{html.escape(variant)}">{html.escape(text)}</span>'
+
+    def _grade_badge(self, grade: str) -> str:
+        g = (grade or "F").upper()
+        variant = {"A": "ok", "B": "ok", "C": "warn", "D": "warn", "F": "bad"}.get(g, "muted")
+        return self._badge_html(f"Grade {g}", variant)
+
+    def _status_badge(self, status: str, score: int) -> str:
+        if score >= 75:
+            variant = "ok"
+        elif score >= 40:
+            variant = "warn"
+        else:
+            variant = "bad"
+        return self._badge_html(str(status or "Unknown"), variant)
+
+    def _render_deduction_list(self, deductions) -> str:
+        items = self._iter_deduction_dicts(deductions)
+        if not items:
+            return '<p class="evidence-empty">No score deductions — metrics within policy.</p>'
+        lis = []
+        for item in items:
+            sev = str(item.get("severity") or "info").lower()
+            reason = html.escape(str(item.get("reason") or "Deduction"))
+            points = item.get("points")
+            detail_bits = []
+            if item.get("field"):
+                detail_bits.append(f"field={item['field']}")
+            if item.get("value") is not None:
+                detail_bits.append(f"value={item['value']}")
+            if item.get("threshold") is not None:
+                detail_bits.append(f"threshold={item['threshold']}")
+            meta = f" (−{html.escape(str(points))})" if points is not None else ""
+            detail = (
+                f'<span class="deduction-meta">{html.escape(" · ".join(detail_bits))}</span>'
+                if detail_bits
+                else ""
+            )
+            lis.append(
+                f'<li class="deduction deduction--{html.escape(sev)}">'
+                f'<span class="deduction-sev">{html.escape(sev)}</span>'
+                f'<span class="deduction-body"><strong>{reason}</strong>{meta}{detail}</span>'
+                f"</li>"
+            )
+        return f'<ul class="deduction-list">{"".join(lis)}</ul>'
+
+    def _evidence_card_html(self, device: dict) -> str:
+        """Per-drive evidence card for simple view (certification rationale + deductions)."""
+        score = device.get("health_score", 0)
+        grade = device.get("health_grade", "F")
+        status = device.get("health_status", "Unknown")
+        serial = self._serial_label(device)
+        model = str(device.get("model_number") or "—")
+        firmware = str(device.get("firmware_revision") or "—")
+        certified = bool(device.get("is_certified"))
+        rationale = str(device.get("certification_rationale") or "—")
+        cert_badge = self._badge_html("Certified", "ok") if certified else self._badge_html("Not certified", "bad")
+        return f"""
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">{html.escape(serial)}</h3>
+                  <p class="evidence-card__sub">{html.escape(model)} · FW {html.escape(firmware)}</p>
+                </div>
+                <div class="evidence-card__badges">
+                  {self._grade_badge(str(grade))}
+                  {self._status_badge(str(status), int(score) if isinstance(score, int) else 0)}
+                  {cert_badge}
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">{html.escape(str(score))}</dd></div>
+                <div><dt>Protocol</dt><dd>{html.escape(str(device.get("transport_protocol") or "—"))}</dd></div>
+                <div><dt>Capacity</dt><dd>{html.escape(self._format_capacity(device.get("bytes") or device.get("capacity")))}</dd></div>
+                <div><dt>POH</dt><dd class="mono">{html.escape(str(device.get("power_on_hours") if device.get("power_on_hours") is not None else "—"))}</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>{html.escape(rationale)}</p>
+              </div>
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                {self._render_deduction_list(device.get("health_deductions"))}
+              </div>
+            </article>"""
 
     @staticmethod
     def _nvme_health_log_dict(device: dict) -> dict:
@@ -912,6 +1024,7 @@ class ReportGenerator:
             ("Grade", lambda d: d.get("health_grade", "—")),
             ("Health status", lambda d: d.get("health_status", "—")),
             ("CDI certified", lambda d: "Yes" if d.get("is_certified") else "No"),
+            ("Certification rationale", lambda d: d.get("certification_rationale", "—")),
             ("Deductions", lambda d: self._format_deductions_short(d.get("health_deductions"))),
         ]
 
@@ -1028,6 +1141,7 @@ class ReportGenerator:
             body = '<p class="empty-cat">No devices in this category.</p>'
         else:
             rows_simple = "".join(self._generate_row_simple(d) for d in devices)
+            evidence = "".join(self._evidence_card_html(d) for d in devices)
             specs = self._advanced_column_specs(title, devices)
             thead_adv = "".join(
                 self._advanced_header_cell_html(ReportGenerator._spec_triple(s)[0], idx == 0)
@@ -1037,30 +1151,32 @@ class ReportGenerator:
             nvme_scripts = ""
             if self._panel_includes_nvme_logs(title, devices):
                 nvme_scripts = self._nvme_panel_json_scripts(devices)
-            body = self._simple_table_html(rows_simple) + self._advanced_table_html(thead_adv, rows_adv, nvme_scripts)
+            body = (
+                self._simple_table_html(rows_simple)
+                + f'<div class="evidence-grid simple-only">{evidence}</div>'
+                + self._advanced_table_html(thead_adv, rows_adv, nvme_scripts)
+            )
 
         return f"""
         <section class="tab-panel{active_class}" data-panel="{html.escape(slug)}" aria-labelledby="hdr-{html.escape(slug)}">
             <h2 class="cat-head" id="hdr-{html.escape(slug)}">{html.escape(title)}</h2>
-            <p class="cat-meta">{len(devices)} drive(s) · rows keyed by serial number</p>
+            <p class="cat-meta">{len(devices)} drive(s) · serial-keyed summary · per-drive evidence below</p>
             {body}
         </section>"""
 
     def _generate_row_simple(self, device: dict) -> str:
-        """Grading-focused row (serial + score + deductions summary)."""
+        """Grading-focused row (serial + score + grade badge)."""
         score = device.get("health_score", 0)
         grade = device.get("health_grade", "F")
         status = device.get("health_status", "Unknown")
-        grade_class = f"grade-{grade.lower()}"
-        status_class = "status-healthy" if score >= 75 else ("status-warning" if score >= 40 else "status-failed")
-        ded = self._format_deductions_short(device.get("health_deductions"))
+        model = str(device.get("model_number") or "—")
         return (
             "<tr>"
             f'<td class="col-serial">{html.escape(self._serial_label(device))}</td>'
-            f'<td class="score">{score}</td>'
-            f'<td class="{grade_class}">{grade}</td>'
-            f'<td class="{status_class}">{html.escape(str(status))}</td>'
-            f'<td class="cell-deductions">{html.escape(ded)}</td>'
+            f"<td>{html.escape(model)}</td>"
+            f'<td class="score mono">{score}</td>'
+            f"<td>{self._grade_badge(str(grade))}</td>"
+            f"<td>{self._status_badge(str(status), int(score) if isinstance(score, int) else 0)}</td>"
             "</tr>"
         )
 
@@ -1195,10 +1311,10 @@ class ReportGenerator:
                     <thead>
                         <tr>
                             <th>Serial</th>
+                            <th>Model</th>
                             <th>Score</th>
                             <th>Grade</th>
                             <th>Status</th>
-                            <th>Deductions</th>
                         </tr>
                     </thead>
                     <tbody>{rows_simple}</tbody>
@@ -1241,32 +1357,28 @@ class ReportGenerator:
         return f"{value:.2f} {units[unit_idx]}"
 
     def _get_report_layout_css(self) -> str:
-        """Layout and components (brand tokens from cdi_brand_palette.css)."""
-        sections = [
-            """
-        /* Page shell */
+        """Layout/components — shadcn-aligned, tokens from cdi_brand_palette.css."""
+        return """
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
           font-family: var(--font);
-          background: var(--bg);
-          color: var(--text);
+          background: var(--background);
+          color: var(--foreground);
           display: flex;
           min-height: 100vh;
           line-height: 1.5;
+          -webkit-font-smoothing: antialiased;
         }
-        .main {
-          flex: 1;
-          padding: 28px 32px 48px;
-          max-width: 1360px;
-        }
-        """,
-            """
-        /* Sidebar */
+        .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+        .main { flex: 1; padding: 1.75rem 2rem 3rem; max-width: 72rem; min-width: 0; }
+
+        /* Sidebar (shadcn Sidebar-like) */
         .sidebar {
           width: var(--sidebar-w);
           flex-shrink: 0;
-          background: var(--surface-sidebar);
-          border-right: 1px solid var(--border);
+          background: var(--sidebar);
+          color: var(--sidebar-foreground);
+          border-right: 1px solid var(--sidebar-border);
           display: flex;
           flex-direction: column;
           position: sticky;
@@ -1275,207 +1387,313 @@ class ReportGenerator:
           min-height: 100vh;
         }
         .brand {
-          padding: 20px 16px;
-          border-bottom: 1px solid var(--border);
+          padding: 1rem 1rem 0.875rem;
+          border-bottom: 1px solid var(--sidebar-border);
           display: flex;
           flex-direction: column;
-          align-items: flex-start;
-          gap: 12px;
+          gap: 0.75rem;
         }
-        .brand-logo {
-          width: 100%;
-          max-width: 200px;
-        }
-        .brand-logo-svg {
-          display: block;
-          width: 100%;
-          height: auto;
-        }
-        .brand-text strong { display: block; font-size: 16px; color: var(--accent-secondary); }
-        .brand-text span { font-size: 12px; color: var(--muted); font-weight: 500; }
+        .brand-logo { width: 100%; max-width: 11rem; }
+        .brand-logo-svg { display: block; width: 100%; height: auto; }
+        .brand-text strong { display: block; font-size: 0.9375rem; font-weight: 600; color: var(--foreground); }
+        .brand-text span { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500; }
         .nav-tabs {
           display: flex;
           flex-direction: column;
-          padding: 12px 8px;
-          gap: 4px;
+          padding: 0.5rem;
+          gap: 0.125rem;
           flex: 1;
         }
         .nav-tabs .tab-btn {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 12px;
-          padding: 10px 14px;
-          border-radius: 8px;
+          gap: 0.75rem;
+          padding: 0.5rem 0.75rem;
+          border-radius: calc(var(--radius) - 2px);
           text-decoration: none;
-          color: var(--muted);
-          font-size: 14px;
+          color: var(--sidebar-foreground);
+          font-size: 0.875rem;
           font-weight: 500;
-          border: 1px solid transparent;
-          transition: background .15s, color .15s, border-color .15s;
+          border: none;
+          background: transparent;
+          transition: background .15s, color .15s;
         }
-        .nav-tabs .tab-btn:hover {
-          background: var(--accent-soft);
-          color: var(--text);
-        }
+        .nav-tabs .tab-btn:hover { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); }
         .nav-tabs .tab-btn.active {
-          background: var(--bg-card);
-          color: var(--accent);
-          border-color: var(--border);
-          box-shadow: 0 1px 3px rgba(0,0,0,.06);
+          background: var(--sidebar-accent);
+          color: var(--sidebar-primary);
+          font-weight: 600;
         }
         .tab-title { flex: 1; min-width: 0; }
         .tab-count {
           font-family: var(--mono);
-          font-size: 12px;
-          background: var(--accent-soft);
-          color: var(--accent);
-          padding: 2px 8px;
+          font-size: 0.6875rem;
+          background: var(--muted);
+          color: var(--muted-foreground);
+          padding: 0.125rem 0.5rem;
           border-radius: 999px;
           white-space: nowrap;
         }
         .nav-tabs .tab-btn.active .tab-count {
-          background: var(--accent);
-          color: #fff;
+          background: var(--primary);
+          color: var(--primary-foreground);
         }
         .sidebar-foot {
-          padding: 16px;
-          font-size: 11px;
-          color: var(--muted);
-          border-top: 1px solid var(--border);
+          padding: 0.75rem 1rem;
+          font-size: 0.6875rem;
+          color: var(--muted-foreground);
+          border-top: 1px solid var(--sidebar-border);
         }
-        """,
-            """
-        /* Header and summary */
-        .hero {
-          margin-bottom: 24px;
-        }
+
+        /* Hero + view toggle */
+        .hero { margin-bottom: 1.5rem; }
         .hero h1 {
-          font-size: 28px;
-          font-weight: 700;
-          color: var(--accent-secondary);
-          letter-spacing: -0.02em;
+          font-size: 1.5rem;
+          font-weight: 600;
+          letter-spacing: -0.025em;
+          color: var(--foreground);
         }
-        .hero-sub { color: var(--muted); margin-top: 6px; font-size: 15px; }
-        .hero-time { font-size: 13px; color: var(--muted); margin-top: 8px; font-family: var(--mono); }
+        .hero-sub { color: var(--muted-foreground); margin-top: 0.25rem; font-size: 0.9375rem; }
+        .hero-time {
+          font-size: 0.8125rem;
+          color: var(--muted-foreground);
+          margin-top: 0.5rem;
+          font-family: var(--mono);
+        }
         .hero-top {
           display: flex;
           flex-wrap: wrap;
           align-items: flex-start;
           justify-content: space-between;
-          gap: 16px;
+          gap: 1rem;
         }
         .view-mode-bar {
-          display: flex;
+          display: inline-flex;
           align-items: center;
-          gap: 8px;
-          flex-shrink: 0;
+          gap: 0.25rem;
+          padding: 0.25rem;
+          background: var(--muted);
+          border-radius: var(--radius);
         }
         .view-mode-label {
-          font-size: 12px;
-          font-weight: 600;
-          color: var(--muted);
-          text-transform: uppercase;
-          letter-spacing: .06em;
+          font-size: 0.6875rem;
+          font-weight: 500;
+          color: var(--muted-foreground);
+          padding: 0 0.5rem;
         }
         .mode-btn {
-          padding: 8px 16px;
-          border-radius: 8px;
-          border: 1px solid var(--border);
-          background: var(--bg-card);
-          color: var(--text);
+          padding: 0.375rem 0.75rem;
+          border-radius: calc(var(--radius) - 2px);
+          border: none;
+          background: transparent;
+          color: var(--muted-foreground);
           font-family: var(--font);
-          font-size: 13px;
-          font-weight: 600;
+          font-size: 0.8125rem;
+          font-weight: 500;
           cursor: pointer;
         }
-        .mode-btn:hover {
-          background: var(--accent-soft);
-          border-color: var(--accent);
-        }
+        .mode-btn:hover { color: var(--foreground); }
         .mode-btn.active {
-          background: var(--accent);
-          color: #fff;
-          border-color: var(--accent);
+          background: var(--card);
+          color: var(--foreground);
+          box-shadow: 0 1px 2px rgba(0,0,0,.06);
         }
         body[data-view="simple"] .advanced-only { display: none !important; }
         body[data-view="advanced"] .simple-only { display: none !important; }
+
+        /* Summary cards */
         .summary-strip {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-          gap: 12px;
-          margin-bottom: 28px;
+          grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+          gap: 0.75rem;
+          margin-bottom: 1.75rem;
         }
         .s-card {
-          background: var(--bg-card);
+          background: var(--card);
+          color: var(--card-foreground);
           border: 1px solid var(--border);
           border-radius: var(--radius);
-          padding: 14px 16px;
-          box-shadow: 0 1px 3px rgba(0,0,0,.03);
+          padding: 1rem 1.125rem;
         }
-        .s-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-        .s-val { display: block; font-size: 26px; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
-        .s-ok .s-val { color: var(--accent); }
+        .s-label {
+          font-size: 0.75rem;
+          font-weight: 500;
+          color: var(--muted-foreground);
+        }
+        .s-val {
+          display: block;
+          font-size: 1.5rem;
+          font-weight: 600;
+          font-family: var(--mono);
+          margin-top: 0.25rem;
+          letter-spacing: -0.02em;
+        }
+        .s-ok .s-val { color: var(--primary); }
         .s-warn .s-val { color: var(--warn); }
-        .s-bad .s-val { color: var(--danger); }
+        .s-bad .s-val { color: var(--destructive); }
+
         .tab-panel { display: none; }
         .tab-panel.active { display: block; }
         .cat-head {
-          font-size: 20px;
-          color: var(--accent-secondary);
-          margin-bottom: 4px;
-          padding-bottom: 8px;
-          border-bottom: 2px solid var(--cdi-green-spruce);
+          font-size: 1.125rem;
+          font-weight: 600;
+          color: var(--foreground);
+          margin-bottom: 0.25rem;
         }
-        .cat-meta { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+        .cat-meta { font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 1rem; }
         .empty-cat {
-          padding: 24px;
-          background: var(--bg-card);
+          padding: 2rem;
+          background: var(--card);
           border: 1px dashed var(--border);
           border-radius: var(--radius);
-          color: var(--muted);
+          color: var(--muted-foreground);
           text-align: center;
+          font-size: 0.875rem;
         }
-        """,
-            """
-        /* Tables */
-        .table-wrap {
-          overflow-x: auto;
-          background: var(--bg-card);
+
+        /* Badges (shadcn Badge-like) */
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 999px;
+          padding: 0.125rem 0.625rem;
+          font-size: 0.75rem;
+          font-weight: 500;
+          line-height: 1.25rem;
+          border: 1px solid transparent;
+          white-space: nowrap;
+        }
+        .badge--ok { background: var(--primary-soft); color: var(--cdi-foliage-green); }
+        .badge--warn { background: var(--warn-soft); color: #a16207; }
+        .badge--bad { background: var(--danger-soft); color: var(--destructive); }
+        .badge--muted { background: var(--muted); color: var(--muted-foreground); }
+
+        /* Evidence cards (simple view) */
+        .evidence-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          margin-bottom: 1.5rem;
+        }
+        .evidence-card {
+          background: var(--card);
           border: 1px solid var(--border);
           border-radius: var(--radius);
-          margin-bottom: 24px;
-          box-shadow: 0 1px 4px rgba(0,0,0,.04);
+          padding: 1.25rem;
+        }
+        .evidence-card__head {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 0.75rem;
+          margin-bottom: 1rem;
+        }
+        .evidence-card__title {
+          font-size: 1rem;
+          font-weight: 600;
+          font-family: var(--mono);
+          letter-spacing: -0.01em;
+        }
+        .evidence-card__sub {
+          font-size: 0.8125rem;
+          color: var(--muted-foreground);
+          margin-top: 0.125rem;
+        }
+        .evidence-card__badges { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+        .evidence-metrics {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+          gap: 0.75rem;
+          margin-bottom: 1rem;
+          padding: 0.875rem;
+          background: var(--muted);
+          border-radius: calc(var(--radius) - 2px);
+        }
+        .evidence-metrics dt {
+          font-size: 0.6875rem;
+          font-weight: 500;
+          color: var(--muted-foreground);
+        }
+        .evidence-metrics dd { font-size: 0.875rem; font-weight: 500; margin-top: 0.125rem; }
+        .evidence-rationale, .evidence-deductions { margin-top: 1rem; }
+        .evidence-rationale h4, .evidence-deductions h4 {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--muted-foreground);
+          margin-bottom: 0.375rem;
+        }
+        .evidence-rationale p { font-size: 0.875rem; line-height: 1.55; }
+        .evidence-empty { font-size: 0.8125rem; color: var(--muted-foreground); }
+        .deduction-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+        .deduction {
+          display: flex;
+          gap: 0.625rem;
+          align-items: flex-start;
+          padding: 0.625rem 0.75rem;
+          border-radius: calc(var(--radius) - 2px);
+          border: 1px solid var(--border);
+          background: var(--background);
+          font-size: 0.8125rem;
+        }
+        .deduction-sev {
+          flex-shrink: 0;
+          font-size: 0.6875rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          padding: 0.125rem 0.375rem;
+          border-radius: 0.25rem;
+        }
+        .deduction--critical .deduction-sev { background: var(--danger-soft); color: var(--destructive); }
+        .deduction--warning .deduction-sev { background: var(--warn-soft); color: #a16207; }
+        .deduction--info .deduction-sev { background: var(--muted); color: var(--muted-foreground); }
+        .deduction-body { min-width: 0; }
+        .deduction-meta {
+          display: block;
+          margin-top: 0.25rem;
+          font-family: var(--mono);
+          font-size: 0.6875rem;
+          color: var(--muted-foreground);
+        }
+
+        /* Tables (shadcn Table-like) */
+        .table-wrap {
+          overflow-x: auto;
+          background: var(--card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          margin-bottom: 1.5rem;
         }
         .device-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 13px;
-          font-family: var(--mono);
+          font-size: 0.875rem;
         }
         .device-table th,
         .device-table td {
-          padding: 10px 12px;
+          padding: 0.75rem 1rem;
           text-align: left;
           border-bottom: 1px solid var(--border);
+          height: 3rem;
+          vertical-align: middle;
         }
         .device-table th {
-          background: var(--accent-soft);
-          color: var(--accent);
-          font-weight: 600;
+          background: transparent;
+          color: var(--muted-foreground);
+          font-weight: 500;
           font-family: var(--font);
-          font-size: 12px;
-          text-transform: uppercase;
-          letter-spacing: .04em;
+          font-size: 0.75rem;
+          text-transform: none;
+          letter-spacing: 0;
+          height: 2.75rem;
         }
-        .device-table tbody tr:nth-child(even) { background: rgba(19, 156, 122, 0.035); }
-        .device-table tbody tr:hover { background: rgba(92, 146, 121, 0.12); }
+        .device-table tbody tr:hover { background: color-mix(in srgb, var(--muted) 50%, transparent); }
         .device-table tbody tr:last-child td { border-bottom: 0; }
-        .device-table .score { font-weight: 700; }
-        .device-table--wide {
-          font-size: 12px;
-          min-width: max-content;
-        }
+        .device-table .score { font-weight: 600; font-family: var(--mono); }
+        .device-table--simple td { font-size: 0.875rem; }
+        .device-table--wide { font-size: 0.75rem; font-family: var(--mono); min-width: max-content; }
         .device-table--wide th {
           white-space: normal;
           min-width: 8.5rem;
@@ -1485,14 +1703,16 @@ class ReportGenerator:
           position: sticky;
           top: 0;
           z-index: 2;
+          background: var(--card);
         }
-        .device-table--wide .col-head--key {
-          min-width: 9rem;
-        }
+        .device-table--wide .col-head--key { min-width: 9rem; }
         .device-table--wide .cell-stat {
           max-width: 18rem;
           min-width: 7rem;
           vertical-align: top;
+          height: auto;
+          padding-top: 0.625rem;
+          padding-bottom: 0.625rem;
         }
         .device-table--wide .cell-stat__clamp {
           display: -webkit-box;
@@ -1514,71 +1734,49 @@ class ReportGenerator:
           position: sticky;
           left: 0;
           z-index: 1;
-          background: var(--bg-card);
-          box-shadow: 2px 0 4px rgba(0,0,0,.06);
+          background: var(--card);
+          box-shadow: 2px 0 4px rgba(0,0,0,.04);
         }
-        .device-table--wide thead th:first-child {
-          z-index: 3;
-          background: var(--accent-soft);
-        }
-        .cell-stat--is-missing {
-          color: var(--muted);
-          font-style: italic;
-        }
-        .cell-stat--is-bool {
-          font-family: var(--font);
-          font-weight: 600;
-        }
-        .cell-stat--is-multiline {
-          line-height: 1.55;
-        }
+        .device-table--wide thead th:first-child { z-index: 3; }
+        .cell-stat--is-missing { color: var(--muted-foreground); font-style: italic; }
+        .cell-stat--is-bool { font-family: var(--font); font-weight: 600; }
+        .cell-stat--is-multiline { line-height: 1.55; }
         .cell-deductions {
           max-width: 24rem;
-          font-size: 12px;
+          font-size: 0.75rem;
           word-break: break-word;
           vertical-align: top;
         }
-        .col-serial { font-weight: 600; }
-        .grade-a { color: var(--cdi-foliage-green); font-weight: 700; }
-        .grade-b { color: var(--cdi-green-spruce); font-weight: 700; }
-        .grade-c { color: var(--warn); font-weight: 700; }
-        .grade-d { color: #c65f00; font-weight: 700; }
-        .grade-f { color: var(--danger); font-weight: 700; }
-        .status-healthy { color: var(--cdi-simply-green); }
+        .col-serial { font-weight: 600; font-family: var(--mono); }
+        .grade-a, .grade-b { color: var(--cdi-foliage-green); font-weight: 600; }
+        .grade-c { color: var(--warn); font-weight: 600; }
+        .grade-d { color: #c65f00; font-weight: 600; }
+        .grade-f { color: var(--destructive); font-weight: 600; }
+        .status-healthy { color: var(--primary); }
         .status-warning { color: var(--warn); }
-        .status-failed { color: var(--danger); }
+        .status-failed { color: var(--destructive); }
+
         .nvme-json-blobs { display: none !important; }
-        .nvme-log-btns {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          align-items: flex-start;
-        }
+        .nvme-log-btns { display: flex; flex-direction: column; gap: 0.375rem; align-items: flex-start; }
         .btn-json-log {
-          padding: 6px 10px;
-          border-radius: 6px;
+          padding: 0.375rem 0.625rem;
+          border-radius: calc(var(--radius) - 2px);
           border: 1px solid var(--border);
-          background: var(--bg-card);
-          color: var(--accent);
-          font-size: 11px;
-          font-weight: 600;
+          background: var(--card);
+          color: var(--foreground);
+          font-size: 0.6875rem;
+          font-weight: 500;
           cursor: pointer;
           font-family: var(--font);
         }
-        .btn-json-log:hover {
-          background: var(--accent-soft);
-          border-color: var(--accent);
-        }
-        .cell-nvme-log-btns {
-          max-width: 11rem;
-          white-space: normal;
-          vertical-align: top;
-        }
+        .btn-json-log:hover { background: var(--muted); }
+        .cell-nvme-log-btns { max-width: 11rem; white-space: normal; vertical-align: top; }
+
         .cdi-json-modal[hidden] { display: none !important; }
         .cdi-json-modal:not([hidden]) {
           position: fixed;
           inset: 0;
-          z-index: 9999;
+          z-index: 50;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1586,7 +1784,7 @@ class ReportGenerator:
         .cdi-json-modal__backdrop {
           position: absolute;
           inset: 0;
-          background: rgba(26, 36, 32, 0.45);
+          background: rgba(28, 25, 23, 0.5);
         }
         .cdi-json-modal__dialog {
           position: relative;
@@ -1594,10 +1792,10 @@ class ReportGenerator:
           max-width: min(920px, 92vw);
           max-height: 85vh;
           width: 100%;
-          background: var(--bg-card);
+          background: var(--card);
           border-radius: var(--radius);
           border: 1px solid var(--border);
-          box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+          box-shadow: 0 16px 48px rgba(0,0,0,0.18);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -1606,59 +1804,49 @@ class ReportGenerator:
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 12px;
-          padding: 12px 16px;
+          gap: 0.75rem;
+          padding: 0.75rem 1rem;
           border-bottom: 1px solid var(--border);
-          background: var(--accent-soft);
         }
-        .cdi-json-modal__title {
-          font-size: 15px;
-          margin: 0;
-          color: var(--accent-secondary);
-          font-family: var(--font);
-        }
+        .cdi-json-modal__title { font-size: 0.9375rem; margin: 0; font-weight: 600; }
         .cdi-json-modal__close {
           border: none;
           background: transparent;
-          font-size: 22px;
+          font-size: 1.25rem;
           line-height: 1;
           cursor: pointer;
-          color: var(--muted);
-          padding: 4px 8px;
-          border-radius: 6px;
+          color: var(--muted-foreground);
+          padding: 0.25rem 0.5rem;
+          border-radius: calc(var(--radius) - 2px);
         }
-        .cdi-json-modal__close:hover {
-          background: var(--accent-soft-strong);
-          color: var(--text);
-        }
+        .cdi-json-modal__close:hover { background: var(--muted); color: var(--foreground); }
         .cdi-json-modal__pre {
           margin: 0;
-          padding: 16px;
+          padding: 1rem;
           overflow: auto;
           flex: 1;
           font-family: var(--mono);
-          font-size: 12px;
+          font-size: 0.75rem;
           line-height: 1.45;
           white-space: pre-wrap;
           word-break: break-word;
-          color: var(--text);
         }
-        """,
-            """
-        /* Footer and print */
+
         .page-foot {
-          margin-top: 40px;
-          padding-top: 20px;
+          margin-top: 2.5rem;
+          padding-top: 1.25rem;
           border-top: 1px solid var(--border);
           text-align: center;
-          font-size: 12px;
-          color: var(--muted);
+          font-size: 0.75rem;
+          color: var(--muted-foreground);
         }
         @media print {
           .sidebar { display: none; }
-          .main { max-width: 100%; padding: 16px; }
+          .main { max-width: 100%; padding: 1rem; }
           .tab-panel { display: block !important; page-break-before: always; }
           .tab-panel:first-of-type { page-break-before: auto; }
+          .evidence-card { break-inside: avoid; }
+          .view-mode-bar { display: none; }
         }
         @media (max-width: 900px) {
           body { flex-direction: column; }
@@ -1671,7 +1859,6 @@ class ReportGenerator:
             align-items: center;
           }
           .nav-tabs { flex-direction: row; flex-wrap: wrap; width: 100%; }
+          .main { padding: 1.25rem; }
         }
-        """,
-        ]
-        return "\n".join(sections)
+        """

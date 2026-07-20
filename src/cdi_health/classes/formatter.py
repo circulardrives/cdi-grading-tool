@@ -32,6 +32,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from cdi_health.classes.colors import Colors, Symbols
+from cdi_health.classes.explain import attach_explanation
 from cdi_health.classes.scoring import HealthScoreCalculator, ScoreDeduction
 
 
@@ -439,14 +440,8 @@ class JSONFormatter(BaseFormatter):
         return json.dumps(devices, indent=self.indent, default=str)
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
-        """Add health scores to devices."""
-        enriched = []
-        for device in devices:
-            d = device.copy()
-            score = self.calculator.calculate(device)
-            d.update(score.to_dict())
-            enriched.append(d)
-        return enriched
+        """Add health scores and grading explainability fields to devices."""
+        return [attach_explanation(device, self.calculator.calculate(device)) for device in devices]
 
 
 class CSVFormatter(BaseFormatter):
@@ -535,14 +530,8 @@ class YAMLFormatter(BaseFormatter):
             return "Error: PyYAML not installed. Install with: pip install pyyaml"
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
-        """Add health scores to devices."""
-        enriched = []
-        for device in devices:
-            d = device.copy()
-            score = self.calculator.calculate(device)
-            d.update(score.to_dict())
-            enriched.append(d)
-        return enriched
+        """Add health scores and grading explainability fields to devices."""
+        return [attach_explanation(device, self.calculator.calculate(device)) for device in devices]
 
 
 def get_formatter(format_type: str, **kwargs) -> BaseFormatter:

@@ -6,13 +6,14 @@
 - Backend binds to `127.0.0.1` by default and is not intended for public hosting.
 - Backend process runs as root for real device access (`smartctl`, `nvme`, `sg3-utils`).
 - Static token auth via `CDI_HEALTH_API_TOKEN` (or `--api-token`) is **required** whenever `--host` is not loopback; the process fails fast at startup otherwise.
-- Host registry, scan snapshots, and generated reports persist under a configurable data directory (default: `./.cdi-health`, env `CDI_HEALTH_DATA_DIR`, or `--data-dir`). Reports are constrained to `{data_dir}/reports/`.
+- Host registry, scan snapshots, and generated reports persist under a configurable data directory (default: `./.cdi-health`, env `CDI_HEALTH_DATA_DIR`, or `--data-dir`). Reports are constrained to `{data_dir}/reports/`. Scan history is stored as one JSON file per scan under `{data_dir}/scan-history/`.
 
 ## Components
 
 - `cdi_health.api.app`: FastAPI app and HTTP routes.
 - `cdi_health.api.services`: Scan, self-test, and report service layer.
 - `cdi_health.api.machines`: JSON-backed fleet host registry and scan association.
+- `cdi_health.api.history`: Append-only scan history (one JSON snapshot per successful scan).
 - `cdi_health.api.discovery`: LAN subnet scanning and CDI Health API probing.
 - `cdi_health.api.jobs`: In-memory async job tracking for long-running actions.
 - `cdi_health.api.security`: Root enforcement, bind-host token checks, and token validation.
@@ -20,8 +21,12 @@
 ## HTTP Endpoints
 
 - `GET /api/v1/health` — always returns `{status, version}`; full diagnostics when auth is disabled, or with a valid token / loopback client when auth is enabled
-- `POST /api/v1/scan` — optional `machine_id` associates the scan with a registered host
-- `GET /api/v1/devices` — optional `machine_id` returns cached scan for that host; `refresh=true` rescans
+- `POST /api/v1/scan` — optional `machine_id` associates the scan with a registered host; successful scans are appended to scan history
+- `GET /api/v1/devices` — optional `machine_id` returns cached scan for that host; `refresh=true` rescans (and appends history)
+- `GET /api/v1/history` — list persisted scans (`limit`/`offset`; optional `machine_id` filter); newest first
+- `GET /api/v1/history/{id}` — full scan snapshot (devices + summary)
+- `DELETE /api/v1/history/{id}` — delete one persisted scan (`{"deleted": true, "id": "..."}`)
+- `DELETE /api/v1/history` — clear all persisted scans (`{"deleted": <count>}`)
 - `GET /api/v1/machines` — list registered grading hosts (`limit`/`offset` pagination)
 - `POST /api/v1/machines` — register a host
 - `GET /api/v1/machines/{id}` — host detail
@@ -84,6 +89,12 @@ Each machine (host) record includes:
 **v1 behavior:** scans always execute on the local API process. The `address` field and reachability status prepare for remote agents; associating a scan with `machine_id` stores per-host snapshots for dashboard context.
 
 Persistence file: `{data_dir}/machines.json` with `machines` and `latest_scans` sections.
+
+## Scan History
+
+Successful scans (via `POST /api/v1/scan` or a refreshing `GET /api/v1/devices`) are also written under `{data_dir}/scan-history/` as one JSON file per scan (`YYYYMMDD-HHMMSS-<8hex>.json`). Each file stores the full device snapshot plus summary counts and grade tallies. The dashboard **History** page lists these entries and opens a read-only drive table for any past scan.
+
+Per-drive longitudinal timelines (metric deltas across scans for one serial) are deferred to a follow-up.
 
 ## LAN Discovery
 

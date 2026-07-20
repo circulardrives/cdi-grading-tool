@@ -504,6 +504,99 @@ def test_api_scan_unknown_machine_returns_404(api_client: TestClient) -> None:
     assert response.status_code == 404
 
 
+def test_api_scan_history_persists_and_lists(api_client: TestClient) -> None:
+    empty = api_client.get("/api/v1/history")
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    fake_scan = {
+        "scanned_at": "2026-07-19T15:00:00+00:00",
+        "summary": {"total": 2, "healthy": 1, "warning": 1, "failed": 0},
+        "devices": [
+            {"serial_number": "AAA", "health_grade": "A", "health_score": 95},
+            {"serial_number": "BBB", "health_grade": "C", "health_score": 55},
+        ],
+    }
+
+    from unittest.mock import patch
+
+    with patch("cdi_health.api.app.run_scan", return_value=fake_scan):
+        scan = api_client.post("/api/v1/scan", json={})
+    assert scan.status_code == 200
+    scan_body = scan.json()
+    assert scan_body["summary"]["total"] == 2
+
+    listed = api_client.get("/api/v1/history")
+    assert listed.status_code == 200
+    entries = listed.json()
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["device_count"] == 2
+    assert entry["summary"]["total"] == 2
+    assert entry["grades"] == {"A": 1, "C": 1}
+    assert "devices" not in entry
+
+    detail = api_client.get(f"/api/v1/history/{entry['id']}")
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    assert detail_body["id"] == entry["id"]
+    assert len(detail_body["devices"]) == 2
+
+    history_dir = Path(os.environ["CDI_HEALTH_DATA_DIR"]) / "scan-history"
+    assert history_dir.is_dir()
+    assert any(history_dir.glob("*.json"))
+
+    deleted = api_client.delete(f"/api/v1/history/{entry['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True, "id": entry["id"]}
+    assert api_client.get(f"/api/v1/history/{entry['id']}").status_code == 404
+    assert api_client.get("/api/v1/history").json() == []
+
+
+def test_api_history_clear_all(api_client: TestClient) -> None:
+    fake_scan = {
+        "scanned_at": "2026-07-19T16:00:00+00:00",
+        "summary": {"total": 1, "healthy": 1, "warning": 0, "failed": 0},
+        "devices": [{"serial_number": "CCC", "health_grade": "A", "health_score": 100}],
+    }
+    from unittest.mock import patch
+
+    with patch("cdi_health.api.app.run_scan", return_value=fake_scan):
+        assert api_client.post("/api/v1/scan", json={}).status_code == 200
+        assert api_client.post("/api/v1/scan", json={}).status_code == 200
+
+    listed = api_client.get("/api/v1/history")
+    assert listed.status_code == 200
+    assert len(listed.json()) == 2
+
+    cleared = api_client.delete("/api/v1/history")
+    assert cleared.status_code == 200
+    assert cleared.json()["deleted"] == 2
+    assert api_client.get("/api/v1/history").json() == []
+
+
+def test_api_history_missing_and_invalid_ids(api_client: TestClient) -> None:
+    missing = api_client.get("/api/v1/history/20260101-000000-deadbeef")
+    assert missing.status_code == 404
+
+    invalid = api_client.get("/api/v1/history/../etc/passwd")
+    assert invalid.status_code == 404
+
+    delete_missing = api_client.delete("/api/v1/history/20260101-000000-deadbeef")
+    assert delete_missing.status_code == 404
+
+
+def test_api_history_requires_token(token_client: TestClient) -> None:
+    denied = token_client.get("/api/v1/history")
+    assert denied.status_code == 401
+
+    allowed = token_client.get(
+        "/api/v1/history",
+        headers={"X-API-Token": "test-token"},
+    )
+    assert allowed.status_code == 200
+
+
 def test_api_machines_require_token(token_client: TestClient) -> None:
     denied = token_client.get("/api/v1/machines")
     assert denied.status_code == 401
