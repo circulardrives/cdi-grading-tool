@@ -508,9 +508,7 @@ class ReportGenerator:
                 detail_bits.append(f"threshold={item['threshold']}")
             meta = f" (−{html.escape(str(points))})" if points is not None else ""
             detail = (
-                f'<span class="deduction-meta">{html.escape(" · ".join(detail_bits))}</span>'
-                if detail_bits
-                else ""
+                f'<span class="deduction-meta">{html.escape(" · ".join(detail_bits))}</span>' if detail_bits else ""
             )
             lis.append(
                 f'<li class="deduction deduction--{html.escape(sev)}">'

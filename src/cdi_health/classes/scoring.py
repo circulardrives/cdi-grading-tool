@@ -626,9 +626,7 @@ class HealthScoreCalculator:
             return []
 
         labels = [name for bit, name in self._NVME_EGCWS_BITS.items() if egcws & (1 << bit)]
-        reason = "NVMe endurance group critical warning: " + (
-            ", ".join(labels) if labels else f"0x{egcws:02x}"
-        )
+        reason = "NVMe endurance group critical warning: " + (", ".join(labels) if labels else f"0x{egcws:02x}")
         return [
             ScoreDeduction(
                 reason=reason,
@@ -806,9 +804,7 @@ class HealthScoreCalculator:
             )
 
         # Thermal throttling (SMART-12) — warning only
-        throttle_events = ocp_get(
-            ocp, "Number of Thermal throttling events", "number_of_thermal_throttling_events"
-        )
+        throttle_events = ocp_get(ocp, "Number of Thermal throttling events", "number_of_thermal_throttling_events")
         throttle_status = ocp_get(ocp, "Current throttling status", "current_throttling_status")
         if throttle_status is not None and throttle_status >= 2:
             deductions.append(
@@ -821,10 +817,7 @@ class HealthScoreCalculator:
                     threshold=2,
                 )
             )
-        elif (
-            throttle_events is not None
-            and throttle_events >= self.config.ocp_thermal_throttle_events_warning
-        ):
+        elif throttle_events is not None and throttle_events >= self.config.ocp_thermal_throttle_events_warning:
             deductions.append(
                 ScoreDeduction(
                     reason="OCP thermal throttling events elevated",

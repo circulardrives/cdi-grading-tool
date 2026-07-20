@@ -86,10 +86,7 @@ def certification_blockers(score: HealthScore) -> list[str]:
 def certification_rationale(score: HealthScore) -> str:
     """Short explanation of why the drive is or is not CDI-certified."""
     if score.is_certified:
-        return (
-            f"Certified because grade {score.grade} ({score.status}) "
-            "and no critical deductions."
-        )
+        return f"Certified because grade {score.grade} ({score.status}) and no critical deductions."
 
     blockers = certification_blockers(score)
     if blockers:
@@ -182,9 +179,7 @@ def format_device_explanation(device: dict[str, Any], score: HealthScore | None 
         )
         lines.append(Colors.dim(header))
         for deduction in score.deductions:
-            sev_colored = _color_severity(deduction.severity) + (
-                " " * max(0, 10 - len(deduction.severity))
-            )
+            sev_colored = _color_severity(deduction.severity) + (" " * max(0, 10 - len(deduction.severity)))
             lines.append(
                 f"    {sev_colored} {_fmt_cell(f'-{deduction.points}', 7)} "
                 f"{_fmt_cell(deduction.field, 24)} {_fmt_cell(deduction.value, 10)} "

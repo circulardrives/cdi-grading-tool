@@ -217,11 +217,7 @@ class TestSelfTestFormatter:
         assert "Test Status" in output
 
         ansi = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-        data_rows = [
-            line
-            for line in output.splitlines()
-            if line.startswith("│ /dev/nvme")
-        ]
+        data_rows = [line for line in output.splitlines() if line.startswith("│ /dev/nvme")]
         assert len(data_rows) == 2
 
         # All data rows and the header row must share the same display width

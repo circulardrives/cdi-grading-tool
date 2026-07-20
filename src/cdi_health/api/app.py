@@ -181,9 +181,7 @@ def create_app() -> FastAPI:
         with runtime.lock:
             runtime.latest_scan = result
             if request.machine_id:
-                machine = runtime.machine_store.record_scan(
-                    request.machine_id, result, success=True
-                )
+                machine = runtime.machine_store.record_scan(request.machine_id, result, success=True)
                 if machine is None:
                     raise HTTPException(status_code=404, detail="Machine not found")
         runtime.history_store.record_scan(

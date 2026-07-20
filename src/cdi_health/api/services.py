@@ -523,9 +523,14 @@ def get_selftest_status(device: str | None = None) -> dict[str, Any]:
             "aborted": False,
             "last_test_date": None,
             "error": None,
+            "latest_result": None,
+            "recent_results": [],
+            "logs_message": None,
         }
 
         if not supported or handler is None:
+            if not supported:
+                status_entry["logs_message"] = "Device does not support NVMe self-test."
             statuses.append(status_entry)
             continue
 

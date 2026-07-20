@@ -519,8 +519,7 @@ class TestHealthScoreCalculator:
         result = calculator.calculate(device)
         assert result.grade == "F"
         assert any(
-            d.field == "endurance_group_critical_warning_summary" and "Read-Only" in d.reason
-            for d in result.deductions
+            d.field == "endurance_group_critical_warning_summary" and "Read-Only" in d.reason for d in result.deductions
         )
 
     def test_nvme_spare_fallback_uses_ten_not_ninety_seven(self) -> None:
