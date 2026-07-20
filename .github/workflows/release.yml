@@ -232,8 +232,9 @@ jobs:
       - name: Verify API image (CI)
         if: steps.version.outputs.push != 'true'
         run: |
-          docker run --rm ghcr.io/circulardrives/cdi-health-api:ci \
-            python -c "import cdi_health; import fastapi; print('ok')"
+          # Bypass api-entrypoint (LAN token check) — only smoke-import the package.
+          docker run --rm --entrypoint python ghcr.io/circulardrives/cdi-health-api:ci \
+            -c "import cdi_health; import fastapi; print('ok')"
 
       - name: Set GHCR package visibility to public
         if: steps.version.outputs.push == 'true'

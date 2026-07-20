@@ -71,6 +71,30 @@ def test_generate_html_includes_nvme_modal_and_log_buttons(tmp_path: Path, mock_
     assert "OCP C0h" in html_text
 
 
+def test_generate_html_shadcn_style_evidence_cards(tmp_path: Path, mock_data_dir: Path) -> None:
+    """Simple HTML view uses dashboard-aligned fonts, badges, and per-drive evidence cards."""
+    devices = MockDevices(
+        mock_data_path=str(mock_data_dir),
+        ignore_ata=True,
+        ignore_nvme=False,
+        ignore_scsi=True,
+    ).devices
+    assert devices
+
+    out = tmp_path / "report-shadcn.html"
+    ReportGenerator().generate_html(devices, str(out))
+    html_text = out.read_text(encoding="utf-8")
+
+    assert "Source Sans 3" in html_text
+    assert "JetBrains Mono" in html_text
+    assert "--background" in html_text
+    assert "evidence-card" in html_text
+    assert "evidence-grid" in html_text
+    assert "Certification rationale" in html_text
+    assert "badge--" in html_text
+    assert "device-table--simple" in html_text
+
+
 def test_nvme_scalar_keys_skip_nested_log_fields() -> None:
     """Union of NVMe error log keys excludes list/dict values (those go to JSON viewers)."""
     devices = [

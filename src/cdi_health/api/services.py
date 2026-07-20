@@ -35,6 +35,7 @@ from cdi_health.api.schemas import (
     SelfTestStartRequest,
 )
 from cdi_health.classes.config import configure_thresholds
+from cdi_health.classes.explain import attach_explanation
 from cdi_health.classes.nvme_selftest import NVMeSelfTest, validate_nvme_device_path
 from cdi_health.classes.reporter import ReportGenerator
 from cdi_health.classes.scoring import HealthScoreCalculator
@@ -236,13 +237,12 @@ def apply_scan_defaults(request: ScanRequest) -> ScanRequest:
 
 
 def _enrich_devices_with_scores(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Attach health scoring fields to device dictionaries."""
+    """Attach health scoring and grading explainability fields to device dictionaries."""
     calculator = HealthScoreCalculator()
     enriched: list[dict[str, Any]] = []
     for device in devices:
         score = calculator.calculate(device)
-        payload = dict(device)
-        payload.update(score.to_dict())
+        payload = attach_explanation(device, score)
         payload["report_category"] = ReportGenerator._device_report_category(payload)
         enriched.append(_serialize(payload))
     return enriched
@@ -523,9 +523,14 @@ def get_selftest_status(device: str | None = None) -> dict[str, Any]:
             "aborted": False,
             "last_test_date": None,
             "error": None,
+            "latest_result": None,
+            "recent_results": [],
+            "logs_message": None,
         }
 
         if not supported or handler is None:
+            if not supported:
+                status_entry["logs_message"] = "Device does not support NVMe self-test."
             statuses.append(status_entry)
             continue
 

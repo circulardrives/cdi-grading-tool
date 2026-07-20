@@ -14,6 +14,9 @@ const DiscoverPage = lazy(() =>
 const DriveHealthPage = lazy(() =>
   import("@/pages/drive-health-page").then((m) => ({ default: m.DriveHealthPage }))
 )
+const HistoryPage = lazy(() =>
+  import("@/pages/history-page").then((m) => ({ default: m.HistoryPage }))
+)
 const HostsPage = lazy(() =>
   import("@/pages/hosts-page").then((m) => ({ default: m.HostsPage }))
 )
@@ -33,6 +36,7 @@ const pageTitles: Record<string, string> = {
   "/discover": "Discover",
   "/scan": "Scan",
   "/drives": "Drive Health",
+  "/history": "Scan History",
   "/reports": "Health Reports",
   "/self-test": "NVMe Self-Test",
 }
@@ -47,7 +51,9 @@ function PageFallback() {
 
 function LayoutShell() {
   const location = useLocation()
-  const title = pageTitles[location.pathname] ?? "CDI Health"
+  const title = location.pathname.startsWith("/history")
+    ? "Scan History"
+    : (pageTitles[location.pathname] ?? "CDI Health")
 
   return <AppLayout title={title} />
 }
@@ -63,6 +69,8 @@ export function App() {
             <Route path="discover" element={<DiscoverPage />} />
             <Route path="scan" element={<ScanPage />} />
             <Route path="drives" element={<DriveHealthPage />} />
+            <Route path="history" element={<HistoryPage />} />
+            <Route path="history/:scanId" element={<HistoryPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="self-test" element={<SelfTestPage />} />
             <Route path="machines" element={<Navigate to="/hosts" replace />} />

@@ -3,7 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   getDevices,
   getHealth,
+  getHistory,
   getSelfTestStatus,
+  listHistory,
   listJobs,
   listMachines,
 } from "@/lib/api"
@@ -28,6 +30,21 @@ export function useMachinesQuery() {
   return useQuery({
     queryKey: queryKeys.machines,
     queryFn: listMachines,
+  })
+}
+
+export function useHistoryQuery(machineId?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.history(machineId),
+    queryFn: () => listHistory(machineId),
+  })
+}
+
+export function useHistoryDetailQuery(scanId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.historyDetail(scanId),
+    queryFn: () => getHistory(scanId),
+    enabled: Boolean(scanId) && enabled,
   })
 }
 
@@ -58,6 +75,8 @@ export function useInvalidateCdiQueries() {
       }),
     invalidateMachines: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.machines }),
+    invalidateHistory: () =>
+      queryClient.invalidateQueries({ queryKey: ["history"] }),
     invalidateHealth: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.health }),
     invalidateJobs: () =>
@@ -70,6 +89,7 @@ export function useInvalidateCdiQueries() {
           queryKey: machineId ? queryKeys.devices(machineId) : ["devices"],
         }),
         queryClient.invalidateQueries({ queryKey: queryKeys.machines }),
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.health }),
       ]),
   }

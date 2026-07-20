@@ -25,9 +25,13 @@ Formats self-test execution results in a table similar to scan output.
 
 from __future__ import annotations
 
+import re
 import shutil
+import unicodedata
 
 from cdi_health.classes.colors import Colors, Symbols
+
+_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 class SelfTestFormatter:
@@ -162,32 +166,30 @@ class SelfTestFormatter:
         # Table rows
         rows = []
         for result in results:
-            device = result.get("device", "Unknown")
-            model = result.get("model", "Unknown")
-            if len(model) > model_width:
-                model = model[: model_width - 3] + "..."
-            serial = result.get("serial", "Unknown")
-            if len(serial) > serial_width:
-                serial = serial[: serial_width - 3] + "..."
+            device = self._fit(result.get("device", "Unknown"), device_width)
+            model = self._fit(result.get("model", "Unknown"), model_width)
+            serial = self._fit(result.get("serial", "Unknown"), serial_width)
             supported = "✓ Yes" if result.get("supported", False) else "✗ No"
-            test_status = self._format_test_status(result)
-            # Strip ANSI codes for width calculation
-            test_status_plain = self._strip_ansi(str(test_status))
-            if len(test_status_plain) > status_width:
-                test_status = test_status[: status_width - 3] + "..."
-            test_type = result.get("test_type", "-") or "-"
-            if len(test_type) > type_width:
-                test_type = test_type[: type_width - 3] + "..."
-            test_result = self._format_test_result(result)
-            test_result_plain = self._strip_ansi(str(test_result))
-            if len(test_result_plain) > result_width:
-                test_result = test_result[: result_width - 3] + "..."
-            last_test = self._format_last_test(result)
-            if len(str(last_test)) > last_test_width:
-                last_test = str(last_test)[: last_test_width - 3] + "..."
+            test_status = self._fit(self._format_test_status(result), status_width)
+            test_type = self._fit(self._normalize_test_type(result.get("test_type")), type_width)
+            test_result = self._fit(self._format_test_result(result), result_width)
+            last_test = self._fit(self._format_last_test(result), last_test_width)
 
             rows.append(
-                f"│ {device:<{device_width}} │ {model:<{model_width}} │ {serial:<{serial_width}} │ {supported:<{support_width}} │ {test_status:<{status_width}} │ {test_type:<{type_width}} │ {test_result:<{result_width}} │ {last_test:<{last_test_width}} │"
+                "│ "
+                + " │ ".join(
+                    [
+                        self._align_text(device, device_width),
+                        self._align_text(model, model_width),
+                        self._align_text(serial, serial_width),
+                        self._align_text(supported, support_width),
+                        self._align_text(test_status, status_width),
+                        self._align_text(test_type, type_width),
+                        self._align_text(test_result, result_width),
+                        self._align_text(last_test, last_test_width),
+                    ]
+                )
+                + " │"
             )
 
         # Table footer
@@ -230,36 +232,31 @@ class SelfTestFormatter:
         # Table rows
         rows = []
         for result in results:
-            device = result.get("device", "Unknown")
-            model = result.get("model", "Unknown")
-            if len(model) > model_width:
-                model = model[: model_width - 3] + "..."
-
-            serial = result.get("serial", "Unknown")
-            if has_serial_column and len(serial) > serial_width:
-                serial = serial[: serial_width - 3] + "..."
+            device = self._fit(result.get("device", "Unknown"), device_width)
+            model = self._fit(result.get("model", "Unknown"), model_width)
+            serial = self._fit(result.get("serial", "Unknown"), serial_width)
 
             # Combine support and test status
             supported = "✓" if result.get("supported", False) else "✗"
-            test_status = self._format_test_status(result)
-            status_text = f"{supported} {test_status}"
-            status_plain = self._strip_ansi(status_text)
-            if len(status_plain) > status_width:
-                status_text = status_text[: status_width - 3] + "..."
-
-            test_result = self._format_test_result(result)
-            result_plain = self._strip_ansi(str(test_result))
-            if len(result_plain) > result_width:
-                test_result = test_result[: result_width - 3] + "..."
+            status_text = self._fit(f"{supported} {self._format_test_status(result)}", status_width)
+            test_result = self._fit(self._format_test_result(result), result_width)
 
             if has_serial_column:
-                rows.append(
-                    f"│ {device:<{device_width}} │ {model:<{model_width}} │ {serial:<{serial_width}} │ {status_text:<{status_width}} │ {test_result:<{result_width}} │"
-                )
+                cells = [
+                    self._align_text(device, device_width),
+                    self._align_text(model, model_width),
+                    self._align_text(serial, serial_width),
+                    self._align_text(status_text, status_width),
+                    self._align_text(test_result, result_width),
+                ]
             else:
-                rows.append(
-                    f"│ {device:<{device_width}} │ {model:<{model_width}} │ {status_text:<{status_width}} │ {test_result:<{result_width}} │"
-                )
+                cells = [
+                    self._align_text(device, device_width),
+                    self._align_text(model, model_width),
+                    self._align_text(status_text, status_width),
+                    self._align_text(test_result, result_width),
+                ]
+            rows.append("│ " + " │ ".join(cells) + " │")
 
         # Table footer
         if has_serial_column:
@@ -278,10 +275,86 @@ class SelfTestFormatter:
 
     def _strip_ansi(self, text: str) -> str:
         """Strip ANSI color codes from text for width calculation."""
-        import re
+        return _ANSI_ESCAPE.sub("", text)
 
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-        return ansi_escape.sub("", text)
+    def _display_width(self, text: str) -> int:
+        """
+        Terminal display width of text (ANSI-stripped).
+
+        Uses East Asian Width so wide glyphs (and many emoji) pad correctly;
+        ambiguous-width symbols (e.g. ✓) count as 1 column, matching common
+        Western terminals.
+        """
+        width = 0
+        for ch in self._strip_ansi(text):
+            if unicodedata.combining(ch):
+                continue
+            # Emoji / pictographs often render as double-width even when EAW is N
+            if ord(ch) >= 0x1F300 or ch in "⏳⚠▶":
+                width += 2
+                continue
+            ea = unicodedata.east_asian_width(ch)
+            width += 2 if ea in ("F", "W") else 1
+        return width
+
+    def _align_text(self, text: str, width: int, align: str = "left") -> str:
+        """Pad text to width using display width, not len() (ANSI/Unicode-safe)."""
+        text = str(text)
+        visible = self._display_width(text)
+        padding = max(0, width - visible)
+        if align == "right":
+            return " " * padding + text
+        if align == "center":
+            left = padding // 2
+            return " " * left + text + " " * (padding - left)
+        return text + " " * padding
+
+    def _fit(self, text: str, width: int) -> str:
+        """Truncate to display width, preserving leading ANSI when present."""
+        text = str(text)
+        if self._display_width(text) <= width:
+            return text
+        plain = self._strip_ansi(text)
+        if width <= 3:
+            return self._truncate_plain(plain, width)
+        truncated = self._truncate_plain(plain, width)
+        # If original had colors, keep plain truncate (avoids broken escape sequences)
+        return truncated
+
+    @staticmethod
+    def _truncate_plain(plain: str, width: int) -> str:
+        """Truncate plain text to at most ``width`` display columns."""
+        if width <= 0:
+            return ""
+        if width <= 3:
+            out = []
+            used = 0
+            for ch in plain:
+                ch_w = 2 if unicodedata.east_asian_width(ch) in ("F", "W") else 1
+                if used + ch_w > width:
+                    break
+                out.append(ch)
+                used += ch_w
+            return "".join(out)
+        target = width - 3
+        out = []
+        used = 0
+        for ch in plain:
+            ch_w = 2 if unicodedata.east_asian_width(ch) in ("F", "W") else 1
+            if used + ch_w > target:
+                break
+            out.append(ch)
+            used += ch_w
+        return "".join(out) + "..."
+
+    @staticmethod
+    def _normalize_test_type(test_type: str | None) -> str:
+        """Normalize test type label casing (Short/Extended) for table display."""
+        if not test_type or test_type == "-":
+            return "-"
+        known = {"short": "Short", "extended": "Extended", "long": "Extended"}
+        key = str(test_type).strip().lower()
+        return known.get(key, str(test_type).strip().capitalize())
 
     def _format_test_status(self, result: dict) -> str:
         """Format test status."""

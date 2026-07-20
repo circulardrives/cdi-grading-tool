@@ -153,3 +153,87 @@ class TestSelfTestFormatter:
         }
         test_result = formatter._format_test_result(result)
         assert "Failed" in test_result or "✗" in test_result
+
+    def test_align_text_pads_ansi_colored_cells(self) -> None:
+        """ANSI color codes must not shrink column padding (issue #113)."""
+        from cdi_health.classes.colors import Colors
+
+        formatter = SelfTestFormatter()
+        colored = Colors.green("✓ Complete")
+        plain = "○ Ready"
+        width = 14
+
+        aligned_colored = formatter._align_text(colored, width)
+        aligned_plain = formatter._align_text(plain, width)
+
+        assert formatter._display_width(aligned_colored) == width
+        assert formatter._display_width(aligned_plain) == width
+        # Trailing pad spaces are outside the ANSI wrap
+        assert aligned_colored.endswith(" " * (width - formatter._display_width(colored)))
+
+    def test_full_table_columns_align_with_unicode_status(self) -> None:
+        """Full-layout body columns stay aligned when status/result use ✓."""
+        import os
+        import re
+
+        from cdi_health.classes.colors import Colors
+
+        Colors.enable()
+        with patch.dict(os.environ, {"COLUMNS": "160"}):
+            formatter = SelfTestFormatter()
+
+        results = [
+            {
+                "device": "/dev/nvme0",
+                "model": "INTEL SSDPEKKW010T8",
+                "serial": "PHHH829001YN1P0E",
+                "supported": True,
+                "test_type": "Short",
+                "test_started": True,
+                "test_completed": True,
+                "test_passed": True,
+                "test_failed": False,
+                "test_in_progress": False,
+                "test_error": None,
+                "last_test_date": None,
+            },
+            {
+                "device": "/dev/nvme1",
+                "model": "KXG60PNV2T04 TOSHIBA",
+                "serial": "59LF701SF91N",
+                "supported": True,
+                "test_type": "short",
+                "test_started": False,
+                "test_completed": False,
+                "test_passed": False,
+                "test_failed": False,
+                "test_in_progress": False,
+                "test_error": None,
+                "last_test_date": None,
+            },
+        ]
+        output = formatter.format_summary(results)
+        # Prefer full layout at COLUMNS=160
+        assert "Test Status" in output
+
+        ansi = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        data_rows = [line for line in output.splitlines() if line.startswith("│ /dev/nvme")]
+        assert len(data_rows) == 2
+
+        # All data rows and the header row must share the same display width
+        header_row = next(line for line in output.splitlines() if "Test Status" in line)
+        header_w = formatter._display_width(ansi.sub("", header_row))
+        for row in data_rows:
+            assert formatter._display_width(ansi.sub("", row)) == header_w
+
+        # Test Type casing normalized (short -> Short)
+        assert "Short" in output
+        assert not re.search(r"│\s+short\s+│", ansi.sub("", output))
+
+    def test_normalize_test_type_casing(self) -> None:
+        """Test type labels are title-cased for display."""
+        assert SelfTestFormatter._normalize_test_type("short") == "Short"
+        assert SelfTestFormatter._normalize_test_type("Short") == "Short"
+        assert SelfTestFormatter._normalize_test_type("extended") == "Extended"
+        assert SelfTestFormatter._normalize_test_type("-") == "-"
+        assert SelfTestFormatter._normalize_test_type(None) == "-"

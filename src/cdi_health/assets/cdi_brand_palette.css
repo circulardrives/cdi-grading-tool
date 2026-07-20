@@ -1,7 +1,11 @@
 /*
  * Circular Drive Initiative (CDI) — brand color tokens
  * Source: docs/cdi_brand_palette.md
- * Do not change HEX values without updating the doc and brand guidelines.
+ * Do not change HEX brand values without updating the doc and brand guidelines.
+ *
+ * Semantic layer aligned with dashboard shadcn theme
+ * (dashboard/packages/ui/src/styles/globals.css) for HTML report parity.
+ * Reports stay self-contained; hex approximations of oklch tokens for PDF.
  */
 
 :root {
@@ -21,27 +25,54 @@
   --cdi-real-teal: #3e6071;
   --cdi-real-teal-rgb: 61, 96, 114;
 
-  /* —— Semantic tokens (CDI Health report / light UI) —— */
-  --bg: #f4f8f6;
-  --bg-card: #ffffff;
-  --text: #1a2420;
-  --muted: #5c6670;
-  --border: rgba(92, 146, 121, 0.35);
+  /* —— shadcn-aligned semantic tokens (light) —— */
+  --background: #f6faf8;
+  --foreground: #1c1917;
+  --card: #ffffff;
+  --card-foreground: #1c1917;
+  --primary: var(--cdi-simply-green);
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f4;
+  --secondary-foreground: #1c1917;
+  --muted: #eef5f2;
+  --muted-foreground: #78716c;
+  --accent-surface: #eef5f2;
+  --accent-surface-foreground: #1c1917;
+  --destructive: #dc2626;
+  --border: #e4ebe7;
+  --input: #e4ebe7;
+  --ring: var(--cdi-green-spruce);
+  --sidebar: #fafcfb;
+  --sidebar-foreground: #1c1917;
+  --sidebar-primary: var(--cdi-simply-green);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef5f2;
+  --sidebar-accent-foreground: #1c1917;
+  --sidebar-border: #e4ebe7;
 
-  --accent: var(--cdi-simply-green);
+  --warn: #ca8a04;
+  --danger: var(--destructive);
+  --link: var(--cdi-real-teal);
+
+  /* Soft fills (badges / hover) */
+  --primary-soft: rgba(19, 156, 122, 0.12);
+  --warn-soft: rgba(202, 138, 4, 0.12);
+  --danger-soft: rgba(220, 38, 38, 0.1);
+
+  /* Typography — match dashboard (Source Sans 3 + JetBrains Mono) */
+  --font: "Source Sans 3", "Source Sans Pro", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --radius: 0.625rem;
+  --sidebar-w: 16rem;
+
+  /* —— Legacy report aliases (map to shadcn names) —— */
+  --bg: var(--background);
+  --bg-card: var(--card);
+  --text: var(--foreground);
+  --accent: var(--primary);
   --accent-secondary: var(--cdi-foliage-green);
   --accent-tertiary: var(--cdi-green-spruce);
-
-  --accent-soft: rgba(19, 156, 122, 0.1);
-  --accent-soft-strong: rgba(19, 156, 122, 0.16);
-  --surface-sidebar: linear-gradient(180deg, #e8f2ef 0%, var(--bg) 100%);
-
-  --link: var(--cdi-real-teal);
-  --warn: #b8860b;
-  --danger: #b33a3a;
-
-  --font: "DM Sans", system-ui, -apple-system, sans-serif;
-  --mono: "DM Mono", ui-monospace, monospace;
-  --radius: 10px;
-  --sidebar-w: 240px;
+  --accent-soft: var(--primary-soft);
+  --accent-soft-strong: rgba(19, 156, 122, 0.18);
+  --surface-sidebar: var(--sidebar);
 }
