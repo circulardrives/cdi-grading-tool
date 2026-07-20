@@ -340,15 +340,10 @@ function HistoryDetailView({ scanId }: { scanId: string }) {
   const [busy, setBusy] = useState(false)
   const columns = useMemo(() => getSimpleColumns("Other"), [])
   const entry = detailQuery.data
-  const hostName = useMemo(() => {
-    if (!entry?.machine_id) {
-      return "Local"
-    }
-    return (
-      machinesQuery.data?.find((host) => host.id === entry.machine_id)?.name ??
-      entry.machine_id
-    )
-  }, [entry?.machine_id, machinesQuery.data])
+  const hostName = !entry?.machine_id
+    ? "Local"
+    : (machinesQuery.data?.find((host) => host.id === entry.machine_id)?.name ??
+      entry.machine_id)
 
   const loading = detailQuery.isLoading
   const error =
