@@ -59,15 +59,22 @@ def certification_blockers(score: HealthScore) -> list[str]:
     """
     Return stable, human-readable reasons certification was blocked.
 
-    Mirrors ``HealthScoreCalculator.calculate`` certification rules:
-    grade A/B required, no critical deductions, no failed self-test.
+    Mirrors ``HealthScoreCalculator.calculate`` certification rules.
+    abcdf (default): A/B/C certify, D is Advisory, F is not.
+    binary: A/B certify (legacy CDI).
     """
     if score.is_certified:
         return []
 
     blockers: list[str] = []
-    if score.grade not in ("A", "B"):
-        blockers.append(f"grade is {score.grade} (certification requires A or B)")
+    profile = getattr(score, "grading_profile", "abcdf")
+    if profile == "binary":
+        if score.grade not in ("A", "B"):
+            blockers.append(f"grade is {score.grade} (certification requires A or B)")
+    elif score.grade == "D" or getattr(score, "certification", None) == "Advisory":
+        blockers.append(f"grade is {score.grade} (Advisory tier; full certification requires A, B, or C)")
+    elif score.grade not in ("A", "B", "C"):
+        blockers.append(f"grade is {score.grade} (certification requires A, B, or C)")
 
     seen: set[str] = set()
     for deduction in score.deductions:

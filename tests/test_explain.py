@@ -46,13 +46,19 @@ def _score(
     status: str = "Excellent",
     is_certified: bool = True,
     deductions: list[ScoreDeduction] | None = None,
+    grading_profile: str = "abcdf",
+    certification: str | None = None,
 ) -> HealthScore:
+    if certification is None:
+        certification = "true" if is_certified else "false"
     return HealthScore(
         score=score,
         grade=grade,
         status=status,
         deductions=deductions or [],
         is_certified=is_certified,
+        grading_profile=grading_profile,
+        certification=certification,
     )
 
 
@@ -65,10 +71,21 @@ class TestCertificationRationale:
         assert certification_blockers(score) == []
 
     def test_not_certified_grade_blocker(self) -> None:
-        score = _score(score=50, grade="C", status="Fair", is_certified=False)
+        score = _score(score=0, grade="F", status="Failed", is_certified=False)
         blockers = certification_blockers(score)
-        assert any("grade is C" in b for b in blockers)
+        assert any("grade is F" in b and "A, B, or C" in b for b in blockers)
         assert certification_rationale(score).startswith("Not certified because")
+
+    def test_binary_profile_rejects_grade_c(self) -> None:
+        score = _score(
+            score=50,
+            grade="C",
+            status="Fair",
+            is_certified=False,
+            grading_profile="binary",
+        )
+        blockers = certification_blockers(score)
+        assert any("grade is C" in b and "A or B" in b for b in blockers)
 
     def test_critical_deduction_blocker(self) -> None:
         deduction = ScoreDeduction(
