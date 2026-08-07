@@ -452,22 +452,37 @@ class ReportGenerator:
         s = str(device.get("serial_number", "") or "").strip()
         return s if s else "—"
 
+    @staticmethod
+    def _format_one_deduction(d) -> str:
+        """
+        Format a single deduction for display (#119).
+
+        Graduated attribute bands show ``[grade X]`` (worst-attribute-wins),
+        not a cosmetic ``[-N]`` that is never subtracted from the score.
+        Non-band warnings/fail-gates keep real point values.
+        """
+        if hasattr(d, "reason") and hasattr(d, "points"):
+            # ScoreDeduction.__str__ already prefers [grade X] when set.
+            return str(d)
+        if isinstance(d, dict):
+            reason = d.get("reason") or "Deduction"
+            attr_grade = d.get("attribute_grade")
+            if attr_grade is not None:
+                prefix = f"{reason}: {d['value']}" if d.get("value") is not None else reason
+                return f"{prefix} [grade {attr_grade}]"
+            if d.get("threshold") is not None:
+                return f"{reason}: {d.get('value')} (threshold: {d['threshold']}) [-{d.get('points', 0)}]"
+            points = d.get("points")
+            if points is not None:
+                return f"{reason} [-{points}]"
+            return str(reason)
+        return str(d)
+
     def _format_deductions_short(self, deductions) -> str:
         """One-line summary for table cells."""
         if not deductions:
             return "—"
-        parts = []
-        for d in deductions:
-            if hasattr(d, "reason") and hasattr(d, "points"):
-                if getattr(d, "threshold", None) is not None:
-                    parts.append(f"{d.reason}: {d.value} (threshold: {d.threshold}) [-{d.points}]")
-                else:
-                    parts.append(f"{d.reason} [-{d.points}]")
-            elif isinstance(d, dict):
-                parts.append(str(d.get("reason", d)))
-            else:
-                parts.append(str(d))
-        return " | ".join(parts)
+        return " | ".join(self._format_one_deduction(d) for d in deductions)
 
     @staticmethod
     def _iter_deduction_dicts(deductions) -> list[dict]:
@@ -485,6 +500,7 @@ class ReportGenerator:
                         "field": getattr(d, "field", None),
                         "value": getattr(d, "value", None),
                         "threshold": getattr(d, "threshold", None),
+                        "attribute_grade": getattr(d, "attribute_grade", None),
                     }
                 )
             elif isinstance(d, dict):
@@ -527,6 +543,7 @@ class ReportGenerator:
             sev = str(item.get("severity") or "info").lower()
             reason = html.escape(str(item.get("reason") or "Deduction"))
             points = item.get("points")
+            attr_grade = item.get("attribute_grade")
             detail_bits = []
             if item.get("field"):
                 detail_bits.append(f"field={item['field']}")
@@ -534,7 +551,13 @@ class ReportGenerator:
                 detail_bits.append(f"value={item['value']}")
             if item.get("threshold") is not None:
                 detail_bits.append(f"threshold={item['threshold']}")
-            meta = f" (−{html.escape(str(points))})" if points is not None else ""
+            # Graduated bands: show band grade, not a misleading point delta (#119).
+            if attr_grade is not None:
+                meta = f" (grade {html.escape(str(attr_grade))})"
+            elif points is not None:
+                meta = f" (−{html.escape(str(points))})"
+            else:
+                meta = ""
             detail = (
                 f'<span class="deduction-meta">{html.escape(" · ".join(detail_bits))}</span>' if detail_bits else ""
             )

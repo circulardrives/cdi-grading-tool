@@ -157,6 +157,25 @@ class TestExplainFormatter:
         assert "Certified:" in text
         assert "Not certified" in text or "critical" in text.lower() or "Grade:" in text
 
+    def test_format_shows_attribute_grade_not_cosmetic_points(self) -> None:
+        """#119: abcdf graduated attributes show grade impact, not fake point totals."""
+        Colors.disable()
+        device = {
+            "dut": "/dev/sg0",
+            "model_number": "SAS-Drive",
+            "serial_number": "SN-GROWN",
+            "transport_protocol": "SCSI",
+            "media_type": "HDD",
+            "smart_status": "PASSED",
+            "grown_defects": 25,
+            "uncorrected_errors": 0,
+            "power_on_hours": 1000,
+            "state": "Ready",
+        }
+        text = format_explanations([device])
+        assert "grade C" in text or "graded attributes" in text
+        assert "points total" not in text
+
 
 class TestJSONIncludesExplainability:
     def test_json_enrichment_has_explain_fields(self, sample_nvme_device: dict) -> None:
