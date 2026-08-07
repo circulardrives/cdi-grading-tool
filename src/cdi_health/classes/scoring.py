@@ -44,10 +44,10 @@ Select via ``grading.profile`` in thresholds.yaml, ThresholdConfig, or
 ``--grading-profile binary|abcdf``.
 """
 
-
 from __future__ import annotations
 
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import Any
 
 from cdi_health.classes.config import (
@@ -272,9 +272,7 @@ class HealthScoreCalculator:
 
         score = max(0, min(100, score))
 
-        has_failed_selftest = any(
-            "failed" in d.reason.lower() and "self-test" in d.reason.lower() for d in deductions
-        )
+        has_failed_selftest = any("failed" in d.reason.lower() and "self-test" in d.reason.lower() for d in deductions)
         has_hard_failure = any(d.severity == "critical" for d in deductions)
         fail_gates = [d.reason for d in deductions if d.severity == "critical"]
 
@@ -378,16 +376,10 @@ class HealthScoreCalculator:
         # §12.7 tri-state certification: A/B/C certified, D Advisory, F not certified (#118)
         if grade in ("A", "B", "C"):
             certification = "true"
-            rationale = (
-                f"Grade {grade}: certified for reuse under Revert Standard §12.7 "
-                f"(abcdf profile; issues #118)."
-            )
+            rationale = f"Grade {grade}: certified for reuse under Revert Standard §12.7 (abcdf profile; issues #118)."
         elif grade == "D":
             certification = "Advisory"
-            rationale = (
-                "Grade D: Advisory tier — limited reuse, not fully certified "
-                "(§12.7 / #118)."
-            )
+            rationale = "Grade D: Advisory tier — limited reuse, not fully certified (§12.7 / #118)."
         else:
             certification = "false"
             detail = "; ".join(fail_gates) if fail_gates else f"defect={defect_grade}, age_cap={age_cap_grade}"
@@ -409,7 +401,6 @@ class HealthScoreCalculator:
             multi_factor_applied=multi_factor_applied,
             fail_gates=fail_gates,
         )
-
 
     # ------------------------------------------------------------------
     # Shared helpers
@@ -1207,9 +1198,7 @@ class HealthScoreCalculator:
             entries = device.get("smart_self_tests")
             if isinstance(entries, list) and entries:
                 has_history = True
-                failed_entries = [
-                    e for e in entries if isinstance(e, dict) and self._ata_scsi_selftest_entry_failed(e)
-                ]
+                failed_entries = [e for e in entries if isinstance(e, dict) and self._ata_scsi_selftest_entry_failed(e)]
 
         recent = 0
         old = 0

@@ -159,7 +159,11 @@ class TestExplainFormatter:
 
     def test_format_shows_attribute_grade_not_cosmetic_points(self) -> None:
         """#119: abcdf graduated attributes show grade impact, not fake point totals."""
+        from cdi_health.classes.config import ThresholdConfig
+
         Colors.disable()
+        ThresholdConfig.reset_instance()
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
         device = {
             "dut": "/dev/sg0",
             "model_number": "SAS-Drive",

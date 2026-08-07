@@ -495,9 +495,7 @@ def build_fixtures() -> dict[str, dict]:
     # Grown defects:      A=0, B=1-9, C=10-50, D=51-100, F>100
     # Uncorrected errors: A=0, B=1-5, C=6-25,  D=26-100, F>100
     # ------------------------------------------------------------------
-    fixtures["scsi_defects_clean"] = scsi_fixture(
-        dev="/dev/sdl", model="ST1200MM0009", serial="RVSCSICLN1", poh=3000
-    )
+    fixtures["scsi_defects_clean"] = scsi_fixture(dev="/dev/sdl", model="ST1200MM0009", serial="RVSCSICLN1", poh=3000)
     for band, count in (("b", 5), ("c", 30), ("d", 75), ("f", 150)):
         fixtures[f"scsi_grown_defects_band_{band}"] = scsi_fixture(
             dev=f"/dev/sd{band}g",

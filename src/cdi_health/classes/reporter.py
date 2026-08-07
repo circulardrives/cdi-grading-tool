@@ -585,20 +585,18 @@ class ReportGenerator:
         if ungraded:
             cert_badge = self._badge_html("Not graded", "muted")
         else:
-            cert_badge = (
-                self._badge_html("Certified", "ok") if certified else self._badge_html("Not certified", "bad")
-            )
+            cert_badge = self._badge_html("Certified", "ok") if certified else self._badge_html("Not certified", "bad")
         flags = device.get("warning_flags") or []
         reasons = device.get("ungraded_reasons") or []
         extra_bits = []
         if reasons:
             extra_bits.append(
-                "<div class=\"evidence-rationale\"><h4>Ungraded reasons</h4>"
+                '<div class="evidence-rationale"><h4>Ungraded reasons</h4>'
                 f"<p>{html.escape(' | '.join(str(r) for r in reasons))}</p></div>"
             )
         if flags:
             extra_bits.append(
-                "<div class=\"evidence-rationale\"><h4>Warning flags</h4>"
+                '<div class="evidence-rationale"><h4>Warning flags</h4>'
                 f"<p>{html.escape(' | '.join(str(f) for f in flags))}</p></div>"
             )
         extra_html = "".join(extra_bits)

@@ -106,9 +106,7 @@ class TestUngradedPlaceholder:
     def test_analyse_devices_merges_failures(self) -> None:
         devices = Devices.__new__(Devices)
         devices.scanned = []
-        devices.failures = [
-            {"name": "/dev/sdz", "open_error": "Device open failed", "serial_number": "ZL23ENM8"}
-        ]
+        devices.failures = [{"name": "/dev/sdz", "open_error": "Device open failed", "serial_number": "ZL23ENM8"}]
         devices.devices = []
         # Skip ThreadPoolExecutor path: empty scanned list, then merge failures.
         devices.analyse_devices()

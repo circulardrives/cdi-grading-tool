@@ -238,9 +238,14 @@ class TableFormatter(BaseFormatter):
             return self._format_errors_summary(device)
         elif key == "percentage_used":
             return self._format_percentage_used(device)
+        elif key == "health_score":
+            # UNGRADED rows set health_score to None via revert_fields (§15).
+            if value is None:
+                return "-"
+            return str(value)
         elif key == "health_status":
-            score = device.get("health_score", 0)
-            is_healthy = score >= 75
+            score = device.get("health_score")
+            is_healthy = score is not None and score >= 75
             return self._format_status_plain(value, is_healthy)
         elif value is None:
             return "-"
@@ -250,15 +255,17 @@ class TableFormatter(BaseFormatter):
     def _format_cell(self, key: str, value: str, device: dict) -> str:
         """Format a cell value with colors if applicable."""
         if key == "health_score":
-            score = device.get("health_score", 0)
+            score = device.get("health_score")
+            if score is None:
+                return Colors.dim("-")
             return Colors.format_score(score)
         elif key == "health_grade":
-            grade = device.get("health_grade", "F")
+            grade = device.get("health_grade") or "F"
             return Colors.format_grade(grade)
         elif key == "health_status":
-            score = device.get("health_score", 0)
-            status = device.get("health_status", "Unknown")
-            is_healthy = score >= 75
+            score = device.get("health_score")
+            status = device.get("health_status") or "Unknown"
+            is_healthy = score is not None and score >= 75
             return Colors.format_status(status, is_healthy)
         else:
             return value

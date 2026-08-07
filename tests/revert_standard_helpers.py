@@ -195,9 +195,7 @@ def _selftest_grade(payload: dict, protocol: str, current_poh: int) -> str:
     failed_hours: list[int | None] = []
 
     if protocol == "ATA":
-        table = (
-            ((payload.get("ata_smart_self_test_log") or {}).get("standard") or {}).get("table") or []
-        )
+        table = ((payload.get("ata_smart_self_test_log") or {}).get("standard") or {}).get("table") or []
         for entry in table:
             status = (entry or {}).get("status") or {}
             if status.get("passed") is False:
