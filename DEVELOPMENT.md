@@ -116,7 +116,7 @@ def test_path_detection(mock_which: MagicMock) -> None:
 curl -s http://127.0.0.1:3000/api/cdi/api/v1/health
 ```
 
-Stop: `docker compose -f deploy/docker/docker-compose.yml down`
+Stop: `./scripts/docker-up.sh down`
 ## Tool Path Detection
 
 ### openSeaChest (Deb Package)
@@ -246,13 +246,13 @@ Dockerfiles live under `deploy/docker/`. Pull requests build images in CI (amd64
 **Build locally:**
 
 ```bash
-docker compose -f deploy/docker/docker-compose.yml up --build
+./scripts/docker-up.sh --build
 ```
 
-**Test published 0.9.5 images:**
+**Test published GHCR images (`latest`):**
 
 ```bash
-CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+./scripts/docker-up.sh
 ```
 
 ### Install in Development Mode

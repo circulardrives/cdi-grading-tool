@@ -199,23 +199,30 @@ class TestCreateMockDeviceHelper:
 
 class TestATASelfTestScoring:
     def test_failed_ata_selftest_is_grade_f(self) -> None:
-        calculator = HealthScoreCalculator()
-        device = {
-            "transport_protocol": "ATA",
-            "media_type": "HDD",
-            "smart_status": True,
-            "smart_self_tests": [
-                {
-                    "type": {"value": 1, "string": "Short offline"},
-                    "status": {"value": 7, "string": "Completed: read failure", "passed": False},
-                    "lifetime_hours": 100,
-                }
-            ],
-        }
-        result = calculator.calculate(device)
-        assert result.grade == "F"
-        assert result.score == 0
-        assert any("self-test" in d.reason.lower() for d in result.deductions)
+        from cdi_health.classes.config import ThresholdConfig
+
+        ThresholdConfig.reset_instance()
+        ThresholdConfig.get_instance().set_grading_profile("binary")
+        try:
+            calculator = HealthScoreCalculator()
+            device = {
+                "transport_protocol": "ATA",
+                "media_type": "HDD",
+                "smart_status": True,
+                "smart_self_tests": [
+                    {
+                        "type": {"value": 1, "string": "Short offline"},
+                        "status": {"value": 7, "string": "Completed: read failure", "passed": False},
+                        "lifetime_hours": 100,
+                    }
+                ],
+            }
+            result = calculator.calculate(device)
+            assert result.grade == "F"
+            assert result.score == 0
+            assert any("self-test" in d.reason.lower() for d in result.deductions)
+        finally:
+            ThresholdConfig.reset_instance()
 
     def test_passed_ata_selftest_no_deduction(self) -> None:
         calculator = HealthScoreCalculator()

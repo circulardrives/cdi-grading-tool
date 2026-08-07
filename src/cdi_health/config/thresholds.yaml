@@ -16,14 +16,19 @@ smart:
 
 # ATA/SATA Device Thresholds
 ata:
-  # Maximum reallocated sectors before Grade F
+  # Legacy single-threshold values (retained for custom configs; the graduated
+  # bands below are what the scoring engine uses).
   maximum_reallocated_sectors: 10
-
-  # Maximum pending sectors before Grade F
   maximum_pending_sectors: 10
-
-  # Maximum uncorrectable errors before Grade F
   maximum_uncorrectable_errors: 10
+
+  # Graduated per-attribute bands: grade -> maximum raw value for that grade;
+  # values above the D maximum are Grade F (a protocol-specific fail-gate).
+  # NOTE: the Revert Standard's ATA tables (§6/§7) were not independently
+  # verifiable from test data; the SCSI §8 bands are reused here (assumption).
+  reallocated_sectors_bands: {A: 0, B: 9, C: 50, D: 100}
+  pending_sectors_bands: {A: 0, B: 9, C: 50, D: 100}
+  uncorrectable_errors_bands: {A: 0, B: 5, C: 25, D: 100}
 
 # NVMe Device Thresholds
 # See docs/NVME_HEALTH_POLICY.md for the full Base Spec 2.3 + OCP v2.7 algorithm.
@@ -60,11 +65,16 @@ nvme:
 
 # SCSI/SAS Device Thresholds
 scsi:
-  # Maximum grown defects before Grade F
+  # Legacy single-threshold values (retained for custom configs; graduated bands below are used).
   maximum_grown_defects: 10
-
-  # Maximum total uncorrected errors (read + write + verify)
   maximum_uncorrected_errors: 10
+
+  # Graduated per-attribute bands (Revert Standard §8 / #116):
+  # grade -> maximum raw value; values above the D maximum are Grade F.
+  # Grown defects:      A=0, B=1-9, C=10-50, D=51-100, F>100
+  # Uncorrected errors: A=0, B=1-5, C=6-25,  D=26-100, F>100
+  grown_defects_bands: {A: 0, B: 9, C: 50, D: 100}
+  uncorrected_errors_bands: {A: 0, B: 5, C: 25, D: 100}
 
 # Temperature Thresholds
 # Policy (unified in HealthScoreCalculator._check_temperature):
@@ -86,20 +96,26 @@ temperature:
   warning: 55
 
 # Grading Rules
-# Score bands and deduction weights consumed by HealthScoreCalculator.
-# Letter grades are derived from the numeric health score after deductions;
-# any critical deduction (SMART fail, self-test fail, threshold exceeded, etc.)
-# forces Grade F regardless of the remaining numeric score.
+# Selectable grading profile (#115 / #125):
+#   binary  — CDI v0.11.0-compatible: critical fail-gates → F/0; numeric
+#             deductions otherwise; no age cap; Yes/No certification.
+#             Aliases: passfail, cdi.
+#   abcdf   — Revert Drive Grading Standard v2.0: fail-gates → §5 age cap →
+#             graduated bands → §10 self-test → worst-attribute-wins →
+#             multi-factor → final=worse(age_cap, defect) → tri-state cert.
+#             Aliases: revert, graduated.
+# Default is abcdf (Revert-standard client work). Use binary for v0.11.0 BC.
+# Override via grading.profile here or CLI --grading-profile binary|abcdf.
 grading:
-  # SATA/SAS HDD: no deduction at or below this count; linear deduction above until failure threshold
+  profile: abcdf
+
+  # Legacy HDD linear-deduction knobs used by the binary profile.
   hdd_sector_concern_threshold: 2
-  # Max points deducted per metric (reallocated, pending, or grown defects) at failure (10 sectors/defects)
   hdd_sector_defect_max_deduction_points: 10
-  # Beyond failure threshold F: extra deduction per sector (capped), so large pending/reallocated counts grade down
   hdd_sector_excess_points_per_sector: 1
   hdd_sector_excess_cap: 40
 
-  # Minimum numeric score (inclusive) for each letter grade
+  # Minimum numeric score (inclusive) for each letter grade band
   grade_bands:
     A: 90
     B: 75
@@ -107,7 +123,32 @@ grading:
     D: 40
     F: 0
 
-  # Point deductions applied by HealthScoreCalculator
+  # Representative 0-100 score for each final grade band (abcdf profile)
+  grade_band_base_scores:
+    A: 100
+    B: 85
+    C: 70
+    D: 50
+    F: 0
+
+  # Stage 2 age cap — abcdf profile only (§5 / issues #115, #125).
+  # Ignored when profile=binary. Within abcdf, enabled=false disables age cap
+  # while keeping graduated defect bands.
+  # Enterprise: >40k → max B, >60k → max C.
+  # Consumer:   >20k → max B, >60k → max D.
+  age_cap:
+    enabled: true
+    enterprise:
+      B: 40000
+      C: 60000
+    consumer:
+      B: 20000
+      D: 60000
+
+  # Self-test recency window (§10 / #121) — abcdf profile only.
+  selftest_recent_poh_window: 1000
+
+  # Point deductions for non-graduated warnings / universal fail-gates
   deductions:
     smart_failure: 50
     per_sector: 5

@@ -27,6 +27,16 @@ from typing import Any
 
 import pytest
 
+from cdi_health.classes.config import ThresholdConfig
+
+
+@pytest.fixture(autouse=True)
+def _reset_threshold_config() -> None:
+    """Isolate grading.profile mutations across tests (binary vs abcdf)."""
+    ThresholdConfig.reset_instance()
+    yield
+    ThresholdConfig.reset_instance()
+
 
 @pytest.fixture
 def mock_data_dir() -> Path:

@@ -17,13 +17,23 @@
 # limitations under the License.
 #
 
-"""Tests for health scoring system."""
+"""Tests for health scoring system (binary / CDI v0.11.0 profile)."""
 
 from __future__ import annotations
 
 import pytest
 
+from cdi_health.classes.config import ThresholdConfig
 from cdi_health.classes.scoring import HealthScoreCalculator
+
+
+@pytest.fixture(autouse=True)
+def _binary_grading_profile() -> None:
+    """Keep legacy scoring tests on the binary profile (v0.11.0 BC)."""
+    ThresholdConfig.reset_instance()
+    ThresholdConfig.get_instance().set_grading_profile("binary")
+    yield
+    ThresholdConfig.reset_instance()
 
 
 class TestHealthScoreCalculator:
@@ -103,6 +113,19 @@ class TestHealthScoreCalculator:
         assert result.status == "Failed"
         assert result.is_certified is False
         assert any(d.field == "state" and d.severity == "critical" for d in result.deductions)
+
+    def test_not_ready_tur_forces_grade_f(self) -> None:
+        """TUR Not Ready is F-NO-RESPONSE (#123); state is never literal 'fail' post-3537842."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "SCSI",
+            "state": "Not Ready",
+            "smart_status": "PASSED",
+        }
+        result = calculator.calculate(device)
+        assert result.grade == "F"
+        assert result.score == 0
+        assert any(d.field == "state" and "not ready" in d.reason.lower() for d in result.deductions)
 
     def test_unresponsive_failed_state_forces_grade_f(self) -> None:
         """Partner 600-drive run: DOA/unresponsive drives should not become Grade D."""

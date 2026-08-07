@@ -1,24 +1,22 @@
-# CDI Health 0.9.5 — team testing guide
+# CDI Health — team testing guide
 
 Use this guide to validate the technician workflow: **Docker dashboard on a laptop** + **`.deb` API on a grading bench** on the lab LAN.
 
-**Release:** [v0.9.5](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.5)
+**Images:** GHCR `:latest` (or pin with `CDI_VERSION=<semver>`). See [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases).
 
 ---
 
 ## Slack / email (copy-paste)
 
-> **CDI Health 0.9.5 — please test technician workflow**
+> **CDI Health — please test technician workflow**
 >
-> We consolidated on **0.9.5** for Docker images, `.deb` packages, and docs. Mock fixture data is **off by default**; enable **Use mock data** on the **Discover** page only for demos.
+> **One command on the laptop:** `./scripts/docker-up.sh` → open http://127.0.0.1:3000. Mock fixtures are **off by default**; enable **Use mock data** on Discover for demos.
 >
 > **Bench (Linux):** install or upgrade the `.deb`, enable the LAN drop-in (`0.0.0.0:8844`) with `CDI_HEALTH_API_TOKEN` set so Discover can find it.
 >
 > **Laptop (Mac or Linux):**
-> 1. `./scripts/docker-lan-discover.sh` → Discover → subnet `192.168.0.0/24` → confirm your bench appears.
-> 2. For **live drive scans** in the UI: `BENCH_IP=<bench-ip> ./scripts/docker-remote-bench.sh` → Scan → expect real serials (not `MOCK…`).
->
-> If compose fails when switching stacks: `./scripts/docker-reset.sh --clear-data`
+> 1. `./scripts/docker-up.sh` → Discover → subnet `192.168.0.0/24` → confirm your bench appears.
+> 2. For **live drive scans** in the UI: `./scripts/docker-up.sh --bench <bench-ip>` → Scan → expect real serials (not `MOCK…`).
 >
 > Full steps: [docs/TEAM_TESTING.md](TEAM_TESTING.md) in the repo.
 
@@ -29,7 +27,7 @@ Use this guide to validate the technician workflow: **Docker dashboard on a lapt
 | Role | Requirement |
 | ---- | ----------- |
 | **Grading bench** | Debian/Ubuntu, drives attached, ports **8844** reachable from the laptop LAN |
-| **Technician laptop** | Docker Desktop (Mac) or Docker Engine (Linux), git clone of `cdi-grading-tool` on branch `fix/deb-py314-and-remote-bench` or `main` after merge |
+| **Technician laptop** | Docker Desktop (Mac) or Docker Engine (Linux), git clone of `cdi-grading-tool` |
 | **Network** | Laptop and bench on same lab LAN (e.g. `192.168.0.0/24`) |
 
 ---
@@ -39,10 +37,10 @@ Use this guide to validate the technician workflow: **Docker dashboard on a lapt
 On the bench (example: `h12-rome` / `192.168.0.74`):
 
 ```bash
-# Download from GitHub Releases (v0.9.5)
-wget https://github.com/circulardrives/cdi-grading-tool/releases/download/v0.9.5/cdi-health_0.9.5_all.deb
+# Download latest .deb from GitHub Releases
+# https://github.com/circulardrives/cdi-grading-tool/releases/latest
 sudo apt update
-sudo apt install ./cdi-health_0.9.5_all.deb
+sudo apt install ./cdi-health_*_all.deb
 
 cdi-health --version
 sudo systemctl enable --now cdi-health-api
@@ -61,8 +59,6 @@ sudo cdi-health scan
 
 **Pass criteria:** health JSON `status: ok` (full detail on loopback); scan shows real drive serials and grades. Token is required for LAN binds.
 
-**Python 3.14+ (Ubuntu 26):** postinst creates `/opt/cdi-health/venv` automatically. If API fails on pydantic, reinstall the 0.9.5 `.deb` from PR #63 build.
-
 ---
 
 ## Part B — Laptop Docker (LAN discovery)
@@ -70,8 +66,7 @@ sudo cdi-health scan
 From the repo root on the laptop:
 
 ```bash
-./scripts/docker-reset.sh --clear-data
-CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh
+./scripts/docker-up.sh
 open http://127.0.0.1:3000   # or visit in browser
 ```
 
@@ -81,7 +76,7 @@ open http://127.0.0.1:3000   # or visit in browser
 
 **Pass criteria:** at least one host listed (e.g. `192.168.0.74:8844`). You can add it to **Hosts**.
 
-**Note (v1):** Discover uses the local Docker API; **Scan** on this stack does not run on the remote bench yet.
+**Note (v1):** Discover uses the local Docker API; for **Scan** on the remote bench use Part C.
 
 ---
 
@@ -90,8 +85,7 @@ open http://127.0.0.1:3000   # or visit in browser
 Pin all dashboard API traffic to one bench:
 
 ```bash
-./scripts/docker-reset.sh
-BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
+./scripts/docker-up.sh --bench 192.168.0.74
 open http://127.0.0.1:3000
 ```
 
@@ -115,15 +109,14 @@ curl -s -X POST http://192.168.0.74:8844/api/v1/scan \
 Mock is **not** the default. To test fixtures:
 
 ```bash
-./scripts/docker-reset.sh --clear-data
-docker compose -f deploy/docker/docker-compose.yml up -d --build
+./scripts/docker-up.sh
 open http://127.0.0.1:3000
 ```
 
 1. **Discover** → **Demo mode** → enable **Use mock data**.
-2. **Scan** → expect ~22 fixture devices.
+2. **Scan** → expect fixture devices.
 
-Or without rebuilding the dashboard (API-only mock):
+Or without the UI toggle (API-only mock):
 
 ```bash
 curl -s -X POST http://127.0.0.1:3000/api/cdi/api/v1/scan \
@@ -133,31 +126,20 @@ curl -s -X POST http://127.0.0.1:3000/api/cdi/api/v1/scan \
 
 ---
 
-## Part E — Switching stacks (cleanup)
-
-When changing between lan-discover, remote-bench, mock demo, or host overlay:
-
-```bash
-./scripts/docker-reset.sh --clear-data
-```
-
-Then start the stack you need (see [Technician deployment](TECHNICIAN_DEPLOYMENT.md)).
-
----
-
 ## Quick reference
 
 | Goal | Command |
 | ---- | ------- |
-| Find benches on LAN | `CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh` |
-| Live scans on one bench | `BENCH_IP=<ip> ./scripts/docker-remote-bench.sh` |
-| Mock fixtures (UI toggle) | `docker compose -f deploy/docker/docker-compose.yml up -d --build` → Discover → **Use mock data** |
-| Reset / fix compose errors | `./scripts/docker-reset.sh --clear-data` |
+| Start / update stack | `./scripts/docker-up.sh` |
+| Live scans on one bench | `./scripts/docker-up.sh --bench <ip>` |
+| Build from source | `./scripts/docker-up.sh --build` |
+| Mock fixtures | `./scripts/docker-up.sh` → Discover → **Use mock data** |
+| Stop / reset | `./scripts/docker-up.sh down` / `./scripts/docker-up.sh reset` |
+
+See also [Technician deployment](TECHNICIAN_DEPLOYMENT.md).
 
 ---
 
 ## Report issues
 
-Include: stack command used, `curl http://127.0.0.1:3000/api/cdi/api/v1/health`, bench IP, and whether serials look like `MOCK…` or real hardware.
-
-Open a GitHub issue or reply in the team channel with **pass/fail** for parts A–D.
+File bugs against [circulardrives/cdi-grading-tool](https://github.com/circulardrives/cdi-grading-tool/issues) with: OS, Docker version, bench IP, health JSON, and whether mock was enabled.

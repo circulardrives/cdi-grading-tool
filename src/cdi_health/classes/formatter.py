@@ -33,6 +33,7 @@ from typing import Any
 
 from cdi_health.classes.colors import Colors, Symbols
 from cdi_health.classes.explain import attach_explanation
+from cdi_health.classes.revert import csv_cell, flag_duplicate_serials, is_ungraded, revert_fields
 from cdi_health.classes.scoring import HealthScoreCalculator, ScoreDeduction
 
 
@@ -126,7 +127,7 @@ class TableFormatter(BaseFormatter):
         return "\n".join(lines)
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
-        """Add health scores to devices."""
+        """Add health scores and Revert Standard §13/§15 fields."""
         enriched = []
         for device in devices:
             d = device.copy()
@@ -136,17 +137,28 @@ class TableFormatter(BaseFormatter):
             d["health_status"] = score.status
             d["health_deductions"] = score.deductions
             d["is_certified"] = score.is_certified
+            d.update(revert_fields(d, score))
             enriched.append(d)
+        flag_duplicate_serials(enriched)
         return enriched
 
     def _format_banner(self, devices: list[dict]) -> list[str]:
         """Format header banner with summary."""
         width = sum(c[2] for c in self.COLUMNS) + len(self.COLUMNS) * 3 + 1
 
-        # Count by status
-        healthy = sum(1 for d in devices if d["health_score"] >= 75)
-        warning = sum(1 for d in devices if 40 <= d["health_score"] < 75)
-        failed = sum(1 for d in devices if d["health_score"] < 40)
+        def _bucket(d: dict) -> str:
+            if is_ungraded(d) or d.get("grading_status") == "UNGRADED" or d.get("health_score") is None:
+                return "ungraded"
+            score = d["health_score"]
+            if score >= 75:
+                return "healthy"
+            if score >= 40:
+                return "warning"
+            return "failed"
+
+        healthy = sum(1 for d in devices if _bucket(d) == "healthy")
+        warning = sum(1 for d in devices if _bucket(d) == "warning")
+        failed = sum(1 for d in devices if _bucket(d) in ("failed", "ungraded"))
 
         title = "CDI Health Scanner"
         summary = f"Scanned: {len(devices)} devices | Healthy: {healthy} | Warning: {warning} | Failed: {failed}"
@@ -226,9 +238,14 @@ class TableFormatter(BaseFormatter):
             return self._format_errors_summary(device)
         elif key == "percentage_used":
             return self._format_percentage_used(device)
+        elif key == "health_score":
+            # UNGRADED rows set health_score to None via revert_fields (§15).
+            if value is None:
+                return "-"
+            return str(value)
         elif key == "health_status":
-            score = device.get("health_score", 0)
-            is_healthy = score >= 75
+            score = device.get("health_score")
+            is_healthy = score is not None and score >= 75
             return self._format_status_plain(value, is_healthy)
         elif value is None:
             return "-"
@@ -238,15 +255,17 @@ class TableFormatter(BaseFormatter):
     def _format_cell(self, key: str, value: str, device: dict) -> str:
         """Format a cell value with colors if applicable."""
         if key == "health_score":
-            score = device.get("health_score", 0)
+            score = device.get("health_score")
+            if score is None:
+                return Colors.dim("-")
             return Colors.format_score(score)
         elif key == "health_grade":
-            grade = device.get("health_grade", "F")
+            grade = device.get("health_grade") or "F"
             return Colors.format_grade(grade)
         elif key == "health_status":
-            score = device.get("health_score", 0)
-            status = device.get("health_status", "Unknown")
-            is_healthy = score >= 75
+            score = device.get("health_score")
+            status = device.get("health_status") or "Unknown"
+            is_healthy = score is not None and score >= 75
             return Colors.format_status(status, is_healthy)
         else:
             return value
@@ -440,8 +459,15 @@ class JSONFormatter(BaseFormatter):
         return json.dumps(devices, indent=self.indent, default=str)
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
-        """Add health scores and grading explainability fields to devices."""
-        return [attach_explanation(device, self.calculator.calculate(device)) for device in devices]
+        """Add health scores, explainability, and Revert Standard §13/§15 fields."""
+        enriched = []
+        for device in devices:
+            score = self.calculator.calculate(device)
+            d = attach_explanation(device, score)
+            d.update(revert_fields(d, score))
+            enriched.append(d)
+        flag_duplicate_serials(enriched)
+        return enriched
 
 
 class CSVFormatter(BaseFormatter):
@@ -463,6 +489,22 @@ class CSVFormatter(BaseFormatter):
         "pending_sectors",
         "uncorrectable_errors",
         "current_temperature",
+        # Revert Standard §13/§15 fields
+        "final_grade",
+        "grading_status",
+        "ungraded_reasons",
+        "warning_flags",
+        "fail_reason_codes",
+        "attribute_grades",
+        "age_cap_grade",
+        "defect_grade",
+        "multi_factor_applied",
+        "revert_eligible",
+        "revert_certified",
+        "recommended_use",
+        "drive_class",
+        "scan_timestamp",
+        "revert_standard_version",
     ]
 
     def __init__(self, include_scores: bool = True):
@@ -487,12 +529,12 @@ class CSVFormatter(BaseFormatter):
         writer.writeheader()
 
         for device in devices:
-            writer.writerow(device)
+            writer.writerow({field: csv_cell(device.get(field)) for field in self.FIELDS})
 
         return output.getvalue()
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
-        """Add health scores to devices."""
+        """Add health scores and Revert Standard §13/§15 fields."""
         enriched = []
         for device in devices:
             d = device.copy()
@@ -501,7 +543,9 @@ class CSVFormatter(BaseFormatter):
             d["health_grade"] = score.grade
             d["health_status"] = score.status
             d["is_certified"] = score.is_certified
+            d.update(revert_fields(d, score))
             enriched.append(d)
+        flag_duplicate_serials(enriched)
         return enriched
 
 
@@ -530,8 +574,15 @@ class YAMLFormatter(BaseFormatter):
             return "Error: PyYAML not installed. Install with: pip install pyyaml"
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
-        """Add health scores and grading explainability fields to devices."""
-        return [attach_explanation(device, self.calculator.calculate(device)) for device in devices]
+        """Add health scores, explainability, and Revert Standard §13/§15 fields."""
+        enriched = []
+        for device in devices:
+            score = self.calculator.calculate(device)
+            d = attach_explanation(device, score)
+            d.update(revert_fields(d, score))
+            enriched.append(d)
+        flag_duplicate_serials(enriched)
+        return enriched
 
 
 def get_formatter(format_type: str, **kwargs) -> BaseFormatter:

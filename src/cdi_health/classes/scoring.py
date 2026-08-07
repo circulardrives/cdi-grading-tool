@@ -20,15 +20,59 @@
 """
 Health Scoring System for CDI Health
 
-Provides 0-100 numeric health scores aligned with CDI specifications.
+Supports two selectable grading profiles (issues #115 / #125):
+
+``binary`` (aliases: passfail, cdi)
+    CDI v0.11.0-compatible behaviour. Critical fail-gates (SMART failed,
+    operational Not Ready/Fail, threshold breaches, any failed self-test)
+    force Grade F / score 0. Otherwise numeric 0–100 deductions map to A–F.
+    No POH age cap. Certification is Yes/No (true/false).
+
+``abcdf`` (aliases: revert, graduated) — default
+    Revert Drive Grading Standard v2.0 three-stage pipeline:
+    Stage 1 — Universal fail-gates (§4): failed SMART status, failed/Not Ready
+    operational state, and protocol-specific critical conditions (including
+    any per-attribute F band, e.g. grown defects > 100) go to Grade F.
+    Stage 2 — Age cap (§5): power-on hours cap the maximum achievable grade
+    by drive class (enterprise vs consumer), when age_cap.enabled.
+    Stage 3 — Graduated defect scoring (§6–§10, §12): per-attribute A–F
+    bands; worst-attribute-wins (§12.4); multi-factor degradation (§12.5);
+    final = worse(age_cap, defect) (§12.6). Certification is tri-state
+    (§12.7): A/B/C=true, D=Advisory, F=false.
+
+Select via ``grading.profile`` in thresholds.yaml, ThresholdConfig, or
+``--grading-profile binary|abcdf``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import Any
 
-from cdi_health.classes.config import get_config
+from cdi_health.classes.config import (
+    GRADING_PROFILE_ABCDF,
+    GRADING_PROFILE_BINARY,
+    get_config,
+)
+
+# Grade ordering, best to worst
+GRADE_ORDER: tuple[str, ...] = ("A", "B", "C", "D", "F")
+_GRADE_RANK: dict[str, int] = {g: i for i, g in enumerate(GRADE_ORDER)}
+
+# Health status tiers map 1:1 onto the five grades
+STATUS_BY_GRADE: dict[str, str] = {
+    "A": "Excellent",
+    "B": "Good",
+    "C": "Fair",
+    "D": "Poor",
+    "F": "Failed",
+}
+
+
+def worst_grade(*grades: str) -> str:
+    """Return the worst (lowest) of the given letter grades."""
+    return max(grades, key=lambda g: _GRADE_RANK.get(g, 0))
 
 
 @dataclass
@@ -41,8 +85,15 @@ class ScoreDeduction:
     field: str = None
     value: Any = None
     threshold: Any = None
+    # Graduated per-attribute band grade (Revert Standard §6–§10). When set,
+    # this deduction represents an attribute graded B or worse and the display
+    # shows the band grade instead of a raw point value.
+    attribute_grade: str = None
 
     def __str__(self) -> str:
+        if self.attribute_grade is not None:
+            prefix = f"{self.reason}: {self.value}" if self.value is not None else self.reason
+            return f"{prefix} [grade {self.attribute_grade}]"
         if self.threshold is not None:
             return f"{self.reason}: {self.value} (threshold: {self.threshold}) [-{self.points}]"
         return f"{self.reason} [-{self.points}]"
@@ -50,13 +101,36 @@ class ScoreDeduction:
 
 @dataclass
 class HealthScore:
-    """Complete health score with breakdown."""
+    """Complete health score with breakdown (Revert Standard three-stage pipeline)."""
 
     score: int
     grade: str
     status: str
     deductions: list[ScoreDeduction]
     is_certified: bool
+    # Tri-state certification per §12.7 / #118: "true" (A/B/C), "Advisory" (D), "false" (F)
+    certification: str = "false"
+    # Human-readable certification rationale (§12.7 / #118)
+    certification_rationale: str = ""
+    # Drive class used for age-cap table selection (§5): "consumer" | "enterprise"
+    drive_class: str = "consumer"
+    # Stage 2 age-cap grade (§5 / #115); "A" means no cap applied
+    age_cap_grade: str = "A"
+    # Stage 3 defect-only grade after worst-attribute-wins + multi-factor (§12.4/§12.5)
+    defect_grade: str = "A"
+    # Per-attribute band grades: field -> {"value": ..., "grade": ...} (§13 attribute_grades)
+    attribute_grades: dict = dataclass_field(default_factory=dict)
+    # Whether §12.5 multi-factor degradation escalated the defect grade
+    multi_factor_applied: bool = False
+    # Stage 1 fail-gate reasons (empty when no universal fail-gate fired)
+    fail_gates: list = dataclass_field(default_factory=list)
+    # Active grading profile used to produce this score (#115 / #125)
+    grading_profile: str = GRADING_PROFILE_ABCDF
+
+    @property
+    def revert_certified(self) -> str:
+        """Alias for ``certification`` so revert schema wiring can getattr it."""
+        return self.certification
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -65,6 +139,16 @@ class HealthScore:
             "health_grade": self.grade,
             "health_status": self.status,
             "is_certified": self.is_certified,
+            "certification": self.certification,
+            "certification_rationale": self.certification_rationale,
+            "revert_certified": self.certification,
+            "drive_class": self.drive_class,
+            "age_cap_grade": self.age_cap_grade,
+            "defect_grade": self.defect_grade,
+            "attribute_grades": {k: dict(v) for k, v in self.attribute_grades.items()},
+            "multi_factor_applied": self.multi_factor_applied,
+            "fail_gates": list(self.fail_gates),
+            "grading_profile": self.grading_profile,
             "deductions": [
                 {
                     "reason": d.reason,
@@ -73,6 +157,7 @@ class HealthScore:
                     "field": d.field,
                     "value": d.value,
                     "threshold": d.threshold,
+                    "attribute_grade": d.attribute_grade,
                 }
                 for d in self.deductions
             ],
@@ -81,20 +166,16 @@ class HealthScore:
 
 class HealthScoreCalculator:
     """
-    Calculate 0-100 health scores from device metrics.
+    Calculate graduated health grades/scores from device metrics.
 
-    Scoring Formula (CDI-Spec Aligned):
-    - Base Score: 100
-    - SMART Status Failed: -50 points (results in Grade F)
-    - Failed Self-Test: -50 points (results in Grade F - drive is bad)
-    - SATA/SAS HDD — reallocated, pending, and SCSI grown defects: no deduction at or below
-      the concern threshold (default 2); above that, linear deduction up to M points at failure
-      threshold F; counts beyond F add extra deduction (capped) so large defect counts grade down.
-      ATA SSDs use per-sector style for reallocated/pending (same scale as offline uncorrectable), not the HDD curve.
-    - Per Uncorrectable Error (ATA offline/uncorrectable, SCSI uncorrected): -5 points (up to threshold)
-    - Exceeds uncorrectable threshold: -25 points (critical)
-    - Temperature Warning: -5 points
-    - Temperature Critical: -15 points
+    Pipeline (Revert Standard v2.0):
+    - Stage 1 fail-gates: SMART status failed, failed operational state,
+      NVMe critical warnings/media errors, per-attribute F bands, critical
+      temperature — Grade F / score 0.
+    - Stage 2 age cap: POH caps the maximum achievable grade per drive class.
+    - Stage 3 graduated defect scoring: per-attribute band grades with
+      worst-attribute-wins, multi-factor degradation, and
+      final grade = worse(age_cap_grade, defect_grade).
     """
 
     # Score to Grade mapping (defaults; overridden from config when present)
@@ -105,6 +186,9 @@ class HealthScoreCalculator:
         (40, "D", "Poor"),
         (0, "F", "Failed"),
     ]
+
+    # Representative band base score for each final grade
+    DEFAULT_GRADE_BAND_BASE_SCORES = {"A": 100, "B": 85, "C": 70, "D": 50, "F": 0}
 
     # Points deductions (defaults; overridden from config when present)
     DEFAULT_SMART_FAILURE_DEDUCTION = 50
@@ -137,19 +221,27 @@ class HealthScoreCalculator:
 
     def calculate(self, device: dict) -> HealthScore:
         """
-        Calculate health score for a device.
+        Calculate health score for a device using the active grading profile.
 
-        :param device: Device dictionary with metrics
-        :return: HealthScore object
+        Dispatches to ``_calculate_binary`` or ``_calculate_abcdf`` based on
+        ``grading.profile`` (#115 / #125).
+        """
+        if self.config.grading_profile == GRADING_PROFILE_BINARY:
+            return self._calculate_binary(device)
+        return self._calculate_abcdf(device)
+
+    def _calculate_binary(self, device: dict) -> HealthScore:
+        """
+        CDI v0.11.0-compatible binary/numeric scoring (profile=binary).
+
+        Critical fail-gates and any failed self-test → Grade F / score 0.
+        Otherwise start at 100, subtract point deductions, map to A–F.
+        No age cap. Certification is true/false (A/B only).
         """
         score = 100
-        deductions = []
-
-        # Get device protocol type
+        deductions: list[ScoreDeduction] = []
         protocol = device.get("transport_protocol", "").upper()
 
-        # Check hard fail-gates first: operational state and SMART status.
-        # These conditions mean the drive should not be dispositioned as salvageable.
         state_deductions = self._check_operational_state(device)
         deductions.extend(state_deductions)
         score -= sum(d.points for d in state_deductions)
@@ -158,49 +250,54 @@ class HealthScoreCalculator:
         deductions.extend(smart_deductions)
         score -= sum(d.points for d in smart_deductions)
 
-        # Protocol-specific checks
         if protocol == "ATA":
-            ata_deductions = self._check_ata_metrics(device)
+            ata_deductions = self._check_ata_metrics_binary(device)
             deductions.extend(ata_deductions)
             score -= sum(d.points for d in ata_deductions)
         elif protocol == "NVME":
             nvme_deductions = self._check_nvme_metrics(device)
             deductions.extend(nvme_deductions)
             score -= sum(d.points for d in nvme_deductions)
+            st = self._check_nvme_selftest(device)
+            deductions.extend(st)
+            score -= sum(d.points for d in st)
         elif protocol == "SCSI":
-            scsi_deductions = self._check_scsi_metrics(device)
+            scsi_deductions = self._check_scsi_metrics_binary(device)
             deductions.extend(scsi_deductions)
             score -= sum(d.points for d in scsi_deductions)
 
-        # Check temperature
         temp_deductions = self._check_temperature(device)
         deductions.extend(temp_deductions)
         score -= sum(d.points for d in temp_deductions)
 
-        # Clamp score to 0-100
         score = max(0, min(100, score))
 
-        # Check for hard failures - critical health conditions are not salvageable grades.
         has_failed_selftest = any("failed" in d.reason.lower() and "self-test" in d.reason.lower() for d in deductions)
         has_hard_failure = any(d.severity == "critical" for d in deductions)
+        fail_gates = [d.reason for d in deductions if d.severity == "critical"]
 
-        # Determine grade and status
-        # If a critical health condition exists, Grade F regardless of numeric deductions.
         if has_failed_selftest or has_hard_failure:
             grade = "F"
             status = "Failed"
-            score = 0  # Set score to 0 to reflect complete failure
+            score = 0
         else:
             grade = self.get_grade(score)
             status = self.get_status_text(score)
 
-        # Determine certification (Grade A or B). Critical health conditions are automatic failures.
         is_certified = (
             grade in ("A", "B")
             and not any(d.severity == "critical" for d in deductions)
             and not has_failed_selftest
             and not has_hard_failure
         )
+        certification = "true" if is_certified else "false"
+        if is_certified:
+            rationale = f"Grade {grade}: certified under binary (CDI) profile."
+        elif grade == "F":
+            detail = "; ".join(fail_gates) if fail_gates else "critical health condition"
+            rationale = f"Grade F: not certified (binary profile). {detail}"
+        else:
+            rationale = f"Grade {grade}: not certified under binary profile (requires A or B)."
 
         return HealthScore(
             score=score,
@@ -208,59 +305,239 @@ class HealthScoreCalculator:
             status=status,
             deductions=deductions,
             is_certified=is_certified,
+            certification=certification,
+            certification_rationale=rationale,
+            grading_profile=GRADING_PROFILE_BINARY,
+            drive_class=self._determine_drive_class(device),
+            age_cap_grade="A",
+            defect_grade=grade,
+            attribute_grades={},
+            multi_factor_applied=False,
+            fail_gates=fail_gates,
         )
 
-    def _check_operational_state(self, device: dict) -> list[ScoreDeduction]:
-        """Check top-level operational state from the scan/disposition path."""
-        state = device.get("state") or device.get("State")
-        if str(state).strip().lower() != "fail":
-            return []
+    def _calculate_abcdf(self, device: dict) -> HealthScore:
+        """Revert Standard v2.0 graduated pipeline (profile=abcdf)."""
+        deductions: list[ScoreDeduction] = []
+        attribute_grades: dict[str, dict] = {}
 
-        return [
-            ScoreDeduction(
-                reason="Device operational state failed",
-                points=self.SMART_FAILURE_DEDUCTION,
-                severity="critical",
-                field="state",
-                value=state,
-            )
-        ]
+        # Get device protocol type and drive class (§5 age-cap table selection)
+        protocol = device.get("transport_protocol", "").upper()
+        drive_class = self._determine_drive_class(device)
 
-    def _check_smart_status(self, device: dict) -> list[ScoreDeduction]:
-        """Check SMART status and self-test results."""
-        deductions = []
+        # ---- Stage 1: universal fail-gates (§4) ----
+        deductions.extend(self._check_operational_state(device))
+        deductions.extend(self._check_smart_status(device))
 
-        smart_status = device.get("smart_status", "")
+        # ---- Stage 3 data collection: per-attribute graduated grading ----
+        if protocol == "ATA":
+            deductions.extend(self._check_ata_metrics(device, attribute_grades))
+        elif protocol == "NVME":
+            deductions.extend(self._check_nvme_metrics(device))
+        elif protocol == "SCSI":
+            deductions.extend(self._check_scsi_metrics(device, attribute_grades))
 
-        # Handle boolean values
-        if isinstance(smart_status, bool):
-            if not smart_status:
-                deductions.append(
-                    ScoreDeduction(
-                        reason="SMART status failed",
-                        points=self.SMART_FAILURE_DEDUCTION,
-                        severity="critical",
-                        field="smart_status",
-                        value="Failed",
-                    )
-                )
-            return deductions
+        # Self-test history (§10) — graduated and recency-weighted, cross-protocol
+        if protocol in ("ATA", "NVME", "SCSI"):
+            deductions.extend(self._check_selftest_history(device, protocol, attribute_grades))
 
-        # Handle string values
-        if smart_status:
-            smart_status_lower = str(smart_status).lower()
-            if smart_status_lower in ("fail", "failed", "false", "bad"):
-                deductions.append(
-                    ScoreDeduction(
-                        reason="SMART status failed",
-                        points=self.SMART_FAILURE_DEDUCTION,
-                        severity="critical",
-                        field="smart_status",
-                        value=smart_status,
-                    )
-                )
+        # Temperature (§11)
+        deductions.extend(self._check_temperature(device))
 
-        return deductions
+        # ---- Stage 2: age cap (§5) ----
+        age_cap_grade = self._age_cap_grade(device, drive_class) if self.config.age_cap_enabled else "A"
+
+        # ---- Stage 3: worst-attribute-wins (§12.4) ----
+        defect_grade = "A"
+        for info in attribute_grades.values():
+            defect_grade = worst_grade(defect_grade, info["grade"])
+
+        # §12.5 multi-factor degradation: escalate one grade level only when
+        # 3+ attributes are independently C-or-worse.
+        multi_factor_applied = False
+        c_or_worse = sum(1 for info in attribute_grades.values() if _GRADE_RANK[info["grade"]] >= _GRADE_RANK["C"])
+        if c_or_worse >= 3 and defect_grade != "F":
+            defect_grade = GRADE_ORDER[_GRADE_RANK[defect_grade] + 1]
+            multi_factor_applied = True
+
+        # ---- Stage 1 fail-gates override everything ----
+        fail_gates = [d.reason for d in deductions if d.severity == "critical"]
+
+        if fail_gates:
+            grade = "F"
+            score = 0
+        else:
+            # §12.6 final grade = min(age_cap_grade, defect_grade), i.e. the worse of the two
+            grade = worst_grade(defect_grade, age_cap_grade)
+            score = self._score_for_grade(grade, deductions)
+
+        status = STATUS_BY_GRADE[grade]
+
+        # §12.7 tri-state certification: A/B/C certified, D Advisory, F not certified (#118)
+        if grade in ("A", "B", "C"):
+            certification = "true"
+            rationale = f"Grade {grade}: certified for reuse under Revert Standard §12.7 (abcdf profile; issues #118)."
+        elif grade == "D":
+            certification = "Advisory"
+            rationale = "Grade D: Advisory tier — limited reuse, not fully certified (§12.7 / #118)."
+        else:
+            certification = "false"
+            detail = "; ".join(fail_gates) if fail_gates else f"defect={defect_grade}, age_cap={age_cap_grade}"
+            rationale = f"Grade F: not certified (§12.7 / #118). {detail}"
+
+        return HealthScore(
+            score=score,
+            grade=grade,
+            status=status,
+            deductions=deductions,
+            is_certified=certification == "true",
+            certification=certification,
+            certification_rationale=rationale,
+            grading_profile=GRADING_PROFILE_ABCDF,
+            drive_class=drive_class,
+            age_cap_grade=age_cap_grade,
+            defect_grade=defect_grade,
+            attribute_grades=attribute_grades,
+            multi_factor_applied=multi_factor_applied,
+            fail_gates=fail_gates,
+        )
+
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _coerce_int(value) -> int | None:
+        """Coerce a numeric field to int; None when missing/non-numeric."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            s = value.strip().replace(",", "")
+            if s.lstrip("-").isdigit():
+                return int(s)
+        return None
+
+    @staticmethod
+    def _determine_drive_class(device: dict) -> str:
+        """
+        Determine consumer vs enterprise drive class for age-cap table selection (§5).
+
+        Explicit device["drive_class"] wins; otherwise SCSI/SAS and NVMe are
+        treated as enterprise and ATA/SATA (and unknown) as consumer.
+        """
+        explicit = str(device.get("drive_class") or "").strip().lower()
+        if explicit in ("consumer", "enterprise"):
+            return explicit
+        protocol = str(device.get("transport_protocol") or "").strip().upper()
+        if protocol in ("SCSI", "SAS", "NVME"):
+            return "enterprise"
+        return "consumer"
+
+    def _band_base_score(self, grade: str) -> int:
+        """Representative 0-100 score for a final letter grade band."""
+        scores = self.config.grade_band_base_scores
+        if grade in scores:
+            return int(scores[grade])
+        return self.DEFAULT_GRADE_BAND_BASE_SCORES.get(grade, 0)
+
+    def _grade_floor(self, grade: str) -> int:
+        """Minimum score (inclusive) for a letter grade band."""
+        for threshold, g, _ in self.GRADE_THRESHOLDS:
+            if g == grade:
+                return threshold
+        return 0
+
+    def _score_for_grade(self, grade: str, deductions: list[ScoreDeduction]) -> int:
+        """
+        Graduated 0-100 score consistent with the final grade band.
+
+        Starts from the grade's base band score and subtracts minor
+        non-graduated warnings (temperature warning, wear tiers, ...),
+        clamped so the score stays within the grade's band.
+        """
+        if grade == "F":
+            return 0
+        base = self._band_base_score(grade)
+        minor = sum(d.points for d in deductions if d.attribute_grade is None and d.severity in ("info", "warning"))
+        floor = self._grade_floor(grade)
+        return max(floor, min(100, base - minor))
+
+    @staticmethod
+    def _band_grade(value: int, bands: dict) -> str:
+        """
+        Grade a raw attribute count against per-grade maximums.
+
+        ``bands`` maps grade -> maximum value for that grade (e.g. grown
+        defects: {"A": 0, "B": 9, "C": 50, "D": 100}); values above the D
+        maximum are Grade F.
+        """
+        for grade in ("A", "B", "C", "D"):
+            limit = bands.get(grade)
+            if limit is not None and value <= int(limit):
+                return grade
+        return "F"
+
+    def _grade_attribute(
+        self,
+        *,
+        field_name: str,
+        value,
+        bands: dict,
+        reason: str,
+        attribute_grades: dict,
+    ) -> ScoreDeduction | None:
+        """
+        Grade one attribute against its graduated bands and record the result.
+
+        Returns a deduction when the attribute grades B or worse. The F band
+        is a protocol-specific fail-gate (§4) and is marked critical.
+        """
+        count = self._coerce_int(value)
+        if count is None or count < 0:
+            return None
+        grade = self._band_grade(count, bands)
+        attribute_grades[field_name] = {"value": count, "grade": grade}
+        if grade == "A":
+            return None
+        points = 100 - self._band_base_score(grade)
+        if grade == "F":
+            severity = "critical"
+        elif grade == "B":
+            severity = "info"
+        else:
+            severity = "warning"
+        return ScoreDeduction(
+            reason=reason,
+            points=points,
+            severity=severity,
+            field=field_name,
+            value=count,
+            threshold=bands.get("D"),
+            attribute_grade=grade,
+        )
+
+    def _age_cap_grade(self, device: dict, drive_class: str) -> str:
+        """
+        Stage 2 age cap (§5): maximum achievable grade from power-on hours.
+
+        Returns "A" when no cap applies (low POH or POH unknown).
+        """
+        poh = self._coerce_int(device.get("power_on_hours"))
+        if poh is None or poh < 0:
+            return "A"
+        table = self.config.age_cap_table(drive_class)
+        cap = "A"
+        for grade in ("B", "C", "D", "F"):
+            threshold = table.get(grade)
+            if threshold is not None and poh > int(threshold):
+                cap = worst_grade(cap, grade)
+        return cap
+
+    # ------------------------------------------------------------------
+    # Binary-profile helpers (CDI v0.11.0 path)
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _rotation_rpm(device: dict) -> int | None:
@@ -364,7 +641,102 @@ class HealthScoreCalculator:
             threshold=failure_threshold,
         )
 
-    def _check_ata_metrics(self, device: dict) -> list[ScoreDeduction]:
+    def _check_nvme_selftest(self, device: dict) -> list[ScoreDeduction]:
+        """Check NVMe self-test results."""
+        deductions = []
+
+        # Check for self-test log data
+        self_test_log = device.get("nvme_self_test_log")
+        if (device.get("nvme_self_test_failed_count") or 0) > 0:
+            deductions.append(
+                ScoreDeduction(
+                    reason="Failed NVMe self-test - Drive is failing",
+                    points=self.SMART_FAILURE_DEDUCTION,
+                    severity="critical",
+                    field="nvme_self_test",
+                    value="Failed",
+                )
+            )
+            return deductions
+
+        if not self_test_log:
+            # Absence of self-test history is reported elsewhere; it is not a POH-based score deduction.
+            return deductions
+
+        # Check current operation
+        current_op = self_test_log.get("current_self_test_operation", {})
+        op_value = current_op.get("value", 0)
+
+        # Check for failed tests in history
+        entries = self_test_log.get("entries")
+        if not isinstance(entries, list):
+            entries = self_test_log.get("table")
+        if not isinstance(entries, list):
+            entries = []
+        if entries:
+            # Check most recent entries for failures
+            recent_failures = []
+            for entry in entries[:5]:  # Check last 5 tests
+                if self._nvme_selftest_entry_failed(entry):
+                    recent_failures.append(entry)
+
+            if recent_failures:
+                # FAILED SELF-TEST = CRITICAL FAILURE
+                # This should result in Grade F, similar to SMART failure
+                # Use maximum deduction to ensure Grade F
+                for failure in recent_failures:
+                    test_type = failure.get("type", 0)
+                    if test_type == 2:  # Extended test failure
+                        deductions.append(
+                            ScoreDeduction(
+                                reason="Failed extended self-test - Drive is failing",
+                                points=self.SMART_FAILURE_DEDUCTION,  # -50 points (same as SMART failure)
+                                severity="critical",
+                                field="nvme_self_test",
+                                value="Failed",
+                            )
+                        )
+                    else:  # Short test failure
+                        # Short test failure is also critical - if short test fails, drive is bad
+                        deductions.append(
+                            ScoreDeduction(
+                                reason="Failed short self-test - Drive is failing",
+                                points=self.SMART_FAILURE_DEDUCTION,  # -50 points (same as SMART failure)
+                                severity="critical",
+                                field="nvme_self_test",
+                                value="Failed",
+                            )
+                        )
+
+        return deductions
+
+    def _check_ata_scsi_selftest(self, device: dict, *, protocol_label: str) -> list[ScoreDeduction]:
+        """
+        Deduct for failed ATA/SCSI SMART self-tests in recent history.
+
+        Uses the same critical deduction as NVMe so a failed self-test is Grade F.
+        Only the most recent 5 entries are considered (aligns with NVMe policy).
+        """
+        entries = device.get("smart_self_tests")
+        if not isinstance(entries, list) or not entries:
+            return []
+
+        for entry in entries[:5]:
+            if not isinstance(entry, dict):
+                continue
+            if self._ata_scsi_selftest_entry_failed(entry):
+                return [
+                    ScoreDeduction(
+                        reason=f"Failed {protocol_label} self-test - Drive is failing",
+                        points=self.SMART_FAILURE_DEDUCTION,
+                        severity="critical",
+                        field="smart_self_tests",
+                        value="Failed",
+                    )
+                ]
+        return []
+
+    def _check_ata_metrics_binary(self, device: dict) -> list[ScoreDeduction]:
         """Check ATA-specific metrics."""
         deductions = []
 
@@ -481,6 +853,431 @@ class HealthScoreCalculator:
 
         return deductions
 
+    def _check_scsi_metrics_binary(self, device: dict) -> list[ScoreDeduction]:
+        """Check SCSI-specific metrics."""
+        deductions = []
+
+        # Grown defects (SAS — same scaling as SATA reallocated/pending)
+        grown_raw = device.get("grown_defects")
+        if grown_raw is None:
+            grown_raw = device.get("reallocated_sectors")
+        grown_defects = int(grown_raw or 0)
+        if self._use_hdd_sector_defect_curve(device):
+            d = self._deduction_hdd_sector_defect(
+                grown_defects,
+                failure_threshold=self.config.maximum_grown_defects,
+                reason="Grown defects",
+                field="grown_defects",
+            )
+        else:
+            d = self._deduction_ssd_style_defect_count(
+                grown_defects,
+                threshold=self.config.maximum_grown_defects,
+                reason="Grown defects",
+                field="grown_defects",
+            )
+        if d:
+            deductions.append(d)
+
+        # Uncorrected errors (canonical uncorrectable_errors + legacy aliases)
+        uncorrected = device.get("uncorrected_errors")
+        if uncorrected is None:
+            uncorrected = device.get("uncorrectable_errors")
+        if uncorrected is None:
+            uncorrected = device.get("offline_uncorrectable_sectors")
+        uncorrected = uncorrected or 0
+        if uncorrected > 0:
+            threshold = self.config.maximum_scsi_uncorrected_errors
+            points = min(uncorrected * self.PER_SECTOR_DEDUCTION, 50)
+
+            if uncorrected > threshold:
+                points += self.THRESHOLD_EXCEEDED_DEDUCTION
+                severity = "critical"
+            else:
+                severity = "warning"
+
+            deductions.append(
+                ScoreDeduction(
+                    reason="Uncorrected read/write errors",
+                    points=points,
+                    severity=severity,
+                    field="uncorrected_errors",
+                    value=uncorrected,
+                    threshold=threshold,
+                )
+            )
+
+        # SCSI self-test history (same critical fail-gate as NVMe/ATA)
+        deductions.extend(self._check_ata_scsi_selftest(device, protocol_label="SCSI"))
+
+        return deductions
+
+    # ------------------------------------------------------------------
+    # Stage 1 universal fail-gates
+    # ------------------------------------------------------------------
+
+    def _check_operational_state(self, device: dict) -> list[ScoreDeduction]:
+        """
+        Check top-level operational state / TUR readiness (#123).
+
+        ``Fail`` and TUR ``Not Ready`` are Stage 1 fail-gates (F-NO-RESPONSE).
+        Wired here because ``state`` is never set to the literal "fail" after
+        commit 3537842 — live scans report Ready / Not Ready from sg_turs.
+        """
+        state = device.get("state") or device.get("State")
+        if state is None:
+            return []
+        state_norm = str(state).strip().lower().replace("_", " ")
+        if state_norm == "fail":
+            reason = "Device operational state failed"
+        elif state_norm in ("not ready", "notready"):
+            reason = "Device not ready (TUR / F-NO-RESPONSE)"
+        else:
+            return []
+
+        return [
+            ScoreDeduction(
+                reason=reason,
+                points=self.SMART_FAILURE_DEDUCTION,
+                severity="critical",
+                field="state",
+                value=state,
+            )
+        ]
+
+    def _check_smart_status(self, device: dict) -> list[ScoreDeduction]:
+        """Check SMART overall health status (§4.1 F-SMART-FAIL)."""
+        deductions = []
+
+        smart_status = device.get("smart_status", "")
+
+        # Handle boolean values
+        if isinstance(smart_status, bool):
+            if not smart_status:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="SMART status failed",
+                        points=self.SMART_FAILURE_DEDUCTION,
+                        severity="critical",
+                        field="smart_status",
+                        value="Failed",
+                    )
+                )
+            return deductions
+
+        # Handle string values
+        if smart_status:
+            smart_status_lower = str(smart_status).lower()
+            if smart_status_lower in ("fail", "failed", "false", "bad"):
+                deductions.append(
+                    ScoreDeduction(
+                        reason="SMART status failed",
+                        points=self.SMART_FAILURE_DEDUCTION,
+                        severity="critical",
+                        field="smart_status",
+                        value=smart_status,
+                    )
+                )
+
+        return deductions
+
+    # ------------------------------------------------------------------
+    # ATA graduated attribute grading (§6/§7)
+    # ------------------------------------------------------------------
+
+    def _check_ata_metrics(self, device: dict, attribute_grades: dict) -> list[ScoreDeduction]:
+        """Check ATA-specific metrics with graduated per-attribute bands."""
+        deductions = []
+
+        # Reallocated sectors (graduated bands, worst-attribute-wins)
+        d = self._grade_attribute(
+            field_name="reallocated_sectors",
+            value=device.get("reallocated_sectors", 0) or 0,
+            bands=self.config.ata_reallocated_sectors_bands,
+            reason="Reallocated sectors",
+            attribute_grades=attribute_grades,
+        )
+        if d:
+            deductions.append(d)
+
+        # Pending sectors
+        pending_raw = device.get("pending_sectors")
+        if pending_raw is None:
+            pending_raw = device.get("pending_reallocated_sectors")
+        d = self._grade_attribute(
+            field_name="pending_sectors",
+            value=pending_raw or 0,
+            bands=self.config.ata_pending_sectors_bands,
+            reason="Pending sectors",
+            attribute_grades=attribute_grades,
+        )
+        if d:
+            deductions.append(d)
+
+        # Uncorrectable / offline uncorrectable (canonical + legacy alias; grade once)
+        uncorrectable_raw = device.get("uncorrectable_errors")
+        if uncorrectable_raw is None:
+            uncorrectable_raw = device.get("offline_uncorrectable_sectors")
+        d = self._grade_attribute(
+            field_name="uncorrectable_errors",
+            value=uncorrectable_raw or 0,
+            bands=self.config.ata_uncorrectable_errors_bands,
+            reason="Uncorrectable errors",
+            attribute_grades=attribute_grades,
+        )
+        if d:
+            deductions.append(d)
+
+        # SSD Percentage Used Endurance (for ATA SSDs)
+        # Check both ssd_percentage_used_endurance and percentage_used fields
+        pct_used = device.get("ssd_percentage_used_endurance") or device.get("percentage_used")
+        if pct_used is not None and pct_used >= 0:
+            threshold = self.config.maximum_ssd_percentage_used
+            warn_high = self.config.ssd_wear_warning_high
+            warn_moderate = self.config.ssd_wear_warning_moderate
+            if pct_used > threshold:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="SSD percentage used exceeds threshold",
+                        points=self.THRESHOLD_EXCEEDED_DEDUCTION,
+                        severity="critical",
+                        field="ssd_percentage_used_endurance",
+                        value=pct_used,
+                        threshold=threshold,
+                    )
+                )
+            elif pct_used > warn_high:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="High SSD percentage used",
+                        points=self.config.ssd_wear_high_deduction,
+                        severity="warning",
+                        field="ssd_percentage_used_endurance",
+                        value=pct_used,
+                    )
+                )
+            elif pct_used > warn_moderate:
+                deductions.append(
+                    ScoreDeduction(
+                        reason="Moderate SSD percentage used",
+                        points=self.config.ssd_wear_moderate_deduction,
+                        severity="info",
+                        field="ssd_percentage_used_endurance",
+                        value=pct_used,
+                    )
+                )
+
+        return deductions
+
+    # ------------------------------------------------------------------
+    # SCSI/SAS graduated attribute grading (§8)
+    # ------------------------------------------------------------------
+
+    def _check_scsi_metrics(self, device: dict, attribute_grades: dict) -> list[ScoreDeduction]:
+        """Check SCSI-specific metrics with graduated per-attribute bands (§8)."""
+        deductions = []
+
+        # Grown defects: A=0, B=1-9, C=10-50, D=51-100, F>100
+        grown_raw = device.get("grown_defects")
+        if grown_raw is None:
+            grown_raw = device.get("reallocated_sectors")
+        d = self._grade_attribute(
+            field_name="grown_defects",
+            value=grown_raw or 0,
+            bands=self.config.scsi_grown_defects_bands,
+            reason="Grown defects",
+            attribute_grades=attribute_grades,
+        )
+        if d:
+            deductions.append(d)
+
+        # Uncorrected read/write errors: A=0, B=1-5, C=6-25, D=26-100, F>100
+        uncorrected = device.get("uncorrected_errors")
+        if uncorrected is None:
+            uncorrected = device.get("uncorrectable_errors")
+        if uncorrected is None:
+            uncorrected = device.get("offline_uncorrectable_sectors")
+        d = self._grade_attribute(
+            field_name="uncorrected_errors",
+            value=uncorrected or 0,
+            bands=self.config.scsi_uncorrected_errors_bands,
+            reason="Uncorrected read/write errors",
+            attribute_grades=attribute_grades,
+        )
+        if d:
+            deductions.append(d)
+
+        return deductions
+
+    # ------------------------------------------------------------------
+    # Self-test history (§10) — graduated, recency-weighted, cross-protocol
+    # ------------------------------------------------------------------
+
+    def _check_selftest_history(self, device: dict, protocol: str, attribute_grades: dict) -> list[ScoreDeduction]:
+        """
+        Grade self-test history per §10:
+
+        - A: no failures
+        - C: one old failure
+        - D: 2+ old failures, or 1 recent failure
+        - F: 2+ recent failures
+
+        "Recent" means within ``selftest_recent_poh_window`` power-on hours
+        of the drive's current POH; failures with unknown timing are treated
+        as recent (conservative).
+        """
+        recent, old, has_history = self._selftest_failures(device, protocol)
+        if not has_history:
+            return []
+
+        total = recent + old
+        if recent >= 2:
+            grade = "F"
+        elif recent == 1 or old >= 2:
+            grade = "D"
+        elif old == 1:
+            grade = "C"
+        else:
+            grade = "A"
+
+        attribute_grades["self_test_history"] = {
+            "value": total,
+            "grade": grade,
+            "recent_failures": recent,
+            "old_failures": old,
+        }
+
+        if grade == "A":
+            return []
+
+        points = 100 - self._band_base_score(grade)
+        severity = "critical" if grade == "F" else "warning"
+        label = "NVMe" if protocol == "NVME" else protocol
+        return [
+            ScoreDeduction(
+                reason=f"Failed {label} self-test history ({recent} recent, {old} older)",
+                points=points,
+                severity=severity,
+                field="self_test_history",
+                value=total,
+                attribute_grade=grade,
+            )
+        ]
+
+    def _selftest_failures(self, device: dict, protocol: str) -> tuple[int, int, bool]:
+        """
+        Count recent and old self-test failures for a device.
+
+        :return: (recent_failures, old_failures, has_history)
+        """
+        current_poh = self._coerce_int(device.get("power_on_hours"))
+        window = self.config.selftest_recent_poh_window
+
+        failed_entries: list[dict] = []
+        has_history = False
+
+        if protocol == "NVME":
+            self_test_log = device.get("nvme_self_test_log")
+            entries = []
+            if isinstance(self_test_log, dict):
+                entries = self_test_log.get("entries")
+                if not isinstance(entries, list):
+                    entries = self_test_log.get("table")
+                if not isinstance(entries, list):
+                    entries = []
+            if entries:
+                has_history = True
+                failed_entries = [e for e in entries if isinstance(e, dict) and self._nvme_selftest_entry_failed(e)]
+            else:
+                # Device parsing can precompute a failed count from alternate log shapes;
+                # per-entry timing is unavailable so failures count as recent.
+                failed_count = self._coerce_int(device.get("nvme_self_test_failed_count")) or 0
+                if failed_count > 0:
+                    return failed_count, 0, True
+        else:
+            entries = device.get("smart_self_tests")
+            if isinstance(entries, list) and entries:
+                has_history = True
+                failed_entries = [e for e in entries if isinstance(e, dict) and self._ata_scsi_selftest_entry_failed(e)]
+
+        recent = 0
+        old = 0
+        for entry in failed_entries:
+            hours = self._selftest_entry_hours(entry)
+            if current_poh is None or hours is None or (current_poh - hours) <= window:
+                recent += 1
+            else:
+                old += 1
+        return recent, old, has_history
+
+    @staticmethod
+    def _selftest_entry_hours(entry: dict) -> int | None:
+        """Power-on hours at which a self-test log entry was recorded."""
+        for key in ("lifetime_hours", "power_on_hours"):
+            value = HealthScoreCalculator._coerce_int(entry.get(key))
+            if value is not None:
+                return value
+        power_on_time = entry.get("power_on_time")
+        if isinstance(power_on_time, dict):
+            # ATA/NVMe use hours; SCSI smartctl JSON uses aggregate (#121)
+            for key in ("hours", "aggregate"):
+                value = HealthScoreCalculator._coerce_int(power_on_time.get(key))
+                if value is not None:
+                    return value
+        return None
+
+    @staticmethod
+    def _nvme_selftest_entry_failed(entry: dict) -> bool:
+        """Return True when smartctl/nvme-cli reports a failed NVMe self-test entry."""
+        result = entry.get("self_test_result")
+        if isinstance(result, dict) and "value" in result:
+            return HealthScoreCalculator._nvme_selftest_result_code_failed(result.get("value"))
+        if "result" in entry:
+            return HealthScoreCalculator._nvme_selftest_result_code_failed(entry.get("result"))
+        result_string = str(entry.get("result_string") or entry.get("self_test_result_string") or "").lower()
+        return "fail" in result_string
+
+    @staticmethod
+    def _nvme_selftest_result_code_failed(value: object) -> bool:
+        try:
+            return int(value or 0) == 1
+        except (TypeError, ValueError):
+            return "fail" in str(value).lower()
+
+    @staticmethod
+    def _ata_scsi_selftest_entry_failed(entry: dict) -> bool:
+        """True when an ATA/SCSI self-test entry reports a completed failure."""
+        status = entry.get("status")
+        if isinstance(status, dict):
+            if "passed" in status:
+                # Explicit pass/fail; ignore in-progress / aborted-by-host (passed absent or None)
+                passed = status.get("passed")
+                if passed is None:
+                    return False
+                return passed is False
+            status_string = str(status.get("string") or "").lower()
+            if any(token in status_string for token in ("in progress", "aborted", "interrupted")):
+                return False
+            return "fail" in status_string or "error" in status_string
+
+        # SCSI dumps sometimes use flat result/string fields
+        for key in ("result", "self_test_result", "result_string"):
+            value = entry.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                return value is False
+            text = str(value).lower()
+            if any(token in text for token in ("in progress", "aborted", "interrupted")):
+                return False
+            if "fail" in text or "error" in text:
+                return True
+        return False
+
+    # ------------------------------------------------------------------
+    # NVMe checks (§9 — fail-gates and wear tiers)
+    # ------------------------------------------------------------------
+
     def _check_nvme_metrics(self, device: dict) -> list[ScoreDeduction]:
         """Check NVMe-specific metrics."""
         deductions = []
@@ -562,9 +1359,6 @@ class HealthScoreCalculator:
                     value=media_errors,
                 )
             )
-
-        # Self-test results
-        deductions.extend(self._check_nvme_selftest(device))
 
         # OCP C0h predictive-fail (skipped when log absent or disabled)
         deductions.extend(self._check_ocp_smart(device))
@@ -831,207 +1625,9 @@ class HealthScoreCalculator:
 
         return deductions
 
-    def _check_nvme_selftest(self, device: dict) -> list[ScoreDeduction]:
-        """Check NVMe self-test results."""
-        deductions = []
-
-        # Check for self-test log data
-        self_test_log = device.get("nvme_self_test_log")
-        if (device.get("nvme_self_test_failed_count") or 0) > 0:
-            deductions.append(
-                ScoreDeduction(
-                    reason="Failed NVMe self-test - Drive is failing",
-                    points=self.SMART_FAILURE_DEDUCTION,
-                    severity="critical",
-                    field="nvme_self_test",
-                    value="Failed",
-                )
-            )
-            return deductions
-
-        if not self_test_log:
-            # Absence of self-test history is reported elsewhere; it is not a POH-based score deduction.
-            return deductions
-
-        # Check current operation
-        current_op = self_test_log.get("current_self_test_operation", {})
-        op_value = current_op.get("value", 0)
-
-        # Check for failed tests in history
-        entries = self_test_log.get("entries")
-        if not isinstance(entries, list):
-            entries = self_test_log.get("table")
-        if not isinstance(entries, list):
-            entries = []
-        if entries:
-            # Check most recent entries for failures
-            recent_failures = []
-            for entry in entries[:5]:  # Check last 5 tests
-                if self._nvme_selftest_entry_failed(entry):
-                    recent_failures.append(entry)
-
-            if recent_failures:
-                # FAILED SELF-TEST = CRITICAL FAILURE
-                # This should result in Grade F, similar to SMART failure
-                # Use maximum deduction to ensure Grade F
-                for failure in recent_failures:
-                    test_type = failure.get("type", 0)
-                    if test_type == 2:  # Extended test failure
-                        deductions.append(
-                            ScoreDeduction(
-                                reason="Failed extended self-test - Drive is failing",
-                                points=self.SMART_FAILURE_DEDUCTION,  # -50 points (same as SMART failure)
-                                severity="critical",
-                                field="nvme_self_test",
-                                value="Failed",
-                            )
-                        )
-                    else:  # Short test failure
-                        # Short test failure is also critical - if short test fails, drive is bad
-                        deductions.append(
-                            ScoreDeduction(
-                                reason="Failed short self-test - Drive is failing",
-                                points=self.SMART_FAILURE_DEDUCTION,  # -50 points (same as SMART failure)
-                                severity="critical",
-                                field="nvme_self_test",
-                                value="Failed",
-                            )
-                        )
-
-        return deductions
-
-    @staticmethod
-    def _nvme_selftest_entry_failed(entry: dict) -> bool:
-        """Return True when smartctl/nvme-cli reports a failed NVMe self-test entry."""
-        result = entry.get("self_test_result")
-        if isinstance(result, dict) and "value" in result:
-            return HealthScoreCalculator._nvme_selftest_result_code_failed(result.get("value"))
-        if "result" in entry:
-            return HealthScoreCalculator._nvme_selftest_result_code_failed(entry.get("result"))
-        result_string = str(entry.get("result_string") or entry.get("self_test_result_string") or "").lower()
-        return "fail" in result_string
-
-    @staticmethod
-    def _nvme_selftest_result_code_failed(value: object) -> bool:
-        try:
-            return int(value or 0) == 1
-        except (TypeError, ValueError):
-            return "fail" in str(value).lower()
-
-    def _check_ata_scsi_selftest(self, device: dict, *, protocol_label: str) -> list[ScoreDeduction]:
-        """
-        Deduct for failed ATA/SCSI SMART self-tests in recent history.
-
-        Uses the same critical deduction as NVMe so a failed self-test is Grade F.
-        Only the most recent 5 entries are considered (aligns with NVMe policy).
-        """
-        entries = device.get("smart_self_tests")
-        if not isinstance(entries, list) or not entries:
-            return []
-
-        for entry in entries[:5]:
-            if not isinstance(entry, dict):
-                continue
-            if self._ata_scsi_selftest_entry_failed(entry):
-                return [
-                    ScoreDeduction(
-                        reason=f"Failed {protocol_label} self-test - Drive is failing",
-                        points=self.SMART_FAILURE_DEDUCTION,
-                        severity="critical",
-                        field="smart_self_tests",
-                        value="Failed",
-                    )
-                ]
-        return []
-
-    @staticmethod
-    def _ata_scsi_selftest_entry_failed(entry: dict) -> bool:
-        """True when an ATA/SCSI self-test entry reports a completed failure."""
-        status = entry.get("status")
-        if isinstance(status, dict):
-            if "passed" in status:
-                # Explicit pass/fail; ignore in-progress / aborted-by-host (passed absent or None)
-                passed = status.get("passed")
-                if passed is None:
-                    return False
-                return passed is False
-            status_string = str(status.get("string") or "").lower()
-            if any(token in status_string for token in ("in progress", "aborted", "interrupted")):
-                return False
-            return "fail" in status_string or "error" in status_string
-
-        # SCSI dumps sometimes use flat result/string fields
-        for key in ("result", "self_test_result", "result_string"):
-            value = entry.get(key)
-            if value is None:
-                continue
-            if isinstance(value, bool):
-                return value is False
-            text = str(value).lower()
-            if any(token in text for token in ("in progress", "aborted", "interrupted")):
-                return False
-            if "fail" in text or "error" in text:
-                return True
-        return False
-
-    def _check_scsi_metrics(self, device: dict) -> list[ScoreDeduction]:
-        """Check SCSI-specific metrics."""
-        deductions = []
-
-        # Grown defects (SAS — same scaling as SATA reallocated/pending)
-        grown_raw = device.get("grown_defects")
-        if grown_raw is None:
-            grown_raw = device.get("reallocated_sectors")
-        grown_defects = int(grown_raw or 0)
-        if self._use_hdd_sector_defect_curve(device):
-            d = self._deduction_hdd_sector_defect(
-                grown_defects,
-                failure_threshold=self.config.maximum_grown_defects,
-                reason="Grown defects",
-                field="grown_defects",
-            )
-        else:
-            d = self._deduction_ssd_style_defect_count(
-                grown_defects,
-                threshold=self.config.maximum_grown_defects,
-                reason="Grown defects",
-                field="grown_defects",
-            )
-        if d:
-            deductions.append(d)
-
-        # Uncorrected errors (canonical uncorrectable_errors + legacy aliases)
-        uncorrected = device.get("uncorrected_errors")
-        if uncorrected is None:
-            uncorrected = device.get("uncorrectable_errors")
-        if uncorrected is None:
-            uncorrected = device.get("offline_uncorrectable_sectors")
-        uncorrected = uncorrected or 0
-        if uncorrected > 0:
-            threshold = self.config.maximum_scsi_uncorrected_errors
-            points = min(uncorrected * self.PER_SECTOR_DEDUCTION, 50)
-
-            if uncorrected > threshold:
-                points += self.THRESHOLD_EXCEEDED_DEDUCTION
-                severity = "critical"
-            else:
-                severity = "warning"
-
-            deductions.append(
-                ScoreDeduction(
-                    reason="Uncorrected read/write errors",
-                    points=points,
-                    severity=severity,
-                    field="uncorrected_errors",
-                    value=uncorrected,
-                    threshold=threshold,
-                )
-            )
-
-        # SCSI self-test history (same critical fail-gate as NVMe/ATA)
-        deductions.extend(self._check_ata_scsi_selftest(device, protocol_label="SCSI"))
-
-        return deductions
+    # ------------------------------------------------------------------
+    # Temperature (§11)
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _coerce_temp_celsius(value) -> int | None:
@@ -1121,6 +1717,10 @@ class HealthScoreCalculator:
             )
 
         return deductions
+
+    # ------------------------------------------------------------------
+    # Score/grade helpers
+    # ------------------------------------------------------------------
 
     def get_grade(self, score: int) -> str:
         """

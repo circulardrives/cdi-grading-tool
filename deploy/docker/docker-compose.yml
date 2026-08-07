@@ -1,24 +1,28 @@
-# Demo / technician UI without installing Python, bun, or systemd locally.
+# CDI Health — single Docker Compose stack.
 #
-# From the repository root:
-#   docker compose -f deploy/docker/docker-compose.yml up --build
+# Prefer the wrapper (handles .env + pull):
+#   ./scripts/docker-up.sh
 #
-# Open http://127.0.0.1:3000 — enable **Use mock data** on Discover for fixture demos.
+# Or manually:
+#   docker compose -f deploy/docker/docker-compose.yml pull
+#   docker compose -f deploy/docker/docker-compose.yml up -d
 #
-# Set CDI_HEALTH_API_TOKEN in deploy/docker/.env (required when the API is
-# reachable beyond loopback; nginx injects X-API-Token for the SPA proxy).
+# Images default to GHCR :latest. Build from source with:
+#   ./scripts/docker-up.sh --build
 #
-# For live drive scanning on the Docker host, add the hardware overlay:
-#   docker compose -f deploy/docker/docker-compose.yml \
-#     -f deploy/docker/docker-compose.hardware.yml up --build
+# Proxy the UI at a remote grading bench:
+#   ./scripts/docker-up.sh --bench 192.168.0.74
 
 name: cdi-health
 
 services:
   api:
+    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-latest}
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.api
+    pull_policy: ${CDI_PULL_POLICY:-always}
+    profiles: ["local"]
     container_name: cdi-health-api
     command:
       [
@@ -35,12 +39,10 @@ services:
       ]
     environment:
       CDI_HEALTH_API_ALLOW_NON_ROOT: "1"
-      # Token is mandatory for non-loopback binds (compose publishes via nginx only).
       CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:?Set CDI_HEALTH_API_TOKEN in .env}
       CDI_HEALTH_DATA_DIR: /var/lib/cdi-health
     volumes:
       - cdi-api-data:/var/lib/cdi-health
-    # Do not publish 8844 on the host — reach the API via the dashboard nginx proxy.
     expose:
       - "8844"
     healthcheck:
@@ -58,12 +60,15 @@ services:
     restart: unless-stopped
 
   dashboard:
+    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-latest}
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.dashboard
       args:
         VITE_CDI_USE_MOCK_DATA: ${VITE_CDI_USE_MOCK_DATA:-0}
         VITE_CDI_MOCK_DATA_PATH: /app/src/cdi_health/mock_data
+    pull_policy: ${CDI_PULL_POLICY:-always}
+    profiles: ["local"]
     container_name: cdi-health-dashboard
     environment:
       CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:?Set CDI_HEALTH_API_TOKEN in .env}
@@ -71,7 +76,24 @@ services:
       - "${DASHBOARD_PORT:-3000}:80"
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
+    restart: unless-stopped
+
+  # Used only by: ./scripts/docker-up.sh --bench <ip>
+  dashboard-remote:
+    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.dashboard
+    pull_policy: ${CDI_PULL_POLICY:-always}
+    profiles: ["remote"]
+    container_name: cdi-health-dashboard
+    environment:
+      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:?Set CDI_HEALTH_API_TOKEN in .env}
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    volumes:
+      - ./.nginx.remote-bench.generated.conf:/etc/nginx/templates/default.conf.template:ro
     restart: unless-stopped
 
 volumes:

@@ -181,3 +181,36 @@ def test_generate_html_includes_ocp_columns_when_present(tmp_path: Path, mock_da
     assert "OCP SMART — Bad user nand blocks - Normalized" in html_text
     # FADU fixture: Physical media units read {hi:0, lo:2744719892480} → single 128-bit style integer string
     assert "2744719892480" in html_text
+
+
+def test_format_deductions_short_prefers_attribute_grade_over_points() -> None:
+    """#119: graduated bands display [grade X], not cosmetic [-N]."""
+    from cdi_health.classes.scoring import ScoreDeduction
+
+    banded = ScoreDeduction(
+        reason="Grown defects",
+        points=25,
+        severity="warning",
+        field="grown_defects",
+        value=25,
+        threshold=100,
+        attribute_grade="C",
+    )
+    warning = ScoreDeduction(
+        reason="Temperature warning",
+        points=5,
+        severity="warning",
+        field="temperature",
+        value=55,
+        threshold=50,
+    )
+    rg = ReportGenerator()
+    short = rg._format_deductions_short([banded, warning])
+    assert "[grade C]" in short
+    assert "[-25]" not in short
+    assert "[-5]" in short
+
+    html = rg._render_deduction_list([banded, warning])
+    assert "(grade C)" in html
+    assert "(−25)" not in html
+    assert "(−5)" in html

@@ -2,7 +2,7 @@
 
 Vite + React technician console for the CDI Health local API. Built with [shadcn/ui](https://ui.shadcn.com) (radix-luma preset) in a bun monorepo.
 
-**Release:** use Docker image `ghcr.io/circulardrives/cdi-health-dashboard:0.9.5` or build from this repo.
+**Release:** use Docker image `ghcr.io/circulardrives/cdi-health-dashboard:latest` (or pin a semver tag) or build from this repo.
 
 ## Structure
 
@@ -14,16 +14,16 @@ dashboard/
 
 ## Quick start (Docker — recommended)
 
-From the repository root. Pin **0.9.5**:
+From the repository root:
 
 ```bash
-./scripts/docker-reset.sh --clear-data
-
-# Find grading benches on the LAN
-CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh
+./scripts/docker-up.sh
 
 # Live scans via one remote bench
-BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
+./scripts/docker-up.sh --bench 192.168.0.74
+
+# Build from this clone
+./scripts/docker-up.sh --build
 ```
 
 Open http://127.0.0.1:3000
@@ -31,16 +31,10 @@ Open http://127.0.0.1:3000
 - **Discover** → subnet `192.168.0.0/24` to find `cdi-health-api` on the network.
 - **Use mock data** (Discover → Demo mode) is **off by default**; enable for fixture demos only.
 
-Build from source (includes latest UI, e.g. mock toggle):
-
-```bash
-docker compose -f deploy/docker/docker-compose.yml up -d --build
-```
-
 Images (multi-arch):
 
-- `ghcr.io/circulardrives/cdi-health-api:0.9.5`
-- `ghcr.io/circulardrives/cdi-health-dashboard:0.9.5`
+- `ghcr.io/circulardrives/cdi-health-api:latest`
+- `ghcr.io/circulardrives/cdi-health-dashboard:latest`
 
 See [Team testing](../docs/TEAM_TESTING.md) and [Technician deployment](../docs/TECHNICIAN_DEPLOYMENT.md).
 

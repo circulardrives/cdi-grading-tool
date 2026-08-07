@@ -48,6 +48,12 @@ DEFAULT_THRESHOLDS = {
         "maximum_reallocated_sectors": 10,
         "maximum_pending_sectors": 10,
         "maximum_uncorrectable_errors": 10,
+        # Graduated per-attribute bands (grade -> maximum value; above D max = F).
+        # Reconstructed from Revert Standard §8 SCSI tables; ATA §6/§7 tables were
+        # not independently verifiable, so the SCSI bands are reused (assumption).
+        "reallocated_sectors_bands": {"A": 0, "B": 9, "C": 50, "D": 100},
+        "pending_sectors_bands": {"A": 0, "B": 9, "C": 50, "D": 100},
+        "uncorrectable_errors_bands": {"A": 0, "B": 5, "C": 25, "D": 100},
     },
     "nvme": {
         "maximum_percentage_used": 100,
@@ -72,12 +78,23 @@ DEFAULT_THRESHOLDS = {
     "scsi": {
         "maximum_grown_defects": 10,
         "maximum_uncorrected_errors": 10,
+        # Graduated per-attribute bands (Revert Standard §8 / #116):
+        # grown defects A=0, B=1-9, C=10-50, D=51-100, F>100
+        # uncorrected errors A=0, B=1-5, C=6-25, D=26-100, F>100
+        "grown_defects_bands": {"A": 0, "B": 9, "C": 50, "D": 100},
+        "uncorrected_errors_bands": {"A": 0, "B": 5, "C": 25, "D": 100},
     },
     "temperature": {
         "maximum_operating": 60,
         "warning": 55,
     },
     "grading": {
+        # Selectable grading profile (#115 / #125):
+        #   binary — CDI v0.11.0-compatible fail-gate + numeric deduction model
+        #   abcdf  — Revert Drive Grading Standard v2.0 (age cap, graduated bands)
+        # Aliases: passfail→binary; revert/graduated→abcdf.
+        # Default abcdf: in-progress Revert work; use binary for v0.11.0 BC.
+        "profile": "abcdf",
         "hdd_sector_concern_threshold": 2,
         "hdd_sector_defect_max_deduction_points": 10,
         "hdd_sector_excess_points_per_sector": 1,
@@ -90,6 +107,22 @@ DEFAULT_THRESHOLDS = {
             "D": 40,
             "F": 0,
         },
+        # Representative 0-100 score for each final grade band (abcdf profile)
+        "grade_band_base_scores": {
+            "A": 100,
+            "B": 85,
+            "C": 70,
+            "D": 50,
+            "F": 0,
+        },
+        # Stage 2 age cap — applied only in the abcdf profile (§5 / #115 / #125).
+        "age_cap": {
+            "enabled": True,
+            "enterprise": {"B": 40000, "C": 60000},
+            "consumer": {"B": 20000, "D": 60000},
+        },
+        # Self-test recency window (§10 / #121) — abcdf profile only.
+        "selftest_recent_poh_window": 1000,
         "deductions": {
             "smart_failure": 50,
             "per_sector": 5,
@@ -99,6 +132,35 @@ DEFAULT_THRESHOLDS = {
         },
     },
 }
+
+# Canonical grading profile names and accepted aliases (#115 / #125).
+GRADING_PROFILE_BINARY = "binary"
+GRADING_PROFILE_ABCDF = "abcdf"
+_GRADING_PROFILE_ALIASES = {
+    "binary": GRADING_PROFILE_BINARY,
+    "passfail": GRADING_PROFILE_BINARY,
+    "pass-fail": GRADING_PROFILE_BINARY,
+    "pass_fail": GRADING_PROFILE_BINARY,
+    "cdi": GRADING_PROFILE_BINARY,
+    "abcdf": GRADING_PROFILE_ABCDF,
+    "revert": GRADING_PROFILE_ABCDF,
+    "graduated": GRADING_PROFILE_ABCDF,
+    "standard": GRADING_PROFILE_ABCDF,
+}
+
+
+def normalize_grading_profile(profile: str | None) -> str:
+    """
+    Normalize a grading-profile name to ``binary`` or ``abcdf``.
+
+    Unknown values fall back to ``abcdf`` (Revert-standard default).
+    """
+    if profile is None:
+        return GRADING_PROFILE_ABCDF
+    key = str(profile).strip().lower()
+    if not key:
+        return GRADING_PROFILE_ABCDF
+    return _GRADING_PROFILE_ALIASES.get(key, GRADING_PROFILE_ABCDF)
 
 
 class ThresholdConfig:
@@ -354,6 +416,105 @@ class ThresholdConfig:
     def maximum_scsi_uncorrected_errors(self) -> int:
         """Maximum uncorrected errors for SCSI devices."""
         return self.get("scsi", "maximum_uncorrected_errors", default=10)
+
+    # Graduated per-attribute bands (Revert Standard §6-§8)
+    def _bands(self, section: str, key: str, default: dict) -> dict:
+        bands = self.get(section, key, default=None)
+        return bands if isinstance(bands, dict) and bands else dict(default)
+
+    @property
+    def scsi_grown_defects_bands(self) -> dict:
+        """SCSI grown-defect band maximums (grade -> max value; above D max = F)."""
+        return self._bands("scsi", "grown_defects_bands", {"A": 0, "B": 9, "C": 50, "D": 100})
+
+    @property
+    def scsi_uncorrected_errors_bands(self) -> dict:
+        """SCSI uncorrected read/write error band maximums."""
+        return self._bands("scsi", "uncorrected_errors_bands", {"A": 0, "B": 5, "C": 25, "D": 100})
+
+    @property
+    def ata_reallocated_sectors_bands(self) -> dict:
+        """ATA reallocated-sector band maximums."""
+        return self._bands("ata", "reallocated_sectors_bands", {"A": 0, "B": 9, "C": 50, "D": 100})
+
+    @property
+    def ata_pending_sectors_bands(self) -> dict:
+        """ATA pending-sector band maximums."""
+        return self._bands("ata", "pending_sectors_bands", {"A": 0, "B": 9, "C": 50, "D": 100})
+
+    @property
+    def ata_uncorrectable_errors_bands(self) -> dict:
+        """ATA uncorrectable-error band maximums."""
+        return self._bands("ata", "uncorrectable_errors_bands", {"A": 0, "B": 5, "C": 25, "D": 100})
+
+    # Grading profile (#115 / #125)
+    @property
+    def grading_profile(self) -> str:
+        """
+        Active grading profile: ``binary`` or ``abcdf``.
+
+        - binary: CDI v0.11.0-compatible fail-gates + numeric deductions; no age cap.
+        - abcdf: Revert Drive Grading Standard v2.0 (age cap, graduated bands, tri-state cert).
+        """
+        return normalize_grading_profile(self.get("grading", "profile", default=GRADING_PROFILE_ABCDF))
+
+    @property
+    def is_abcdf_profile(self) -> bool:
+        """True when the Revert Standard (abcdf) grading profile is active."""
+        return self.grading_profile == GRADING_PROFILE_ABCDF
+
+    def set_grading_profile(self, profile: str) -> str:
+        """
+        Override the grading profile at runtime (e.g. from ``--grading-profile``).
+
+        :return: Canonical profile name that was applied
+        """
+        canonical = normalize_grading_profile(profile)
+        grading = self._config.setdefault("grading", {})
+        if not isinstance(grading, dict):
+            grading = {}
+            self._config["grading"] = grading
+        grading["profile"] = canonical
+        return canonical
+
+    # Stage 2 age cap (Revert Standard §5 / issues #115, #125) — abcdf only
+    @property
+    def age_cap_enabled(self) -> bool:
+        """
+        Whether §5 POH age-cap grading is active within the abcdf profile.
+
+        Ignored when grading.profile is binary (no age cap). Within abcdf,
+        defaults True; set grading.age_cap.enabled=false to disable age cap
+        while keeping graduated defect bands (#115 / #125).
+        """
+        if not self.is_abcdf_profile:
+            return False
+        return bool(self.get("grading", "age_cap", "enabled", default=True))
+
+    def age_cap_table(self, drive_class: str) -> dict:
+        """Age-cap table for a drive class: grade -> POH threshold above which the grade caps."""
+        table = self.get("grading", "age_cap", str(drive_class), default=None)
+        if isinstance(table, dict) and table:
+            # Ignore non-threshold keys (e.g. enabled) if nested incorrectly
+            return {k: v for k, v in table.items() if k in ("A", "B", "C", "D", "F")}
+        defaults = {
+            "enterprise": {"B": 40000, "C": 60000},
+            "consumer": {"B": 20000, "D": 60000},
+        }
+        return defaults.get(str(drive_class), defaults["consumer"])
+
+    @property
+    def selftest_recent_poh_window(self) -> int:
+        """POH window within which a failed self-test counts as 'recent' (§10 / #121)."""
+        return int(self.get("grading", "selftest_recent_poh_window", default=1000))
+
+    @property
+    def grade_band_base_scores(self) -> dict:
+        """Representative 0-100 score for each final grade band."""
+        scores = self.get("grading", "grade_band_base_scores", default=None)
+        if isinstance(scores, dict) and scores:
+            return scores
+        return {"A": 100, "B": 85, "C": 70, "D": 50, "F": 0}
 
     # Temperature thresholds
     @property
