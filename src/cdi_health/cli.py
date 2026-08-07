@@ -107,24 +107,30 @@ def check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) 
     return missing
 
 
-def load_threshold_config(config_path: str | None) -> None:
+def load_threshold_config(config_path: str | None, grading_profile: str | None = None) -> None:
     """
     Load threshold configuration.
 
     Uses the explicit --config path when given, otherwise falls back to the
     packaged thresholds.yaml so the shipped defaults are actually applied.
+
+    Optional ``grading_profile`` (from ``--grading-profile``) overrides
+    ``grading.profile`` after the YAML is loaded (#115 / #125).
     """
-    from cdi_health.classes.config import configure_thresholds, get_default_config_path
+    from cdi_health.classes.config import configure_thresholds, get_config, get_default_config_path
 
     if config_path:
         configure_thresholds(config_path)
         logger.info("Loaded configuration from: %s", config_path)
-        return
+    else:
+        default_path = get_default_config_path()
+        if default_path:
+            configure_thresholds(default_path)
+            logger.debug("Loaded default configuration from: %s", default_path)
 
-    default_path = get_default_config_path()
-    if default_path:
-        configure_thresholds(default_path)
-        logger.debug("Loaded default configuration from: %s", default_path)
+    if grading_profile:
+        applied = get_config().set_grading_profile(grading_profile)
+        logger.info("Grading profile: %s", applied)
 
 
 def scan_devices_real(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) -> list[dict]:
@@ -228,7 +234,7 @@ def cmd_scan(args: Namespace) -> int:
             return 1
 
     # Load configuration (custom via --config, or packaged defaults)
-    load_threshold_config(args.config)
+    load_threshold_config(args.config, grading_profile=getattr(args, "grading_profile", None))
 
     # Scan devices
     try:
@@ -322,7 +328,7 @@ def cmd_validate(args: Namespace) -> int:
             logger.info("Please install them before scanning real devices.")
             return 1
 
-    load_threshold_config(args.config)
+    load_threshold_config(args.config, grading_profile=getattr(args, "grading_profile", None))
 
     try:
         if args.mock_file:
@@ -399,7 +405,7 @@ def cmd_report(args: Namespace) -> int:
             return 1
 
     # Load configuration (custom via --config, or packaged defaults)
-    load_threshold_config(args.config)
+    load_threshold_config(args.config, grading_profile=getattr(args, "grading_profile", None))
 
     # Scan devices
     try:
@@ -1119,7 +1125,7 @@ def cmd_export_mock(args: Namespace) -> int:
         logger.info("Install smartctl/nvme-cli (and sg utils for SCSI) before exporting.")
         return 1
 
-    load_threshold_config(args.config)
+    load_threshold_config(args.config, grading_profile=getattr(args, "grading_profile", None))
 
     try:
         devices = scan_devices_real(
@@ -1174,6 +1180,16 @@ def add_common_arguments(parser: argparse.ArgumentParser, *, include_mock: bool 
         "--config",
         metavar="FILE",
         help="Path to YAML config file for custom thresholds",
+    )
+    parser.add_argument(
+        "--grading-profile",
+        metavar="PROFILE",
+        choices=["binary", "abcdf", "passfail", "revert", "graduated", "cdi"],
+        help=(
+            "Grading profile: binary (CDI v0.11.0 fail-gate/numeric; aliases: "
+            "passfail, cdi) or abcdf (Revert Standard v2.0 graduated; aliases: "
+            "revert, graduated). Overrides grading.profile from --config / defaults."
+        ),
     )
 
     # Mock mode options

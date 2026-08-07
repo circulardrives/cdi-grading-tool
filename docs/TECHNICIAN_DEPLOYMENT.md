@@ -1,6 +1,6 @@
 # Technician Deployment Guide
 
-**Current release: 0.9.5** — Docker images, `.deb` packages, and examples below use `CDI_VERSION=0.9.5` or [v0.9.5](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.5).
+Docker stacks below always pull **`latest`** from GHCR (published on each [GitHub release](https://github.com/circulardrives/cdi-grading-tool/releases)). Pin a semver tag only when you need a fixed build.
 
 Team end-to-end test plan: **[TEAM_TESTING.md](TEAM_TESTING.md)**.
 
@@ -22,23 +22,85 @@ Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2.
 ./scripts/docker-reset.sh --clear-data
 ```
 
-### Default stack (GHCR 0.9.5)
+### Prerequisites
+
+1. Clone the repo (Compose files and helper scripts live here; images come from GHCR):
 
 ```bash
 git clone https://github.com/circulardrives/cdi-grading-tool.git
 cd cdi-grading-tool
-
-CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 ```
 
+2. Copy env and set a token:
+
+```bash
+cp deploy/docker/.env.example deploy/docker/.env
+# edit deploy/docker/.env — set CDI_HEALTH_API_TOKEN to a strong random value
+# optional: DASHBOARD_PORT (default 3000)
+```
+
+Compose fails fast if the token is missing; nginx injects `X-API-Token` for `/api/cdi` (the SPA must not embed the token).
+
+**Auth:** images are public on GHCR — no `docker login` required for pulls.
+
+Images (`linux/amd64`, `linux/arm64`):
+
+- `ghcr.io/circulardrives/cdi-health-api:latest`
+- `ghcr.io/circulardrives/cdi-health-dashboard:latest`
+
+(`:latest` is updated on every tagged release. Override with `CDI_VERSION=<semver>` only to pin.)
+
+### Default stack (always pull latest)
+
+```bash
+# Prefer an explicit latest tag so helper scripts do not fall back to an old default
+export CDI_VERSION=latest
+
+docker compose -f deploy/docker/docker-compose.ghcr.yml pull
+docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+```
+
+`deploy/docker/docker-compose.ghcr.yml` defaults to `:latest` and sets `pull_policy: always` (Compose v2). Re-running `up -d` after a new release still refreshes images; using `pull` first makes the update explicit.
+
 Open http://127.0.0.1:3000 — **live scans default**; enable **Use mock data** on **Discover** for fixtures.
+
+### Verify version
+
+On the default GHCR stack the API is not published on the host — use the dashboard proxy or `exec`:
+
+```bash
+# Via nginx on the dashboard port (default 3000)
+curl -s http://127.0.0.1:3000/api/cdi/api/v1/health
+# → {"status":"ok","version":"..."}
+
+# Or inside the API container
+docker exec cdi-health-api \
+  python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8844/api/v1/health').read().decode())"
+
+# Confirm which GHCR digests you are running
+docker compose -f deploy/docker/docker-compose.ghcr.yml images
+docker image inspect ghcr.io/circulardrives/cdi-health-api:latest \
+  --format '{{.RepoDigests}} {{.Created}}'
+```
+
+With the Linux host-network overlay, `curl -s http://127.0.0.1:8844/api/v1/health` works directly.
+
+### Update (re-pull latest)
+
+```bash
+export CDI_VERSION=latest
+docker compose -f deploy/docker/docker-compose.ghcr.yml pull
+docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+```
+
+Same pattern for LAN / host / remote-bench helpers: set `CDI_VERSION=latest`, then re-run the script (or `pull` + `up`).
 
 ### LAN discovery (find remote grading benches)
 
 **macOS and Linux (recommended):** local API on the default Docker bridge. Enter your lab subnet on the **Discover** page — no `BENCH_IP` required.
 
 ```bash
-CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh
+CDI_VERSION=latest ./scripts/docker-lan-discover.sh
 ```
 
 Open http://127.0.0.1:3000 → **Discover** → subnet `192.168.0.0/24` (or your lab CIDR). On macOS Docker Desktop, host networking uses the VM subnet (~192.168.65.x), but probing an **explicit** lab subnet from the bridged API container reaches benches on your LAN.
@@ -46,7 +108,10 @@ Open http://127.0.0.1:3000 → **Discover** → subnet `192.168.0.0/24` (or your
 **Linux (optional):** host-network overlay auto-detects the local subnet. Port **8844** must be free on your machine.
 
 ```bash
-CDI_VERSION=0.9.5 docker compose \
+CDI_VERSION=latest docker compose \
+  -f deploy/docker/docker-compose.ghcr.yml \
+  -f deploy/docker/docker-compose.host.yml pull
+CDI_VERSION=latest docker compose \
   -f deploy/docker/docker-compose.ghcr.yml \
   -f deploy/docker/docker-compose.host.yml up -d
 ```
@@ -54,17 +119,10 @@ CDI_VERSION=0.9.5 docker compose \
 **Pin all API traffic to one bench** (including live scans on that host — not just discovery):
 
 ```bash
-BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
+CDI_VERSION=latest BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
 ```
 
 v1 limitation: with `./scripts/docker-lan-discover.sh`, **Discover** finds remote benches, but **Scan** / **Drive Health** still hit the local API container until you select a connected host or use remote-bench mode.
-
-Images (`linux/amd64`, `linux/arm64`):
-
-- `ghcr.io/circulardrives/cdi-health-api`
-- `ghcr.io/circulardrives/cdi-health-dashboard`
-
-No `docker login` required for public pulls.
 
 Stop:
 
@@ -76,11 +134,7 @@ Stop:
 
 **Build locally** (optional): `./scripts/docker-up.sh --build` or `./scripts/docker-up.sh --host --build`
 
-Copy `deploy/docker/.env.example` to `deploy/docker/.env` to set `DASHBOARD_PORT` and a required `CDI_HEALTH_API_TOKEN`. Compose fails fast if the token is missing; nginx injects `X-API-Token` for `/api/cdi` (the SPA must not embed the token).
-
 For live drive scanning on the bench itself, use Option B (`.deb`) below.
-
----
 
 ---
 
@@ -105,11 +159,12 @@ Use `sudo cdi-health scan` if your user cannot read SMART / NVMe log pages on th
 
 ## Option B — Install from `.deb`
 
-The package declares **Depends** on `python3`, `smartmontools`, and `nvme-cli`, and **Recommends** `openseachest` (OpenSeaChest). Prefer apt so dependencies install in one step:
+Download the newest `cdi-health_*_all.deb` from [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases/latest) (asset name includes the version). The package declares **Depends** on `python3`, `smartmontools`, and `nvme-cli`, and **Recommends** `openseachest` (OpenSeaChest). Prefer apt so dependencies install in one step:
 
 ```bash
+# After downloading the .deb from the latest release into the current directory:
 sudo apt update
-sudo apt install ./cdi-health_0.9.5_all.deb
+sudo apt install ./cdi-health_*_all.deb
 cdi-health --version
 sudo cdi-health scan
 ```
@@ -140,7 +195,7 @@ sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
 
 The API refuses non-loopback binds without `CDI_HEALTH_API_TOKEN`. Trusted lab networks only.
 
-For **fixture demos** on a laptop, use **Option A** with `docker compose -f deploy/docker/docker-compose.yml up -d --build` and enable **Use mock data** on Discover, or `./scripts/start-local-mock.sh` from a dev clone.
+For **fixture demos** on a laptop, use **Option A** with the GHCR stack above (or `docker compose -f deploy/docker/docker-compose.yml up -d --build` from a dev clone) and enable **Use mock data** on Discover, or `./scripts/start-local-mock.sh`.
 
 ---
 
@@ -225,8 +280,12 @@ sudo systemctl enable --now cdi-health-dashboard.service
 ## Verify
 
 ```bash
+# Docker default stack (API via nginx proxy):
+curl -s http://127.0.0.1:3000/api/cdi/api/v1/health
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000
+
+# Bare metal / host-network API:
 curl -s http://127.0.0.1:8844/api/v1/health
-curl -s http://127.0.0.1:3000
 ```
 
 ## Optional Sudoers Profile (Non-Root API)

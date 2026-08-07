@@ -33,6 +33,9 @@ from concurrent.futures import ThreadPoolExecutor
 # Data Classes
 from dataclasses import dataclass
 
+# Timestamps
+from datetime import datetime, timezone
+
 # Exceptions
 from cdi_health.classes.exceptions import CommandException, DevicesException
 
@@ -338,6 +341,16 @@ class Device:
         :return: None
         """
 
+        # Per-drive scan timestamp (Revert Standard §13) + §15 edge-case state.
+        # Set here (not only in __init__) so mock devices that bypass
+        # __init__ still carry the fields.
+        self.scan_timestamp: str = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.grading_status: str = "GRADED"
+        self.ungraded_reasons: list[str] = []
+        self.warning_flags: list[str] = []
+        self.security_locked: bool = False
+        self.smart_data_readable: bool = True
+
         # Collect Smartctl Information as JSON
         self.smartctl_json = self.smartctl.get_all_as_json()
 
@@ -362,9 +375,73 @@ class Device:
             # Collect SCSI Information
             SCSIProtocol(device=self, smartctl=self.smartctl_json)
 
-        # Grade the Device - protocols we cannot collect metrics for stay "U"
-        if self.is_ata or self.is_nvme or self.is_scsi:
+        # Revert Standard §15: detect states that must block grading so a
+        # security-locked or unreadable drive never silently receives a grade.
+        self.detect_ungradeable_states()
+
+        # Grade the Device - UNGRADED drives and protocols we cannot collect
+        # metrics for stay "U"
+        if self.grading_status != "UNGRADED" and (self.is_ata or self.is_nvme or self.is_scsi):
             self.apply_health_grade()
+
+    def detect_ungradeable_states(self) -> None:
+        """
+        Revert Standard §15 edge cases: security-locked drives (§4.1) and
+        drives whose SMART data could not be read must be UNGRADED, not
+        graded from missing/defaulted data.
+        """
+
+        self.security_locked = self._detect_security_locked()
+        self.smart_data_readable = self._detect_smart_data_readable()
+
+        if self.security_locked:
+            self._mark_ungraded("SECURITY_LOCKED")
+
+        if not self.smart_data_readable and (self.is_ata or self.is_nvme or self.is_scsi):
+            self._mark_ungraded("SMART_UNREADABLE")
+
+        if not (self.is_ata or self.is_nvme or self.is_scsi):
+            self._mark_ungraded("UNSUPPORTED_PROTOCOL")
+
+    def _mark_ungraded(self, reason: str) -> None:
+        """Record an UNGRADED state (grade stays "U", never a letter grade)."""
+        self.grading_status = "UNGRADED"
+        if reason not in self.ungraded_reasons:
+            self.ungraded_reasons.append(reason)
+        self.cdi_grade = "U"
+        self.cdi_certified = False
+        self.cdi_eligible = False
+
+    def _detect_security_locked(self) -> bool:
+        """True when the drive reports an active ATA security lock."""
+        security = self.smartctl_json.get("ata_security") if isinstance(self.smartctl_json, dict) else None
+        if not isinstance(security, dict):
+            return False
+        if security.get("locked") is True:
+            return True
+        # Older smartctl builds only carry the summary string, e.g.
+        # "ENABLED, PW level HIGH, **LOCKED** [SEC4]".
+        return "**locked**" in str(security.get("string") or "").lower()
+
+    def _detect_smart_data_readable(self) -> bool:
+        """
+        True when smartctl returned usable SMART/health data. Without this,
+        the scoring engine would see a defaulted smart_status=False and fail
+        the drive instead of marking it UNGRADED.
+        """
+        data = self.smartctl_json if isinstance(self.smartctl_json, dict) else {}
+        if isinstance(data.get("smart_status"), dict):
+            return True
+
+        ata_attributes = data.get("ata_smart_attributes")
+        if isinstance(ata_attributes, dict) and ata_attributes.get("table"):
+            return True
+
+        if isinstance(data.get("scsi_error_counter_log"), dict):
+            return True
+
+        nvme_health = data.get("nvme_smart_health_information_log")
+        return isinstance(nvme_health, dict) and bool(nvme_health)
 
     def apply_health_grade(self) -> None:
         """
@@ -373,6 +450,13 @@ class Device:
         The protocol handlers only collect metrics; this is the single
         grading source of truth.
         """
+
+        # Revert Standard §15: UNGRADED drives never receive a letter grade.
+        if self.grading_status == "UNGRADED":
+            self.cdi_grade = "U"
+            self.cdi_certified = False
+            self.cdi_eligible = False
+            return
 
         # Local import: scoring is a leaf module, but importing lazily keeps
         # module import order flexible for future refactors
@@ -824,9 +908,12 @@ class Devices:
                 # Continue
                 continue
 
-            # If MegaRAID Bus
+            # If MegaRAID Bus — cannot be graded through the controller;
+            # record it so it surfaces as UNGRADED instead of vanishing (§15.6)
             if device["name"].startswith("/dev/bus"):
-                # Continue
+                failure = dict(device)
+                failure["error"] = "RAID controller passthrough not supported"
+                self.failures.append(failure)
                 continue
 
             # Get Type
@@ -886,8 +973,64 @@ class Devices:
             # Filter out False values (failed device analyses)
             self.devices = [device for device in devices_list if device is not False]
 
+        # Revert Standard §15.5/§15.6: drives that could not be opened or
+        # analysed (USB/RAID passthrough failures, open errors) must appear
+        # in the output as UNGRADED records, never silently disappear.
+        self.devices.extend(self._ungraded_placeholder(failure) for failure in self.failures)
+
         # Return
         return True
+
+    @staticmethod
+    def _ungraded_placeholder(failure: dict) -> dict:
+        """Minimal UNGRADED device record for a drive that could not be analysed."""
+        name = failure.get("name", "unknown")
+        device_type = str(failure.get("type") or "").lower()
+        error = str(failure.get("error") or failure.get("open_error") or "Device could not be opened")
+        error_l = error.lower()
+
+        if "usb" in device_type or "usb" in error_l:
+            reason = "USB_PASSTHROUGH_FAILURE"
+        elif "megaraid" in device_type or "raid" in device_type or str(name).startswith("/dev/bus"):
+            reason = "RAID_PASSTHROUGH_FAILURE"
+        elif "timed out" in error_l or "timeout" in error_l:
+            reason = "DEVICE_TIMEOUT"
+        else:
+            reason = "DEVICE_OPEN_FAILURE"
+
+        # Preserve identity when smartctl/open_error payloads carry it (#122).
+        serial = failure.get("serial_number") or failure.get("serial")
+        if serial is None and isinstance(failure.get("device"), dict):
+            serial = failure["device"].get("serial_number") or failure["device"].get("serial")
+        serial = str(serial).strip() if serial else ""
+        if not serial or serial.lower() in ("not reported", "unknown", "-", "—"):
+            serial = "Not Reported"
+
+        model = failure.get("model_number") or failure.get("model_name") or "Not Reported"
+        vendor = failure.get("vendor") or "Not Reported"
+
+        return {
+            "dut": name,
+            "state": "Not Ready",
+            "vendor": vendor,
+            "model_number": model,
+            "serial_number": serial,
+            "firmware_revision": "Not Reported",
+            "transport_protocol": failure.get("protocol", "Unknown"),
+            "media_type": "Not Reported",
+            "smart_status": None,
+            "power_on_hours": None,
+            "grading_status": "UNGRADED",
+            "ungraded_reasons": [reason],
+            "ungraded_detail": error,
+            "warning_flags": [],
+            "security_locked": False,
+            "smart_data_readable": False,
+            "cdi_grade": "U",
+            "cdi_certified": False,
+            "cdi_eligible": False,
+            "scan_timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
 
     def analyse_device(self, device_id: str):
         """

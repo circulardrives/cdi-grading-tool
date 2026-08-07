@@ -1,0 +1,107 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      4
+    ],
+    "svn_revision": "5530",
+    "platform_info": "x86_64-linux-6.6.0",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--xall",
+      "--json=ov",
+      "/dev/nvme8"
+    ],
+    "exit_status": 0
+  },
+  "local_time": {
+    "time_t": 1754450000,
+    "asctime": "Wed Aug  5 00:00:00 2026 UTC"
+  },
+  "device": {
+    "name": "/dev/nvme8",
+    "info_name": "/dev/nvme8",
+    "type": "nvme",
+    "protocol": "NVMe"
+  },
+  "model_name": "REVERT NV1920",
+  "serial_number": "RVNVMEOK01",
+  "firmware_version": "RV01",
+  "nvme_pci_vendor": {
+    "id": 5197,
+    "subsystem_id": 5197
+  },
+  "nvme_total_capacity": 1920383410176,
+  "nvme_unallocated_capacity": 0,
+  "nvme_controller_id": 1,
+  "nvme_version": {
+    "string": "2.0",
+    "value": 131072
+  },
+  "nvme_number_of_namespaces": 1,
+  "user_capacity": {
+    "blocks": 3750748545,
+    "bytes": 1920383410176
+  },
+  "logical_block_size": 512,
+  "smart_support": {
+    "available": true,
+    "enabled": true
+  },
+  "smart_status": {
+    "passed": true,
+    "nvme": {
+      "value": 0
+    }
+  },
+  "nvme_smart_health_information_log": {
+    "critical_warning": 0,
+    "temperature": 32,
+    "available_spare": 100,
+    "available_spare_threshold": 10,
+    "percentage_used": 3,
+    "data_units_read": 100000000,
+    "data_units_written": 80000000,
+    "host_reads": 900000000,
+    "host_writes": 700000000,
+    "controller_busy_time": 4000,
+    "power_cycles": 40,
+    "power_on_hours": 9000,
+    "unsafe_shutdowns": 3,
+    "media_errors": 0,
+    "num_err_log_entries": 0,
+    "warning_temp_time": 0,
+    "critical_comp_time": 0
+  },
+  "temperature": {
+    "current": 32
+  },
+  "power_cycle_count": 40,
+  "power_on_time": {
+    "hours": 9000
+  },
+  "nvme_self_test_log": {
+    "current_self_test_operation": {
+      "value": 0,
+      "string": "No self-test in progress"
+    },
+    "table": [
+      {
+        "self_test_code": {
+          "value": 1,
+          "string": "Short"
+        },
+        "self_test_result": {
+          "value": 0,
+          "string": "Completed without error"
+        },
+        "power_on_hours": 8976
+      }
+    ]
+  }
+}

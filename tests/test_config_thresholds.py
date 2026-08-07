@@ -87,6 +87,12 @@ class TestThresholdsYamlConsumed:
             cfg.threshold_exceeded_deduction,
             cfg.temp_warning_deduction,
             cfg.temp_critical_deduction,
+            cfg.grading_profile,
+            cfg.age_cap_enabled,
+            cfg.selftest_recent_poh_window,
+            cfg.grade_band_base_scores,
+            cfg.scsi_grown_defects_bands,
+            cfg.scsi_uncorrected_errors_bands,
         )
 
         # Every leaf in the YAML must exist in the merged config dict

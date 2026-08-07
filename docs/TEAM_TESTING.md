@@ -71,7 +71,7 @@ From the repo root on the laptop:
 
 ```bash
 ./scripts/docker-reset.sh --clear-data
-CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh
+CDI_VERSION=latest ./scripts/docker-lan-discover.sh
 open http://127.0.0.1:3000   # or visit in browser
 ```
 
@@ -149,7 +149,7 @@ Then start the stack you need (see [Technician deployment](TECHNICIAN_DEPLOYMENT
 
 | Goal | Command |
 | ---- | ------- |
-| Find benches on LAN | `CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh` |
+| Find benches on LAN | `CDI_VERSION=latest ./scripts/docker-lan-discover.sh` |
 | Live scans on one bench | `BENCH_IP=<ip> ./scripts/docker-remote-bench.sh` |
 | Mock fixtures (UI toggle) | `docker compose -f deploy/docker/docker-compose.yml up -d --build` → Discover → **Use mock data** |
 | Reset / fix compose errors | `./scripts/docker-reset.sh --clear-data` |

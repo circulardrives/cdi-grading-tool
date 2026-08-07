@@ -199,6 +199,10 @@ class TestCreateMockDeviceHelper:
 
 class TestATASelfTestScoring:
     def test_failed_ata_selftest_is_grade_f(self) -> None:
+        from cdi_health.classes.config import ThresholdConfig
+
+        ThresholdConfig.reset_instance()
+        ThresholdConfig.get_instance().set_grading_profile("binary")
         calculator = HealthScoreCalculator()
         device = {
             "transport_protocol": "ATA",

@@ -17,7 +17,7 @@ Options:
   --clear-data  Also remove the API data volume (drops cached scan results)
 
 Then start the stack you want, for example:
-  CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d --build
+  CDI_VERSION=latest docker compose -f deploy/docker/docker-compose.ghcr.yml up -d --build
   ./scripts/docker-lan-discover.sh
 USAGE
 }

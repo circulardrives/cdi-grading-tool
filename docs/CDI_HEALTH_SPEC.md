@@ -73,7 +73,18 @@ Hard fail-gates override numeric deductions and always produce **F / score 0**:
 
 Unknown or unavailable SMART data alone is not a hard fail unless paired with failed operational state evidence. For example, an unresponsive/DOA device reported as **State=Fail** with unknown SMART is **F**, while a device with missing SMART data but no failed-state evidence is left to other telemetry and policy.
 
-**Power-on hours (POH):** POH is collected and reported for ATA, NVMe, and SCSI/SAS devices. It is contextual telemetry, not currently a direct grade threshold or certification criterion. HDD age may correlate with mechanical wear, but CDI grading should use explicit failure/defect indicators unless a future spec revision defines an age-based policy. For SSDs, endurance indicators such as **Percentage Used** are the grading signal rather than POH.
+**Power-on hours (POH):** POH is collected and reported for ATA, NVMe, and SCSI/SAS devices.
+
+CDI Health supports two selectable **grading profiles** (issues [#115](https://github.com/circulardrives/cdi-grading-tool/issues/115), [#125](https://github.com/circulardrives/cdi-grading-tool/issues/125)):
+
+| Profile | How to select | POH role |
+| --- | --- | --- |
+| **`binary`** (aliases: `passfail`, `cdi`) | `grading.profile: binary` in thresholds.yaml, or `--grading-profile binary` | Telemetry only — not a grade threshold (this section’s historic CDI policy). |
+| **`abcdf`** (aliases: `revert`, `graduated`) — **default** | `grading.profile: abcdf`, or `--grading-profile abcdf` | Revert Drive Grading Standard §5 **age cap**: POH caps the maximum achievable grade by drive class (enterprise/consumer). Disable age cap within abcdf via `grading.age_cap.enabled: false` while keeping graduated defect bands. |
+
+Under **`binary`**, CDI grading uses explicit failure/defect indicators and numeric deductions; critical fail-gates (including any failed self-test) force Grade F. Certification is Yes/No.
+
+Under **`abcdf`**, the full Revert Standard v2.0 pipeline applies (fail-gates → age cap → graduated bands → recency-weighted self-test → worst-attribute-wins → multi-factor → tri-state certification). For SSDs, endurance indicators such as **Percentage Used** remain grading signals in both profiles; POH age cap is abcdf-only.
 
 ## Drive-Class Health Rules
 
@@ -86,7 +97,7 @@ These rules apply to every drive class:
 - **SMART status must pass.** Explicit failure (`false`, `failed`, `bad`, etc.) is a hard fail-gate.
 - **Operational State must not be Fail.** A failed scan/disposition state is a hard fail-gate even when SMART is unavailable or unknown.
 - **Temperature must remain within operating range.** Exceeding the maximum operating temperature is a hard fail-gate; warning temperature is a warning deduction.
-- **Power-on hours are telemetry.** POH is collected and reported, but it is not currently a direct grade threshold or certification criterion.
+- **Power-on hours depend on grading profile.** In the **`binary`** profile, POH is telemetry only. In the **`abcdf`** (Revert) profile, POH applies the §5 age cap (see POH section above; issues #115 / #125).
 - **Unknown SMART alone is not failure.** Missing or unavailable SMART data does not hard-fail a device unless paired with failed-state evidence or another critical health signal.
 - **SMART warning is not always SMART failure.** A warning means some vendor threshold or advisory condition needs inspection; CDI hard-fails only explicit SMART failure or another critical health signal.
 

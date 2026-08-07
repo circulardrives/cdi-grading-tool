@@ -1,27 +1,29 @@
 # Run the published GHCR stack (no local build). From the repository root:
 #
+#   CDI_HEALTH_API_TOKEN=... docker compose -f deploy/docker/docker-compose.ghcr.yml pull
 #   CDI_HEALTH_API_TOKEN=... docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
 #
-# Live scans are the default. Enable **Use mock data** on the Discover page for fixtures.
-#
-# Pin a release:
+# Defaults to the :latest tag (updated on each GitHub release). Pin a release:
 #   CDI_HEALTH_API_TOKEN=... CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+#
+# Live scans are the default. Enable **Use mock data** on the Discover page for fixtures.
 #
 # If switching overlays fails with "No such container", run:
 #   ./scripts/docker-reset.sh
 #
 # LAN discovery (macOS + Linux — explicit subnet on Discover page):
-#   ./scripts/docker-lan-discover.sh
+#   CDI_VERSION=latest ./scripts/docker-lan-discover.sh
 #
 # Linux host-network overlay (auto-detect local subnet):
-#   CDI_HEALTH_API_TOKEN=... CDI_VERSION=0.9.5 docker compose -f deploy/docker/docker-compose.ghcr.yml \
+#   CDI_HEALTH_API_TOKEN=... docker compose -f deploy/docker/docker-compose.ghcr.yml \
 #     -f deploy/docker/docker-compose.host.yml up -d
 
 name: cdi-health
 
 services:
   api:
-    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-0.9.5}
+    image: ghcr.io/circulardrives/cdi-health-api:${CDI_VERSION:-latest}
+    pull_policy: always
     container_name: cdi-health-api
     command:
       [
@@ -59,7 +61,8 @@ services:
     restart: unless-stopped
 
   dashboard:
-    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-0.9.5}
+    image: ghcr.io/circulardrives/cdi-health-dashboard:${CDI_VERSION:-latest}
+    pull_policy: always
     container_name: cdi-health-dashboard
     environment:
       CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:?Set CDI_HEALTH_API_TOKEN in .env}
