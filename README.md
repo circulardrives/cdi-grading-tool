@@ -65,64 +65,33 @@ Choose the path that matches your goal:
 
 | Goal | Method |
 | ---- | ------ |
-| **Try the dashboard** (fixtures opt-in on Discover) | [Docker / GHCR](#docker-compose-technician-dashboard) |
-| **Find grading benches on the LAN** | [`docker-lan-discover.sh`](#docker-compose-technician-dashboard) |
-| **Live scans** from laptop UI → remote bench | [`docker-remote-bench.sh`](#docker-compose-technician-dashboard) |
+| **Try the dashboard** | [Docker](#docker-technician-dashboard) — `./scripts/docker-up.sh` |
+| **Live scans** from laptop UI → remote bench | `./scripts/docker-up.sh --bench <ip>` |
 | **Real drive scans** on a grading bench | [`.deb` package](#debianubuntu-deb--for-grading-benches-with-real-drives-cli--api) |
 | **Develop** or patch the codebase | [From source](#from-source) |
 
-### Docker Compose (technician dashboard)
+### Docker (technician dashboard)
 
 Requires [Docker](https://docs.docker.com/get-docker/) with Compose v2. No Python, bun, or npm.
-
-**Images:** defaults to **`latest`** (override with `CDI_VERSION=<semver>` to pin; see [GitHub Releases](https://github.com/circulardrives/cdi-grading-tool/releases)).
-
-**Reset when switching stacks** (fixes compose errors or stale mock scans):
-
-```shell
-./scripts/docker-reset.sh --clear-data
-```
-
-**Default stack** (local API + dashboard; live scans default, mock opt-in on Discover):
 
 ```shell
 git clone https://github.com/circulardrives/cdi-grading-tool.git
 cd cdi-grading-tool
-
-CDI_VERSION=latest docker compose -f deploy/docker/docker-compose.ghcr.yml up -d
+./scripts/docker-up.sh
 ```
 
-Open http://127.0.0.1:3000
-
-**LAN discovery** (find remote grading benches — no bench IP required):
+Open http://127.0.0.1:3000 — enable **Use mock data** on Discover for fixtures.
 
 ```shell
-CDI_VERSION=latest ./scripts/docker-lan-discover.sh
+./scripts/docker-up.sh --bench 192.168.0.74   # proxy UI to a remote grading bench
+./scripts/docker-up.sh --build               # build images from this clone
+./scripts/docker-up.sh down                  # stop
+./scripts/docker-up.sh reset                 # stop + clear cached scans
 ```
 
-Open http://127.0.0.1:3000 → **Discover** → enter your lab subnet (e.g. `192.168.0.0/24`). Works on **macOS Docker Desktop** and Linux.
+Images default to GHCR **`latest`** (`CDI_VERSION=<semver>` to pin). Multi-arch: `ghcr.io/circulardrives/cdi-health-api` and `…/cdi-health-dashboard`.
 
-**Live scans on a remote bench** (proxies all API traffic to one host):
-
-```shell
-BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
-```
-
-**Linux (optional):** host-network overlay auto-detects the local subnet (port **8844** must be free on the host):
-
-```shell
-CDI_VERSION=latest docker compose \
-  -f deploy/docker/docker-compose.ghcr.yml \
-  -f deploy/docker/docker-compose.host.yml up -d
-```
-
-Stop: `./scripts/docker-lan-discover.sh down` or `./scripts/docker-reset.sh`.
-
-Images: `ghcr.io/circulardrives/cdi-health-api:latest` and `ghcr.io/circulardrives/cdi-health-dashboard:latest` (multi-arch).
-
-To build the dashboard with the **Use mock data** toggle from source: `docker compose -f deploy/docker/docker-compose.yml up -d --build`.
-
-Full options and team test plan: [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) · [Team testing (0.9.5)](docs/TEAM_TESTING.md).
+Full options: [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) · [Team testing](docs/TEAM_TESTING.md).
 
 **From PyPI**
 
@@ -326,12 +295,12 @@ The dashboard is **separate from the `.deb` package**. Install `.deb` on grading
 ### Run with Docker
 
 ```shell
-CDI_VERSION=latest ./scripts/docker-lan-discover.sh          # find benches on LAN
-BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh       # live scans on one bench
-./scripts/docker-reset.sh --clear-data                       # when switching stacks
+./scripts/docker-up.sh                              # pull latest + start
+./scripts/docker-up.sh --bench 192.168.0.74          # live scans on one bench
+./scripts/docker-up.sh reset                        # clear cached scans
 ```
 
-See [Team testing (0.9.5)](docs/TEAM_TESTING.md) and [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
+See [Team testing](docs/TEAM_TESTING.md) and [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md).
 
 ### Local development (bun)
 
