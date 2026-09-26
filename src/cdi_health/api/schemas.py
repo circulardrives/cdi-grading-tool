@@ -32,6 +32,8 @@ NVME_DEVICE_PATTERN = re.compile(r"^/dev/nvme[0-9]+(n[0-9]+)?$")
 BLOCK_DEVICE_PATTERN = re.compile(r"^/dev/[a-zA-Z0-9][a-zA-Z0-9._+/-]*$")
 
 GradingProfile = Literal["binary", "abcdf"]
+MachineStatusValue = Literal["unknown", "reachable", "unreachable", "auth_failed"]
+ExecutedOn = Literal["local", "remote"]
 
 
 def _reject_path_traversal(value: str, field_name: str) -> str:
@@ -113,6 +115,15 @@ class ScanResponse(BaseModel):
     grading_profile: GradingProfile | None = None
     summary: ScanSummary
     devices: list[dict[str, Any]]
+    machine_id: str | None = None
+    executed_on: ExecutedOn = Field(
+        default="local",
+        description="Where the scan ran: this API process (local) or a registered remote host.",
+    )
+    remote_address: str | None = Field(
+        default=None,
+        description="Remote host address the scan was forwarded to (remote scans only).",
+    )
 
 
 class HistorySummary(BaseModel):
@@ -243,10 +254,18 @@ class MachineCreate(BaseModel):
     hostname: str = Field(min_length=1, description="Host identifier, e.g. grading-01.local")
     address: str = Field(
         default="",
-        description="Optional IP or host:port for a remote CDI API agent (future).",
+        description=(
+            "Optional IP, host:port, or http://host:port of the host's cdi-health-api "
+            "(default port 8844). When set, scans for this machine run on that host."
+        ),
     )
     location: str = Field(default="", description="Optional rack or data-center location label.")
     notes: str = ""
+    api_token: str | None = Field(
+        default=None,
+        max_length=4096,
+        description="Write-only X-API-Token of the remote host's API. Never returned; see has_api_token.",
+    )
 
 
 class MachineUpdate(BaseModel):
@@ -255,7 +274,12 @@ class MachineUpdate(BaseModel):
     address: str | None = None
     location: str | None = None
     notes: str | None = None
-    status: Literal["unknown", "reachable", "unreachable"] | None = None
+    status: MachineStatusValue | None = None
+    api_token: str | None = Field(
+        default=None,
+        max_length=4096,
+        description='Write-only remote API token. Omit to keep it, "" to clear it.',
+    )
 
 
 class MachineResponse(BaseModel):
@@ -265,13 +289,42 @@ class MachineResponse(BaseModel):
     address: str
     location: str
     notes: str
-    status: Literal["unknown", "reachable", "unreachable"]
+    status: MachineStatusValue
+    has_api_token: bool = False
+    remote_version: str | None = None
     last_seen_at: datetime | None = None
     last_scan_at: datetime | None = None
     last_scan_status: Literal["success", "failed"] | None = None
     last_scan_summary: MachineScanSummary | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class MachineCheckResponse(BaseModel):
+    """Result of POST /api/v1/machines/{id}/check."""
+
+    machine: MachineResponse
+    health: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class FleetHost(BaseModel):
+    machine_id: str | None = None
+    name: str
+    address: str | None = None
+    status: str
+    scanned_at: datetime | None = None
+    summary: ScanSummary | None = None
+    device_count: int = 0
+    error: str | None = None
+    executed_on: ExecutedOn
+
+
+class FleetDevicesResponse(BaseModel):
+    hosts: list[FleetHost]
+    devices: list[dict[str, Any]]
+    summary: ScanSummary
+    generated_at: datetime
 
 
 class DiscoverRequest(BaseModel):
