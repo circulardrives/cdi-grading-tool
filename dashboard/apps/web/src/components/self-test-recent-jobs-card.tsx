@@ -21,9 +21,14 @@ import type { JobResponse } from "@/lib/types"
 
 type SelfTestRecentJobsCardProps = {
   jobs: JobResponse[]
+  /** "pecan09" or "this bench". */
+  benchName?: string
 }
 
-export function SelfTestRecentJobsCard({ jobs }: SelfTestRecentJobsCardProps) {
+export function SelfTestRecentJobsCard({
+  jobs,
+  benchName = "this bench",
+}: SelfTestRecentJobsCardProps) {
   if (jobs.length === 0) {
     return null
   }
@@ -33,7 +38,7 @@ export function SelfTestRecentJobsCard({ jobs }: SelfTestRecentJobsCardProps) {
       <CardHeader>
         <CardTitle>Recent self-test jobs</CardTitle>
         <CardDescription>
-          Self-tests started on this bench since it last restarted.
+          Self-tests started on {benchName} since it last restarted.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -54,10 +59,14 @@ export function SelfTestRecentJobsCard({ jobs }: SelfTestRecentJobsCardProps) {
                   {job.job_id.slice(0, 8)}
                 </TableCell>
                 <TableCell className="text-sm">
-                  {job.created_at ? new Date(job.created_at).toLocaleString() : "—"}
+                  {job.created_at
+                    ? new Date(job.created_at).toLocaleString()
+                    : "—"}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={statusBadgeVariant(job.status)}>{job.status}</Badge>
+                  <Badge variant={statusBadgeVariant(job.status)}>
+                    {job.status}
+                  </Badge>
                 </TableCell>
                 <TableCell className="text-sm">{summarizeJob(job)}</TableCell>
                 <TableCell>

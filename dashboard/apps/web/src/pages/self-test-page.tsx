@@ -1,12 +1,19 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import {
   AlertCircleIcon,
   PlayIcon,
   RefreshCwIcon,
+  ServerIcon,
   TestTubeDiagonalIcon,
 } from "lucide-react"
 
-import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert"
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@workspace/ui/components/alert"
+import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
   Card,
@@ -29,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select"
+import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Spinner } from "@workspace/ui/components/spinner"
 
 import { PageHeader } from "@/components/page-header"
@@ -36,10 +44,178 @@ import { SelfTestDeviceStatusTable } from "@/components/self-test-device-status-
 import { SelfTestLogsCard } from "@/components/self-test-logs-card"
 import { SelfTestRecentJobsCard } from "@/components/self-test-recent-jobs-card"
 import { SelfTestResultsCard } from "@/components/self-test-results-card"
+import { useFleetDevicesQuery, useMachinesQuery } from "@/hooks/use-cdi-queries"
 import { useSelfTestPolling } from "@/hooks/use-self-test-polling"
+import {
+  hostHasAddress,
+  hostProblemMessage,
+  machineStatusBadgeVariant,
+  machineStatusLabel,
+} from "@/lib/host-utils"
+import { useSelectedHostId } from "@/lib/selected-host"
 import { hasStaleSelfTestApi } from "@/lib/self-test-utils"
 
+const THIS_BENCH = "local"
+
+type BenchOption = {
+  /** Select value: the machine id, or THIS_BENCH. */
+  value: string
+  machineId: string | null
+  name: string
+  status: string
+  /** Known connection problem from the last check or scan, if any. */
+  problem: string | null
+}
+
+const THIS_BENCH_OPTION: BenchOption = {
+  value: THIS_BENCH,
+  machineId: null,
+  name: "This bench",
+  status: "",
+  problem: null,
+}
+
+/** Benches with an address (self-tests run there), then "This bench" last. */
+function useBenchOptions() {
+  const machinesQuery = useMachinesQuery()
+  const machines = useMemo(() => machinesQuery.data ?? [], [machinesQuery.data])
+  const hasRemote = machines.some(hostHasAddress)
+  const fleetQuery = useFleetDevicesQuery(hasRemote)
+
+  const options = useMemo(() => {
+    const fleetHosts = fleetQuery.data?.hosts
+    const remote: BenchOption[] = fleetHosts
+      ? fleetHosts
+          .filter((host) => host.machine_id && hostHasAddress(host))
+          .map((host) => ({
+            value: host.machine_id as string,
+            machineId: host.machine_id,
+            name: host.name,
+            status: host.status,
+            problem: hostProblemMessage(host.name, host.status, host.error),
+          }))
+      : machines.filter(hostHasAddress).map((host) => ({
+          value: host.id,
+          machineId: host.id,
+          name: host.name,
+          status: host.status,
+          problem: hostProblemMessage(host.name, host.status),
+        }))
+    return [...remote, THIS_BENCH_OPTION]
+  }, [fleetQuery.data, machines])
+
+  const loading = machinesQuery.isLoading || (hasRemote && fleetQuery.isLoading)
+  return { options, loading }
+}
+
+function pickDefaultBench(
+  options: BenchOption[],
+  selectedHostId: string | null
+): string {
+  const remote = options.filter((option) => option.machineId)
+  if (
+    selectedHostId &&
+    remote.some((option) => option.value === selectedHostId)
+  ) {
+    return selectedHostId
+  }
+  const online = remote.find((option) => option.status === "reachable")
+  return online?.value ?? remote[0]?.value ?? THIS_BENCH
+}
+
 export function SelfTestPage() {
+  const selectedHostId = useSelectedHostId()
+  const { options, loading } = useBenchOptions()
+  // Chosen once the bench list has loaded; later status changes must not
+  // switch the bench under a running test.
+  const [choice, setChoice] = useState<string | null>(null)
+  if (!loading && choice === null) {
+    setChoice(pickDefaultBench(options, selectedHostId))
+  }
+  const bench =
+    options.find((option) => option.value === choice) ??
+    (choice === null ? null : THIS_BENCH_OPTION)
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        eyebrow="NVMe diagnostics"
+        title="NVMe Self-Test"
+        description="Pick a bench, then start short or extended NVMe self-tests on its drives, watch progress, and stop running tests."
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ServerIcon className="text-primary" />
+            Bench
+          </CardTitle>
+          <CardDescription>
+            Everything on this page — drives, starting and stopping tests,
+            results — happens on the bench you pick here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {bench == null ? (
+            <Skeleton className="h-9 w-full max-w-sm" />
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <Select value={bench.value} onValueChange={setChoice}>
+                <SelectTrigger
+                  className="w-full max-w-sm"
+                  aria-label="Bench to run self-tests on"
+                >
+                  <SelectValue placeholder="Pick a bench" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {options.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.machineId
+                          ? `${option.name} · ${machineStatusLabel(option.status)}`
+                          : "This bench (this computer)"}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {bench.machineId ? (
+                <Badge variant={machineStatusBadgeVariant(bench.status)}>
+                  {machineStatusLabel(bench.status)}
+                </Badge>
+              ) : null}
+            </div>
+          )}
+          {bench?.problem ? (
+            <p className="flex items-start gap-1.5 text-sm text-destructive">
+              <AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <span>{bench.problem}</span>
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {bench ? (
+        // Keyed by bench: switching bench throws away the old bench's state
+        // and stops its polling before anything is shown for the new one.
+        <SelfTestConsole
+          key={bench.value}
+          machineId={bench.machineId}
+          benchName={bench.machineId ? bench.name : "this bench"}
+        />
+      ) : (
+        <Skeleton className="h-64 w-full" />
+      )}
+    </div>
+  )
+}
+
+type SelfTestConsoleProps = {
+  machineId: string | null
+  benchName: string
+}
+
+function SelfTestConsole({ machineId, benchName }: SelfTestConsoleProps) {
   const {
     devices,
     nvmeControllers,
@@ -60,14 +236,17 @@ export function SelfTestPage() {
     reloadAll,
     runSelfTest,
     handleAbort,
-  } = useSelfTestPolling()
+  } = useSelfTestPolling({ machineId, benchName })
 
   const supportedDevices = useMemo(
     () => devices.filter((entry) => entry.supported),
     [devices]
   )
 
-  const staleSelfTestApi = useMemo(() => hasStaleSelfTestApi(devices), [devices])
+  const staleSelfTestApi = useMemo(
+    () => hasStaleSelfTestApi(devices),
+    [devices]
+  )
 
   const resultDevices = useMemo(() => {
     const fromJob = lastCompletedJob?.result?.devices ?? []
@@ -99,48 +278,66 @@ export function SelfTestPage() {
   )
 
   const showInitialSpinner = loading && devices.length === 0
+  const runningOn = machineId ? benchName : "this bench"
+  const RunningOnIcon = machineId ? ServerIcon : TestTubeDiagonalIcon
+
+  // Bench can't be reached (or other hard failure): one line + where to fix it.
+  if (error && devices.length === 0 && !loading) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircleIcon />
+        <AlertTitle>Can't run self-tests on {runningOn} right now</AlertTitle>
+        <AlertDescription className="flex flex-col gap-3">
+          <span>{error}</span>
+          <span className="flex flex-wrap gap-2">
+            {machineId ? (
+              <Button size="sm" variant="outline" asChild>
+                <Link to="/hosts">Go to Hosts</Link>
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void reloadAll()}
+              disabled={isRefreshing}
+            >
+              <RefreshCwIcon data-icon="inline-start" />
+              Try again
+            </Button>
+          </span>
+        </AlertDescription>
+      </Alert>
+    )
+  }
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        eyebrow="NVMe diagnostics"
-        title="Self-Test Console"
-        description="Start NVMe short or extended self-tests, monitor progress, and abort active runs on this grading host."
-        badge={
-          supportedDevices.length > 0
-            ? `${supportedDevices.length} supported controller(s)`
-            : "No supported NVMe controllers"
-        }
-        actions={
-          <Button
-            variant="outline"
-            onClick={() => void reloadAll()}
-            disabled={loading || isRefreshing}
-          >
-            <RefreshCwIcon data-icon="inline-start" />
-            {isRefreshing ? "Refreshing…" : "Refresh status"}
-          </Button>
-        }
-      />
-
+    <>
       {error ? (
         <Alert variant="destructive">
           <AlertCircleIcon />
-          <AlertTitle>Self-test unavailable</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertTitle>Couldn't update self-test status</AlertTitle>
+          <AlertDescription>
+            {error}
+            {machineId ? (
+              <>
+                {" "}
+                <Link to="/hosts" className="underline underline-offset-3">
+                  Go to Hosts
+                </Link>
+              </>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
 
       {activeJobId || watchingTests ? (
         <Alert>
           <TestTubeDiagonalIcon />
-          <AlertTitle>
-            {activeJobId ? "Job in progress" : "Self-test running on device"}
-          </AlertTitle>
-          <AlertDescription className="font-mono text-xs">
+          <AlertTitle>Self-test running on {runningOn}</AlertTitle>
+          <AlertDescription>
             {activeJobId
-              ? `Polling job ${activeJobId}`
-              : "Polling device status and NVMe Log Page 0x06 until results appear"}
+              ? "Starting the test on the drives…"
+              : "Checking progress every few seconds until the drives report results."}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -148,12 +345,10 @@ export function SelfTestPage() {
       {staleSelfTestApi ? (
         <Alert variant="destructive">
           <AlertCircleIcon />
-          <AlertTitle>Self-test log API is out of date</AlertTitle>
+          <AlertTitle>CDI Health on {runningOn} is out of date</AlertTitle>
           <AlertDescription>
-            The grading host API is not returning log fields (
-            <span className="font-mono">latest_result</span>,{" "}
-            <span className="font-mono">recent_results</span>). Redeploy the latest CDI
-            Health API on this host, then use Refresh status.
+            It isn't sending self-test log details. Update CDI Health on{" "}
+            {runningOn}, then use Refresh status.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -175,30 +370,38 @@ export function SelfTestPage() {
               Start self-test
             </CardTitle>
             <CardDescription>
-              Runs asynchronously via the local API. Extended tests may take hours.
+              Short tests take a few minutes; extended tests can take hours.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="self-test-device">Target device</FieldLabel>
-                <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                <FieldLabel htmlFor="self-test-device">Drive</FieldLabel>
+                <Select
+                  value={selectedDevice}
+                  onValueChange={setSelectedDevice}
+                >
                   <SelectTrigger id="self-test-device" className="w-full">
                     <SelectValue placeholder="Select NVMe controller" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="all">All supported NVMe controllers</SelectItem>
+                      <SelectItem value="all">
+                        All NVMe drives that support it
+                      </SelectItem>
                       {nvmeControllers.map((path) => (
                         <SelectItem key={path} value={path}>
-                          {path}
+                          {serialByController.get(path)
+                            ? `${path} · ${serialByController.get(path)}`
+                            : path}
                         </SelectItem>
                       ))}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
                 <FieldDescription>
-                  Controller paths only (for example /dev/nvme0), not namespaces.
+                  Controller paths only (for example /dev/nvme0), not
+                  namespaces.
                 </FieldDescription>
               </Field>
 
@@ -223,27 +426,54 @@ export function SelfTestPage() {
               </Field>
             </FieldGroup>
 
+            <p
+              className="flex items-center gap-2 rounded-xl bg-muted px-3 py-2 text-sm"
+              aria-live="polite"
+            >
+              <RunningOnIcon
+                className="size-4 shrink-0 text-primary"
+                aria-hidden
+              />
+              <span>
+                Running on <span className="font-semibold">{runningOn}</span>
+              </span>
+            </p>
+
             <Button
               onClick={() => void runSelfTest()}
-              disabled={starting || !!activeJobId || watchingTests}
+              disabled={starting || !!activeJobId || watchingTests || loading}
             >
               {starting ? (
                 <Spinner data-icon="inline-start" />
               ) : (
                 <PlayIcon data-icon="inline-start" />
               )}
-              {starting ? "Starting…" : "Start self-test"}
+              {starting ? "Starting…" : `Start self-test on ${runningOn}`}
             </Button>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Device status</CardTitle>
-            <CardDescription>
-              Live status from GET /api/v1/selftests/status on this host.
-              {isRefreshing ? " · Updating…" : ""}
-            </CardDescription>
+          <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex flex-col gap-1.5">
+              <CardTitle>Drive status</CardTitle>
+              <CardDescription>
+                NVMe drives on {runningOn}
+                {supportedDevices.length > 0
+                  ? ` · ${supportedDevices.length} support self-test`
+                  : ""}
+                {isRefreshing ? " · Updating…" : ""}
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void reloadAll()}
+              disabled={loading || isRefreshing}
+            >
+              <RefreshCwIcon data-icon="inline-start" />
+              {isRefreshing ? "Refreshing…" : "Refresh status"}
+            </Button>
           </CardHeader>
           <CardContent>
             <SelfTestDeviceStatusTable
@@ -256,12 +486,12 @@ export function SelfTestPage() {
         </Card>
       </section>
 
-      <SelfTestRecentJobsCard jobs={recentJobs} />
+      <SelfTestRecentJobsCard jobs={recentJobs} benchName={runningOn} />
 
       <SelfTestLogsCard
         devices={supportedDevices}
         serialByController={serialByController}
       />
-    </div>
+    </>
   )
 }
