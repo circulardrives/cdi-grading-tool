@@ -28,7 +28,7 @@ from __future__ import annotations
 import csv
 import html
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cdi_health.classes.explain import attach_explanation
@@ -73,23 +73,53 @@ _REPORT_TABS: tuple[tuple[str, str], ...] = (
 # Advanced NVMe table: HTML column that renders modal trigger buttons (not CSV text).
 _NVME_HTML_LOGS_HEADER = "NVMe · log viewers (OCP C0h)"
 
+# Keys whose presence marks a device dict as already graded (e.g. a stored API scan).
+_RECORDED_GRADE_KEYS = ("health_score", "health_grade", "final_grade")
+
+
+def format_scan_time(value) -> str:
+    """Render an ISO-8601 timestamp as ``YYYY-MM-DD HH:MM UTC`` (``—`` when missing)."""
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value).strip()
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
 
 class ReportGenerator:
     """Generate detailed HTML/PDF health reports."""
 
-    def __init__(self):
-        """Initialize the report generator."""
-        self.calculator = HealthScoreCalculator()
+    def __init__(self, preserve_grades: bool = False):
+        """Initialize the report generator.
 
-    def generate_html(self, devices: list[dict], output_path: str) -> None:
+        :param preserve_grades: Render devices that already carry a recorded grade
+            (``health_score`` / ``health_grade`` / ``final_grade``, e.g. saved API scans)
+            as-is instead of re-scoring them with the current thresholds. Raw
+            devices are still scored. The ``cdi-health report`` CLI leaves this off.
+        """
+        self.calculator = HealthScoreCalculator()
+        self.preserve_grades = preserve_grades
+        # Set per report: "Host" / "Scanned at" columns for multi-host (saved scan) reports.
+        self.show_host_columns = False
+
+    def generate_html(self, devices: list[dict], output_path: str, *, source_label: str | None = None) -> None:
         """
         Generate HTML report.
 
         :param devices: List of device dictionaries
         :param output_path: Output file path
+        :param source_label: Optional "Source" line for the report header
         """
-        enriched = self._enrich_devices(devices)
-        html_content = self._generate_html_content(enriched, default_view="simple")
+        enriched = self._prepare_devices(devices)
+        html_content = self._generate_html_content(enriched, default_view="simple", source_label=source_label)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html_content)
 
@@ -100,7 +130,7 @@ class ReportGenerator:
         Rows include ``Report category`` plus all column headers used on any tab; cells are
         blank when a column does not apply to that device category.
         """
-        enriched = self._enrich_devices(devices)
+        enriched = self._prepare_devices(devices)
         headers = self._advanced_csv_headers(enriched)
         rows: list[dict[str, str]] = []
         for d in enriched:
@@ -137,32 +167,56 @@ class ReportGenerator:
             writer.writeheader()
             writer.writerows(rows)
 
-    def generate_pdf(self, devices: list[dict], output_path: str) -> None:
+    def generate_pdf(self, devices: list[dict], output_path: str, *, source_label: str | None = None) -> None:
         """
         Generate PDF report.
 
         :param devices: List of device dictionaries
         :param output_path: Output file path
+        :param source_label: Optional "Source" line for the report header
         """
         try:
             from weasyprint import HTML
         except ImportError:
             raise RuntimeError("PDF generation requires weasyprint. Install with: pip install weasyprint")
 
-        enriched = self._enrich_devices(devices)
-        html_content = self._generate_html_content(enriched, default_view="advanced")
+        enriched = self._prepare_devices(devices)
+        html_content = self._generate_html_content(enriched, default_view="advanced", source_label=source_label)
         HTML(string=html_content).write_pdf(output_path)
 
+    def _prepare_devices(self, devices: list[dict]) -> list[dict]:
+        """Enrich devices for rendering and decide whether host columns are shown."""
+        enriched = self._enrich_devices(devices)
+        self.show_host_columns = any(d.get("machine_name") for d in enriched)
+        return enriched
+
+    @staticmethod
+    def _has_recorded_grade(device: dict) -> bool:
+        return any(key in device for key in _RECORDED_GRADE_KEYS)
+
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
-        """Add health scores, Revert §13/§15 fields, and grading rationale."""
+        """Add health scores, Revert §13/§15 fields, and grading rationale.
+
+        With ``preserve_grades`` devices that already carry a recorded grade are
+        passed through unchanged (only ``report_category`` is filled in if missing).
+        """
         enriched = []
+        rescored = []
         for device in devices:
+            if self.preserve_grades and self._has_recorded_grade(device):
+                d = dict(device)
+                if not d.get("report_category"):
+                    d["report_category"] = self._device_report_category(d)
+                enriched.append(d)
+                continue
             score = self.calculator.calculate(device)
             d = attach_explanation(device, score)
             d.update(revert_fields(d, score))
             d["report_category"] = self._device_report_category(d)
             enriched.append(d)
-        flag_duplicate_serials(enriched)
+            rescored.append(d)
+        # Recorded devices already carry their own scan's duplicate-serial flags.
+        flag_duplicate_serials(rescored)
         return enriched
 
     @staticmethod
@@ -202,10 +256,16 @@ class ReportGenerator:
             return "SAS HDD" if media == "HDD" else "SAS SSD"
         return "Other"
 
-    def _generate_html_content(self, devices: list[dict], default_view: str = "simple") -> str:
+    def _generate_html_content(
+        self,
+        devices: list[dict],
+        default_view: str = "simple",
+        source_label: str | None = None,
+    ) -> str:
         """Generate HTML content for the report.
 
         :param default_view: ``simple`` (grading-focused) or ``advanced`` (full tables + raw fields).
+        :param source_label: Optional "Source" line (where the device data came from).
         """
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         dv = default_view if default_view in ("simple", "advanced") else "simple"
@@ -240,6 +300,11 @@ class ReportGenerator:
         palette_css = _read_asset("cdi_brand_palette.css")
         logo_svg = _prepare_logo_svg(_read_asset("CDILogo-01.svg"))
         default_tab_slug = _REPORT_TABS[0][1]
+        source_html = (
+            f'                    <p class="hero-time hero-source">Source: {html.escape(source_label)}</p>\n'
+            if source_label
+            else ""
+        )
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -266,7 +331,7 @@ class ReportGenerator:
                     <h1>CDI Health Report</h1>
                     <p class="hero-sub">Certification evidence pack · serial-keyed drives · grading rationale included</p>
                     <p class="hero-time">Generated {html.escape(timestamp)}</p>
-                </div>
+{source_html}                </div>
                 <div class="view-mode-bar" role="toolbar" aria-label="Report layout">
                     <span class="view-mode-label">View</span>
                     <button type="button" class="mode-btn{self._active_class(dv == "simple")}" data-view="simple">Simple</button>
@@ -600,12 +665,15 @@ class ReportGenerator:
                 f"<p>{html.escape(' | '.join(str(f) for f in flags))}</p></div>"
             )
         extra_html = "".join(extra_bits)
+        host_sub = ""
+        if self.show_host_columns and device.get("machine_name"):
+            host_sub = f" · Host {html.escape(str(device.get('machine_name')))}"
         return f"""
             <article class="evidence-card">
               <header class="evidence-card__head">
                 <div>
                   <h3 class="evidence-card__title">{html.escape(serial)}</h3>
-                  <p class="evidence-card__sub">{html.escape(model)} · FW {html.escape(firmware)}</p>
+                  <p class="evidence-card__sub">{html.escape(model)} · FW {html.escape(firmware)}{host_sub}</p>
                 </div>
                 <div class="evidence-card__badges">
                   {self._grade_badge(str(grade))}
@@ -1044,8 +1112,16 @@ class ReportGenerator:
                 return v
             return d.get("pending_reallocated_sectors", "—")
 
+        host_specs: list[tuple[str, object]] = []
+        if self.show_host_columns:
+            host_specs = [
+                ("Host", lambda d: d.get("machine_name") or "—"),
+                ("Scanned at", lambda d: format_scan_time(d.get("host_scanned_at"))),
+            ]
+
         return [
             ("Serial", serial),
+            *host_specs,
             ("Model", lambda d: d.get("model_number", "—")),
             ("Vendor", lambda d: d.get("vendor", "—")),
             ("Protocol", lambda d: d.get("transport_protocol", "—")),
@@ -1248,7 +1324,7 @@ class ReportGenerator:
             if self._panel_includes_nvme_logs(title, devices):
                 nvme_scripts = self._nvme_panel_json_scripts(devices)
             body = (
-                self._simple_table_html(rows_simple)
+                self._simple_table_html(rows_simple, show_hosts=self.show_host_columns)
                 + f'<div class="evidence-grid simple-only">{evidence}</div>'
                 + self._advanced_table_html(thead_adv, rows_adv, nvme_scripts)
             )
@@ -1268,9 +1344,15 @@ class ReportGenerator:
         model = str(device.get("model_number") or "—")
         score_display = "—" if score is None else score
         score_for_badge = score if isinstance(score, int) else None
+        host_cells = ""
+        if self.show_host_columns:
+            host_name = str(device.get("machine_name") or "—")
+            scanned_at = format_scan_time(device.get("host_scanned_at"))
+            host_cells = f'<td>{html.escape(host_name)}</td><td class="mono">{html.escape(scanned_at)}</td>'
         return (
             "<tr>"
             f'<td class="col-serial">{html.escape(self._serial_label(device))}</td>'
+            f"{host_cells}"
             f"<td>{html.escape(model)}</td>"
             f'<td class="score mono">{html.escape(str(score_display))}</td>'
             f"<td>{self._grade_badge(str(grade))}</td>"
@@ -1411,13 +1493,14 @@ class ReportGenerator:
         return f'<td class="{class_attr}">{inner}</td>'
 
     @staticmethod
-    def _simple_table_html(rows_simple: str) -> str:
+    def _simple_table_html(rows_simple: str, show_hosts: bool = False) -> str:
+        host_headers = "<th>Host</th><th>Scanned at</th>" if show_hosts else ""
         return f"""
             <div class="table-wrap simple-only">
                 <table class="device-table device-table--simple">
                     <thead>
                         <tr>
-                            <th>Serial</th>
+                            <th>Serial</th>{host_headers}
                             <th>Model</th>
                             <th>Score</th>
                             <th>Grade</th>
