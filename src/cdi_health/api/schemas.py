@@ -237,6 +237,10 @@ class SelfTestStartRequest(BaseModel):
     wait: bool = False
     poll_interval_seconds: int = Field(default=30, ge=5, le=600)
     timeout_seconds: int = Field(default=14_400, ge=60, le=172_800)
+    machine_id: str | None = Field(
+        default=None,
+        description="Registered host to run on. A host with an address is forwarded to its API.",
+    )
 
     @field_validator("device")
     @classmethod
@@ -246,6 +250,10 @@ class SelfTestStartRequest(BaseModel):
 
 class SelfTestAbortRequest(BaseModel):
     device: str
+    machine_id: str | None = Field(
+        default=None,
+        description="Registered host to abort on. A host with an address is forwarded to its API.",
+    )
 
     @field_validator("device")
     @classmethod
@@ -276,6 +284,10 @@ class JobResponse(BaseModel):
     completed_at: datetime | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    machine_id: str | None = Field(
+        default=None,
+        description="Remote host the job runs on (forwarded self-tests only); pass it back when polling.",
+    )
 
 
 class MachineScanSummary(BaseModel):
