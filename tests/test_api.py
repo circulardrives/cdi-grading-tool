@@ -28,6 +28,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from cdi_health.cli import __version__ as PACKAGE_VERSION
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MOCK_DATA_PATH = REPO_ROOT / "src" / "cdi_health" / "mock_data"
 MOCK_NVME_FILE = MOCK_DATA_PATH / "nvme" / "SSDPEK1A118GA_healthy.json"
@@ -66,7 +68,7 @@ def test_api_health_ok(api_client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["version"] == "1.0.0"
+    assert body["version"] == PACKAGE_VERSION
     assert body["allow_non_root_mode"] is True
     assert "weasyprint_available" in body
     assert isinstance(body["weasyprint_available"], bool)
@@ -265,7 +267,7 @@ def test_api_health_loopback_full_with_token(
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["version"] == "1.0.0"
+    assert body["version"] == PACKAGE_VERSION
     assert body["api_token_enabled"] is True
     assert "missing_required_tools" in body
 
@@ -281,7 +283,7 @@ def test_api_health_minimal_when_unauthenticated_non_loopback(
     response = token_client.get("/api/v1/health")
     assert response.status_code == 200
     body = response.json()
-    assert body == {"status": "ok", "version": "1.0.0"}
+    assert body == {"status": "ok", "version": PACKAGE_VERSION}
 
 
 def test_api_health_full_with_valid_token_non_loopback(

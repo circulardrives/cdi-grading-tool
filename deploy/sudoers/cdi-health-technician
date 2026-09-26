@@ -1,5 +1,21 @@
-# Optional profile for running CDI API as non-root service account.
-# Preferred deployment is still root-owned systemd service for cdi-health-api.
+# Optional profile for running the CDI API as a NON-ROOT service account.
+#
+# The supported deployment is the root-owned systemd unit
+# (deploy/systemd/cdi-health-api.service); when the API runs as root the
+# code strips its leading `sudo` and this file is not used at all. The API
+# also refuses to start as non-root unless CDI_HEALTH_API_ALLOW_NON_ROOT=1
+# (development mode), so most installs should NOT install this file.
+#
+# When you do, it grants only the exact read-only / self-test invocations
+# the API issues via `sudo <tool>` (classes/devices.py, classes/tools.py,
+# classes/nvme_selftest.py). There is deliberately no `smartctl *` or
+# `nvme *`: those would allow `nvme format`, `nvme sanitize`,
+# `smartctl --set=...`, security commands, and firmware downloads as root.
+#
+# Argument patterns use sudoers regular expressions (^...$), which require
+# sudo >= 1.9.10 (Ubuntu 24.04, Debian 12+). On older sudo, `visudo -c`
+# rejects the file (fails closed) rather than granting wider access.
+# Characters =, :, ,, (, ), \ must be backslash-escaped in sudoers.
 #
 # Install with:
 #   sudo cp deploy/sudoers/cdi-health-technician /etc/sudoers.d/cdi-health-technician
@@ -9,10 +25,45 @@
 # Replace cdiapi with your chosen service account.
 
 User_Alias CDI_API_USER = cdiapi
-Cmnd_Alias CDI_SMARTCTL = /usr/sbin/smartctl *, /usr/bin/smartctl *
-Cmnd_Alias CDI_NVME = /usr/sbin/nvme *, /usr/bin/nvme *
-Cmnd_Alias CDI_SG = /usr/bin/sg_map26 *, /usr/sbin/sg_map26 *, /usr/bin/sg_turs *, /usr/sbin/sg_turs *
-Cmnd_Alias CDI_SEACHEST = /usr/local/bin/openSeaChest_Basics *, /usr/local/bin/openSeaChest_SMART *
+
+# smartctl: device enumeration and full SMART/health read only.
+Cmnd_Alias CDI_SMARTCTL = \
+    /usr/sbin/smartctl --scan-open -j, \
+    /usr/bin/smartctl --scan-open -j, \
+    /usr/sbin/smartctl ^--xall /dev/[A-Za-z0-9_/-]+ --json\=ov$, \
+    /usr/bin/smartctl ^--xall /dev/[A-Za-z0-9_/-]+ --json\=ov$, \
+    /usr/sbin/smartctl ^-x -j /dev/nvme[0-9n]+$, \
+    /usr/bin/smartctl ^-x -j /dev/nvme[0-9n]+$
+
+# nvme-cli: identify/log reads, plus device self-test start (1 short,
+# 2 extended), abort (15), and status query (0). No format/sanitize/
+# security/firmware/set-feature subcommands.
+Cmnd_Alias CDI_NVME = \
+    /usr/sbin/nvme list -o json, \
+    /usr/bin/nvme list -o json, \
+    /usr/sbin/nvme ^list -o json /dev/nvme[0-9n]+$, \
+    /usr/bin/nvme ^list -o json /dev/nvme[0-9n]+$, \
+    /usr/sbin/nvme ^id-ctrl /dev/nvme[0-9n]+ -o json$, \
+    /usr/bin/nvme ^id-ctrl /dev/nvme[0-9n]+ -o json$, \
+    /usr/sbin/nvme ^ocp smart-add-log /dev/nvme[0-9n]+ -o json$, \
+    /usr/bin/nvme ^ocp smart-add-log /dev/nvme[0-9n]+ -o json$, \
+    /usr/sbin/nvme ^self-test-log /dev/nvme[0-9n]+$, \
+    /usr/bin/nvme ^self-test-log /dev/nvme[0-9n]+$, \
+    /usr/sbin/nvme ^get-log /dev/nvme[0-9n]+ --log-id\=0x06 --log-len\=512$, \
+    /usr/bin/nvme ^get-log /dev/nvme[0-9n]+ --log-id\=0x06 --log-len\=512$, \
+    /usr/sbin/nvme ^device-self-test /dev/nvme[0-9n]+ --self-test-code\=[0-2]$, \
+    /usr/bin/nvme ^device-self-test /dev/nvme[0-9n]+ --self-test-code\=[0-2]$, \
+    /usr/sbin/nvme ^device-self-test /dev/nvme[0-9n]+ --self-test-code\=15$, \
+    /usr/bin/nvme ^device-self-test /dev/nvme[0-9n]+ --self-test-code\=15$, \
+    /usr/sbin/nvme ^device-self-test /dev/nvme[0-9n]+ --self-test-code\=0 -o json$, \
+    /usr/bin/nvme ^device-self-test /dev/nvme[0-9n]+ --self-test-code\=0 -o json$
+
+# sg3-utils: SCSI generic mapping and TEST UNIT READY (read-only).
+Cmnd_Alias CDI_SG = \
+    /usr/bin/sg_map26 ^/dev/[A-Za-z0-9_/-]+$, \
+    /usr/sbin/sg_map26 ^/dev/[A-Za-z0-9_/-]+$, \
+    /usr/bin/sg_turs ^-vvvv /dev/[A-Za-z0-9_/-]+$, \
+    /usr/sbin/sg_turs ^-vvvv /dev/[A-Za-z0-9_/-]+$
 
 Defaults:CDI_API_USER !requiretty
-CDI_API_USER ALL=(root) NOPASSWD: CDI_SMARTCTL, CDI_NVME, CDI_SG, CDI_SEACHEST
+CDI_API_USER ALL=(root) NOPASSWD: CDI_SMARTCTL, CDI_NVME, CDI_SG

@@ -20,7 +20,10 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,7 +37,7 @@ from cdi_health.api.schemas import (
     ScanRequest,
     SelfTestStartRequest,
 )
-from cdi_health.classes.config import configure_thresholds
+from cdi_health.classes.config import ThresholdConfig, get_default_config_path
 from cdi_health.classes.explain import attach_explanation
 from cdi_health.classes.nvme_selftest import NVMeSelfTest, validate_nvme_device_path
 from cdi_health.classes.reporter import ReportGenerator
@@ -48,6 +51,13 @@ from cdi_health.cli import (
 )
 
 DEFAULT_MOCK_DATA_ENV = "CDI_HEALTH_API_MOCK_DATA"
+ALLOWED_DATA_PATHS_ENV = "CDI_HEALTH_API_ALLOWED_DATA_PATHS"
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
+SYSTEM_CONFIG_DIR = Path("/etc/cdi-health")
+
+# Guards the brief window in which the process-global ThresholdConfig
+# singleton is swapped so a scoring engine can bind a per-request config.
+_THRESHOLDS_LOCK = threading.RLock()
 
 
 def utc_now() -> datetime:
@@ -200,22 +210,68 @@ def _decode(value: bytes | str | None) -> str:
     return value.strip()
 
 
+def allowed_data_roots() -> list[Path]:
+    """
+    Directories that request-supplied ``mock_data`` / ``mock_file`` / ``config``
+    paths may resolve into.
+
+    The API runs as root, so arbitrary readable paths (e.g. ``/root``) must not
+    be accepted. Allowed: the packaged mock data and config directories, the
+    API data directory, ``/etc/cdi-health``, the operator's ``--mock-data``
+    default, and any extra roots listed in ``CDI_HEALTH_API_ALLOWED_DATA_PATHS``
+    (``os.pathsep``-separated).
+    """
+    roots: list[Path] = [
+        PACKAGE_DIR / "mock_data",
+        PACKAGE_DIR / "config",
+        resolve_data_dir(),
+        SYSTEM_CONFIG_DIR,
+    ]
+    default_mock = os.getenv(DEFAULT_MOCK_DATA_ENV)
+    if default_mock:
+        roots.append(Path(default_mock).expanduser())
+    for extra in (os.getenv(ALLOWED_DATA_PATHS_ENV) or "").split(os.pathsep):
+        if extra.strip():
+            roots.append(Path(extra.strip()).expanduser())
+
+    resolved: list[Path] = []
+    for root in roots:
+        try:
+            resolved.append(root.resolve())
+        except OSError:
+            continue
+    return resolved
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 def resolve_data_path(path: str) -> str:
-    """Resolve mock/config paths relative to cwd or repository root."""
+    """
+    Resolve a mock/config path (absolute, cwd-relative, or repo-relative) and
+    require it to fall inside :func:`allowed_data_roots` after symlink resolution.
+    """
     candidate = Path(path).expanduser()
     if any(part == ".." for part in candidate.parts):
         raise ValueError("Path traversal is not allowed")
-    if candidate.exists():
-        return str(candidate.resolve())
 
-    repo_root = Path(__file__).resolve().parents[3]
-    repo_relative = repo_root / path
-    if any(part == ".." for part in Path(path).parts):
-        raise ValueError("Path traversal is not allowed")
-    if repo_relative.exists():
-        return str(repo_relative.resolve())
+    if candidate.is_absolute():
+        options = [candidate]
+    else:
+        repo_root = PACKAGE_DIR.parents[1]
+        options = [Path.cwd() / candidate, repo_root / candidate]
 
-    return str(candidate)
+    chosen = next((option for option in options if option.exists()), options[0])
+    resolved = chosen.resolve()
+
+    if not any(_is_within(resolved, root) for root in allowed_data_roots()):
+        raise ValueError("Path is outside the allowed data directories")
+    return str(resolved)
 
 
 def apply_scan_defaults(request: ScanRequest) -> ScanRequest:
@@ -236,25 +292,75 @@ def apply_scan_defaults(request: ScanRequest) -> ScanRequest:
     return request.model_copy(update=updates)
 
 
-def _enrich_devices_with_scores(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Attach health scoring and grading explainability fields to device dictionaries."""
-    calculator = HealthScoreCalculator()
-    enriched: list[dict[str, Any]] = []
+def build_threshold_config(
+    config_path: str | None = None,
+    grading_profile: str | None = None,
+) -> ThresholdConfig:
+    """
+    Build a request-local threshold configuration (never touches the global).
+
+    Mirrors the CLI's ``load_threshold_config``: an explicit ``config`` path
+    wins, otherwise the packaged ``thresholds.yaml`` defaults apply; an
+    explicit ``grading_profile`` (like ``--grading-profile``) overrides
+    ``grading.profile`` from the YAML.
+    """
+    path: str | Path | None = resolve_data_path(config_path) if config_path else get_default_config_path()
+    threshold_config = ThresholdConfig(path) if path else ThresholdConfig()
+    if grading_profile:
+        threshold_config.set_grading_profile(grading_profile)
+    return threshold_config
+
+
+@contextmanager
+def scoped_thresholds(threshold_config: ThresholdConfig) -> Iterator[ThresholdConfig]:
+    """
+    Temporarily install ``threshold_config`` as the global thresholds singleton.
+
+    Scoring classes bind ``get_config()`` once at construction, so only
+    construct them inside this block; the previous global is always restored
+    and the swap is serialized so concurrent requests cannot observe each
+    other's thresholds.
+    """
+    with _THRESHOLDS_LOCK:
+        previous = ThresholdConfig._instance
+        ThresholdConfig._instance = threshold_config
+        try:
+            yield threshold_config
+        finally:
+            ThresholdConfig._instance = previous
+
+
+def report_generator_for(threshold_config: ThresholdConfig) -> ReportGenerator:
+    """Return a ReportGenerator whose scoring engine uses ``threshold_config``."""
+    with scoped_thresholds(threshold_config):
+        return ReportGenerator()
+
+
+def _enrich_devices_with_scores(
+    devices: list[dict[str, Any]],
+    threshold_config: ThresholdConfig,
+) -> list[dict[str, Any]]:
+    """
+    Score devices and attach explainability plus Revert §13/§15 fields.
+
+    Reuses the report generator's enrichment so API payloads match CLI/report
+    semantics (``revert_fields`` UNGRADED overrides, duplicate-serial flags,
+    ``report_category``).
+    """
+    reporter = report_generator_for(threshold_config)
+    return [_serialize(device) for device in reporter._enrich_devices(devices)]
+
+
+def summarize_devices(devices: list[dict[str, Any]]) -> dict[str, int]:
+    """Summary counts; UNGRADED drives are counted separately, never as failed."""
+    counts = {"total": len(devices), "healthy": 0, "warning": 0, "failed": 0, "ungraded": 0}
     for device in devices:
-        score = calculator.calculate(device)
-        payload = attach_explanation(device, score)
-        payload["report_category"] = ReportGenerator._device_report_category(payload)
-        enriched.append(_serialize(payload))
-    return enriched
+        counts[ReportGenerator._score_bucket(device)] += 1
+    return counts
 
 
-def run_scan(request: ScanRequest) -> dict[str, Any]:
-    """Execute a device scan and return structured JSON data."""
-    request = apply_scan_defaults(request)
-
-    if request.config:
-        configure_thresholds(resolve_data_path(request.config))
-
+def _collect_devices(request: ScanRequest) -> list[dict[str, Any]]:
+    """Collect raw (unscored) device dictionaries for a normalized scan request."""
     mock_mode = bool(request.mock_data or request.mock_file)
     if mock_mode:
         if request.mock_file:
@@ -285,20 +391,21 @@ def run_scan(request: ScanRequest) -> dict[str, Any]:
 
     if request.device:
         devices = _filter_devices_by_path(devices, request.device)
+    return devices
 
-    enriched = _enrich_devices_with_scores(devices)
-    healthy = sum(1 for d in enriched if d.get("health_score", 0) >= 75)
-    warning = sum(1 for d in enriched if 40 <= d.get("health_score", 0) < 75)
-    failed = sum(1 for d in enriched if d.get("health_score", 0) < 40)
+
+def run_scan(request: ScanRequest) -> dict[str, Any]:
+    """Execute a device scan and return structured JSON data."""
+    request = apply_scan_defaults(request)
+    threshold_config = build_threshold_config(request.config, request.grading_profile)
+
+    devices = _collect_devices(request)
+    enriched = _enrich_devices_with_scores(devices, threshold_config)
 
     return {
         "scanned_at": utc_now().isoformat(),
-        "summary": {
-            "total": len(enriched),
-            "healthy": healthy,
-            "warning": warning,
-            "failed": failed,
-        },
+        "grading_profile": threshold_config.grading_profile,
+        "summary": summarize_devices(enriched),
         "devices": enriched,
     }
 
@@ -387,11 +494,22 @@ def _read_selftest_outcome(handler: NVMeSelfTest) -> dict[str, Any]:
     return outcome
 
 
-def run_selftest_start(request: SelfTestStartRequest) -> dict[str, Any]:
-    """Start NVMe self-tests and optionally wait for completion."""
+def run_selftest_start(
+    request: SelfTestStartRequest,
+    *,
+    on_started: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    """
+    Start NVMe self-tests and optionally wait for completion.
+
+    ``on_started`` is invoked once the start commands have been issued (before
+    any ``wait`` polling) so callers can release the hardware lock early.
+    """
     _assert_nvme_device(request.device)
     targets = _supported_nvme_targets(request.device)
     if not targets:
+        if on_started is not None:
+            on_started()
         return {"devices": [], "summary": {"total": 0, "started": 0, "completed": 0, "failed_to_start": 0}}
 
     results: list[dict[str, Any]] = []
@@ -443,6 +561,9 @@ def run_selftest_start(request: SelfTestStartRequest) -> dict[str, Any]:
             entry["error"] = str(exc)
 
         results.append(entry)
+
+    if on_started is not None:
+        on_started()
 
     if request.wait:
         deadline = time.monotonic() + request.timeout_seconds
@@ -569,23 +690,27 @@ def abort_selftest(device: str) -> dict[str, Any]:
 
 
 def generate_report(request: ReportRequest) -> dict[str, Any]:
-    """Generate HTML/PDF report from the latest scan request options."""
-    scan_request = ScanRequest(
-        ignore_ata=request.ignore_ata,
-        ignore_nvme=request.ignore_nvme,
-        ignore_scsi=request.ignore_scsi,
-        device=request.device,
-        config=request.config,
-        mock_data=request.mock_data,
-        mock_file=request.mock_file,
+    """Generate an HTML/PDF/CSV report from a fresh scan with the request options."""
+    scan_request = apply_scan_defaults(
+        ScanRequest(
+            ignore_ata=request.ignore_ata,
+            ignore_nvme=request.ignore_nvme,
+            ignore_scsi=request.ignore_scsi,
+            device=request.device,
+            config=request.config,
+            mock_data=request.mock_data,
+            mock_file=request.mock_file,
+            grading_profile=request.grading_profile,
+        )
     )
-    scan_result = run_scan(scan_request)
-    devices = scan_result["devices"]
-
     output_path = resolve_report_output_path(request.output_file, request.format)
+    threshold_config = build_threshold_config(scan_request.config, scan_request.grading_profile)
+    devices = _collect_devices(scan_request)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    reporter = ReportGenerator()
+    # Same path as `cdi-health report`: the reporter scores raw devices itself.
+    reporter = report_generator_for(threshold_config)
     if request.format == "html":
         reporter.generate_html(devices, str(output_path))
     elif request.format == "csv":

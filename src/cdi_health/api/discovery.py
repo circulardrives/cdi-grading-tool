@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import os
 import socket
 import time
 import urllib.error
@@ -221,6 +220,7 @@ def discover_hosts(
     Scan private LAN subnet(s) for CDI Health API instances on the given port.
 
     Discovery runs from the machine hosting this API process (technician laptop or jump host).
+    ``X-API-Token`` is sent only when ``probe_token`` is explicitly provided.
     """
     started = time.monotonic()
     subnet_values = resolve_subnets(subnet, subnets)
@@ -237,7 +237,11 @@ def discover_hosts(
     if not hosts:
         raise DiscoveryError("No host addresses available to scan.")
 
-    token = probe_token or os.getenv("CDI_HEALTH_API_TOKEN") or None
+    # Only send a token the caller explicitly supplied. Never fall back to this
+    # bench's own CDI_HEALTH_API_TOKEN: probes go over plain HTTP to every host
+    # with the port open, so any LAN listener could harvest it. The
+    # unauthenticated /health payload ({status, version}) identifies a bench.
+    token = probe_token or None
     machines = registered_machines or []
     open_hosts: list[str] = []
 
