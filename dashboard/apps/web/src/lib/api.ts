@@ -11,6 +11,7 @@ import type {
   MachineCheckResponse,
   MachineCreateRequest,
   MachineUpdateRequest,
+  ReportListEntry,
   ReportRequest,
   ReportResponse,
   ScanRequest,
@@ -163,6 +164,29 @@ export function generateReport(body: ReportRequest): Promise<ReportResponse> {
   })
 }
 
+/** Reports saved on the API host, newest first (404 on older APIs). */
+export function listReports(): Promise<ReportListEntry[]> {
+  return request<ReportListEntry[]>("/api/v1/reports")
+}
+
+/** `?machine_id=…` (plus any extra params), or "" for this bench. */
+function benchQuery(
+  machineId?: string | null,
+  extra: Record<string, string | undefined> = {}
+): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(extra)) {
+    if (value) {
+      params.set(key, value)
+    }
+  }
+  if (machineId) {
+    params.set("machine_id", machineId)
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ""
+}
+
 export function startSelfTest(
   body: SelfTestStartRequest
 ): Promise<JobResponse> {
@@ -173,30 +197,42 @@ export function startSelfTest(
 }
 
 export function getSelfTestStatus(
-  device?: string
+  device?: string,
+  machineId?: string | null
 ): Promise<SelfTestStatusResponse> {
-  const query = device ? `?device=${encodeURIComponent(device)}` : ""
-  return request<SelfTestStatusResponse>(`/api/v1/selftests/status${query}`)
-}
-
-export function abortSelfTest(
-  device: string
-): Promise<{ device: string; aborted: boolean }> {
-  return request<{ device: string; aborted: boolean }>(
-    "/api/v1/selftests/abort",
-    {
-      method: "POST",
-      body: JSON.stringify({ device }),
-    }
+  return request<SelfTestStatusResponse>(
+    `/api/v1/selftests/status${benchQuery(machineId, { device })}`
   )
 }
 
-export function getJob(jobId: string): Promise<JobResponse> {
-  return request<JobResponse>(`/api/v1/jobs/${encodeURIComponent(jobId)}`)
+export function abortSelfTest(
+  device: string,
+  machineId?: string | null
+): Promise<{ device: string; aborted: boolean; machine_id?: string | null }> {
+  return request<{
+    device: string
+    aborted: boolean
+    machine_id?: string | null
+  }>("/api/v1/selftests/abort", {
+    method: "POST",
+    body: JSON.stringify(
+      machineId ? { device, machine_id: machineId } : { device }
+    ),
+  })
 }
 
-export function listJobs(): Promise<JobResponse[]> {
-  return request<JobResponse[]>("/api/v1/jobs")
+/** Remote job ids are opaque: always poll with the bench that started the job. */
+export function getJob(
+  jobId: string,
+  machineId?: string | null
+): Promise<JobResponse> {
+  return request<JobResponse>(
+    `/api/v1/jobs/${encodeURIComponent(jobId)}${benchQuery(machineId)}`
+  )
+}
+
+export function listJobs(machineId?: string | null): Promise<JobResponse[]> {
+  return request<JobResponse[]>(`/api/v1/jobs${benchQuery(machineId)}`)
 }
 
 export function listMachines(): Promise<Machine[]> {
@@ -341,6 +377,11 @@ export async function downloadReportFile(filename: string): Promise<void> {
 /** True when the API predates an endpoint (older cdi-health-api). */
 export function isNotFoundError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404
+}
+
+/** True when the API rejected the request body (often an older API). */
+export function isValidationError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 422
 }
 
 export { ApiError }

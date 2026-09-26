@@ -164,8 +164,20 @@ export type ScanRequest = {
   machine_id?: string
 }
 
+export type ReportFormat = "html" | "pdf" | "csv"
+
+/**
+ * What a report covers: "fleet" = latest saved scan of every bench (no
+ * rescan), "history" = the given saved scans, "scan" = scan this bench now.
+ */
+export type ReportSource = "scan" | "history" | "fleet"
+
 export type ReportRequest = {
-  format: "html" | "pdf" | "csv"
+  format: ReportFormat
+  /** Older APIs ignore this and always scan the API's own drives. */
+  source?: ReportSource
+  /** Saved scan ids, for source "history". */
+  history_ids?: string[]
   output_file?: string
   ignore_ata?: boolean
   ignore_nvme?: boolean
@@ -176,14 +188,36 @@ export type ReportRequest = {
   mock_file?: string
 }
 
+/** One bench whose drives went into a report. */
+export type ReportHost = {
+  name: string
+  machine_id: string | null
+  scanned_at: string | null
+  device_count: number
+}
+
 export type ReportResponse = {
   generated_at: string
   output_file: string
   filename: string
-  format: "html" | "pdf" | "csv"
+  format: ReportFormat
   devices_count: number
+  // Newer APIs only; missing means the API scanned its own drives.
+  source?: ReportSource
+  hosts?: ReportHost[]
 }
 
+/** Row of GET /api/v1/reports (newest first, kept on the API host). */
+export type ReportListEntry = {
+  filename: string
+  format: ReportFormat
+  generated_at: string
+  source?: ReportSource | null
+  devices_count: number
+  hosts?: ReportHost[] | null
+}
+
+/** Browser-only report list, used when the API has no GET /reports. */
 export type ReportHistoryEntry = ReportResponse & {
   id: string
 }
@@ -291,6 +325,8 @@ export type DriveColumn = {
 
 export type SelfTestStartRequest = {
   device?: string
+  /** Run on this registered bench instead of the API's own drives. */
+  machine_id?: string
   test_type?: "short" | "extended"
   wait?: boolean
   poll_interval_seconds?: number
@@ -329,6 +365,8 @@ export type SelfTestDeviceStatus = {
 export type SelfTestStatusResponse = {
   devices: SelfTestDeviceStatus[]
   total: number
+  /** Echoed by newer APIs when the request named a bench. */
+  machine_id?: string | null
 }
 
 export type JobResponse = {
@@ -345,6 +383,8 @@ export type JobResponse = {
     summary?: Record<string, number>
   } | null
   error?: string | null
+  /** Bench the job runs on (newer APIs). Poll it with the same machine_id. */
+  machine_id?: string | null
 }
 
 export type DiscoverRequest = {

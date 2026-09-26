@@ -7,6 +7,9 @@ export const queryKeys = {
   historyPages: (machineId?: string | null) =>
     ["history", "pages", machineId ?? "all"] as const,
   historyDetail: (scanId: string) => ["history", "detail", scanId] as const,
-  jobs: ["jobs"] as const,
-  selfTestStatus: ["self-test-status"] as const,
+  reports: ["reports"] as const,
+  // Self-test data is per bench: never mix results from two benches.
+  jobs: (machineId?: string | null) => ["jobs", machineId ?? "local"] as const,
+  selfTestStatus: (machineId?: string | null) =>
+    ["self-test-status", machineId ?? "local"] as const,
 }
