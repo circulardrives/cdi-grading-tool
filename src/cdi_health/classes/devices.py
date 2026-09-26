@@ -161,7 +161,7 @@ class Device:
         if sg3utils_provider:
             sg_mapped = sg3utils_provider.sg_map26()
             self.dut_sg: str = sg_mapped if sg_mapped else self.dut
-            self.state: str = sg3utils_provider.test_unit_ready() or "Not Ready"
+            self.state: str = sg3utils_provider.test_unit_ready() or "Unknown"
         else:
             sg3 = SG3Utils(self.dut)
             sg_mapped = sg3.sg_map26()
@@ -173,7 +173,7 @@ class Device:
             self.dut_sg: str = sg_mapped if sg_mapped else self.dut
             if self.dut_sg != self.dut:
                 sg3 = SG3Utils(self.dut_sg)
-            self.state: str = sg3.test_unit_ready() or "Not Ready"
+            self.state: str = sg3.test_unit_ready() or "Unknown"
 
         # Store providers for later use
         self._smartctl_provider = smartctl_provider

@@ -55,6 +55,7 @@ from cdi_health.classes.config import (
     GRADING_PROFILE_BINARY,
     get_config,
 )
+from cdi_health.classes.revert import tur_not_ready_waived
 
 # Grade ordering, best to worst
 GRADE_ORDER: tuple[str, ...] = ("A", "B", "C", "D", "F")
@@ -923,6 +924,10 @@ class HealthScoreCalculator:
         ``Fail`` and TUR ``Not Ready`` are Stage 1 fail-gates (F-NO-RESPONSE).
         Wired here because ``state`` is never set to the literal "fail" after
         commit 3537842 — live scans report Ready / Not Ready from sg_turs.
+
+        #128: ``Unknown`` (TUR tool missing / errored / timed out) is not a
+        fail-gate, and an ATA/NVMe TUR Not Ready is waived when the drive
+        returned valid SMART/health data; both surface as warning flags.
         """
         state = device.get("state") or device.get("State")
         if state is None:
@@ -931,6 +936,8 @@ class HealthScoreCalculator:
         if state_norm == "fail":
             reason = "Device operational state failed"
         elif state_norm in ("not ready", "notready"):
+            if tur_not_ready_waived(device):
+                return []
             reason = "Device not ready (TUR / F-NO-RESPONSE)"
         else:
             return []

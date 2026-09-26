@@ -25,6 +25,7 @@ import shlex
 import sys
 from unittest.mock import MagicMock, patch
 
+from cdi_health.classes.exceptions import CommandException
 from cdi_health.classes.tools import Command, SG3Utils, Smartctl
 
 
@@ -112,3 +113,79 @@ class TestSG3Utils:
         sg3 = SG3Utils("/dev/sg0")
         path = sg3.get_sg3utils_path("sg_map26")
         assert path == "/usr/bin/sg_map26"
+
+
+class TestTestUnitReady:
+    """TEST UNIT READY classification and retry (#128)."""
+
+    @staticmethod
+    def _fake_command(outcomes: list, calls: list):
+        """Build a Command stand-in; each outcome is a return code or an exception."""
+
+        class FakeCommand:
+            def __init__(self, command: str = None, timeout=None) -> None:
+                self.command = command
+                self.return_code = None
+
+            def run(self) -> None:
+                calls.append(self.command)
+                if "--start" in self.command:
+                    self.return_code = 0
+                    return
+                outcome = outcomes.pop(0)
+                if isinstance(outcome, Exception):
+                    raise outcome
+                self.return_code = outcome
+
+            def get_return_code(self):
+                return self.return_code
+
+        return FakeCommand
+
+    def _tur(self, outcomes: list) -> tuple[str, list]:
+        calls: list = []
+        with patch("cdi_health.classes.tools.Command", self._fake_command(outcomes, calls)):
+            state = SG3Utils("/dev/sg0").test_unit_ready()
+        return state, calls
+
+    def test_ready(self) -> None:
+        state, calls = self._tur([0])
+        assert state == "Ready"
+        assert len(calls) == 1
+
+    def test_tool_missing_is_unknown_not_not_ready(self) -> None:
+        state, calls = self._tur([CommandException("Command not found")])
+        assert state == "Unknown"
+        assert len(calls) == 1  # no retry for tool errors
+
+    def test_timeout_is_unknown(self) -> None:
+        state, _ = self._tur([CommandException("Command timed out after 30s")])
+        assert state == "Unknown"
+
+    def test_sudo_or_syntax_error_is_unknown(self) -> None:
+        # sudo password prompt failure / sg_turs syntax error both exit 1
+        state, _ = self._tur([1])
+        assert state == "Unknown"
+
+    def test_device_open_failure_is_unknown(self) -> None:
+        state, _ = self._tur([15])
+        assert state == "Unknown"
+
+    def test_genuine_not_ready_retried_then_reported(self) -> None:
+        state, calls = self._tur([2, 2])
+        assert state == "Not Ready"
+        tur_calls = [c for c in calls if "--start" not in c]
+        assert len(tur_calls) == 2
+        assert any("--start" in c for c in calls)
+
+    def test_not_ready_that_recovers_on_retry_is_ready(self) -> None:
+        state, _ = self._tur([2, 0])
+        assert state == "Ready"
+
+    def test_not_ready_then_tool_error_is_unknown(self) -> None:
+        state, _ = self._tur([2, 99])
+        assert state == "Unknown"
+
+    def test_medium_hardware_error_is_not_ready(self) -> None:
+        state, _ = self._tur([3, 3])
+        assert state == "Not Ready"

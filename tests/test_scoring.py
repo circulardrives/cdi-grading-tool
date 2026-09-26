@@ -640,3 +640,36 @@ class TestHealthScoreCalculator:
         result = calculator.calculate(device)
         assert result.grade == "A"
         assert not any(d.field == "ocp_capacitor_health" for d in result.deductions)
+
+
+class TestTurStateScoring:
+    """#128: only a genuine Not Ready is a fail-gate."""
+
+    def test_unknown_state_is_not_a_fail_gate(self) -> None:
+        result = HealthScoreCalculator().calculate(
+            {"transport_protocol": "SCSI", "state": "Unknown", "smart_status": "PASSED"}
+        )
+        assert result.grade != "F"
+        assert not any(d.field == "state" for d in result.deductions)
+
+    def test_ata_not_ready_without_readable_smart_still_fails(self) -> None:
+        # No evidence the drive answered SMART -> keep the #123 fail-gate.
+        result = HealthScoreCalculator().calculate(
+            {"transport_protocol": "ATA", "state": "Not Ready", "smart_status": "PASSED"}
+        )
+        assert result.grade == "F"
+
+    def test_nvme_not_ready_with_readable_smart_is_waived(self) -> None:
+        result = HealthScoreCalculator().calculate(
+            {
+                "transport_protocol": "NVMe",
+                "state": "Not Ready",
+                "smart_status": True,
+                "smart_data_readable": True,
+                "percentage_used": 1,
+                "available_spare": 100,
+                "available_spare_threshold": 10,
+            }
+        )
+        assert not any(d.field == "state" for d in result.deductions)
+        assert result.grade != "F"

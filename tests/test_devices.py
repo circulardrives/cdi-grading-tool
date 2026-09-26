@@ -31,6 +31,7 @@ import pytest
 from cdi_health.classes.devices import ATAProtocol, Device, Devices
 from cdi_health.classes.exceptions import CommandException
 from cdi_health.classes.mock import MockSG3Utils, MockSmartctl, create_mock_device
+from cdi_health.classes.revert import FLAG_TUR_NOT_READY, FLAG_TUR_UNAVAILABLE, fail_reason_codes, warning_flags
 from cdi_health.classes.scoring import HealthScoreCalculator
 
 
@@ -239,3 +240,62 @@ class TestATASelfTestScoring:
         result = calculator.calculate(device)
         assert result.grade == "A"
         assert not any("self-test" in d.reason.lower() for d in result.deductions)
+
+
+class _StaticTurSG(MockSG3Utils):
+    """MockSG3Utils returning a fixed TUR state."""
+
+    tur_state = "Ready"
+
+    def test_unit_ready(self) -> str:
+        return self.tur_state
+
+
+def _sg_with_state(device_id: str, state: str | None) -> MockSG3Utils:
+    sg = _StaticTurSG(device_id=device_id)
+    sg.tur_state = state
+    return sg
+
+
+class TestTurStateGrading:
+    """TUR Unknown / ATA-NVMe Not Ready must not auto-fail drives (#128)."""
+
+    @pytest.mark.parametrize(
+        "rel",
+        [("ata", "healthy_hdd.json"), ("nvme", "SSDPE2KE032T8_healthy.json"), ("scsi", "healthy_sas.json")],
+    )
+    def test_unknown_tur_does_not_fail(self, mock_data_dir: Path, rel: tuple[str, str]) -> None:
+        data = _load_mock(mock_data_dir, *rel)
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Unknown"))
+        assert device.state == "Unknown"
+        assert device.cdi_grade != "F"
+        d = device.to_dict(pop=True)
+        result = HealthScoreCalculator().calculate(d)
+        assert not any(x.field == "state" for x in result.deductions)
+        assert FLAG_TUR_UNAVAILABLE in warning_flags(d)
+
+    def test_provider_returning_none_is_unknown(self, mock_data_dir: Path) -> None:
+        data = _load_mock(mock_data_dir, "ata", "healthy_hdd.json")
+        device = _device_from_mock(data, sg3=_sg_with_state(data["device"]["name"], None))
+        assert device.state == "Unknown"
+
+    @pytest.mark.parametrize("rel", [("ata", "healthy_hdd.json"), ("nvme", "SSDPE2KE032T8_healthy.json")])
+    def test_ata_nvme_not_ready_with_valid_smart_is_waived(self, mock_data_dir: Path, rel: tuple[str, str]) -> None:
+        data = _load_mock(mock_data_dir, *rel)
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Not Ready"))
+        assert device.state == "Not Ready"
+        assert device.cdi_grade != "F"
+        d = device.to_dict(pop=True)
+        result = HealthScoreCalculator().calculate(d)
+        assert "F-NO-RESPONSE" not in fail_reason_codes(result.deductions)
+        assert FLAG_TUR_NOT_READY in warning_flags(d)
+
+    def test_scsi_genuine_not_ready_still_fails(self, mock_data_dir: Path) -> None:
+        data = _load_mock(mock_data_dir, "scsi", "healthy_sas.json")
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Not Ready"))
+        assert device.cdi_grade == "F"
+        result = HealthScoreCalculator().calculate(device.to_dict(pop=True))
+        assert "F-NO-RESPONSE" in fail_reason_codes(result.deductions)

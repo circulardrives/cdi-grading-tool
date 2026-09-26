@@ -51,6 +51,12 @@ UNGRADED_GRADE = "UNGRADED"
 # Warning flags (§15)
 FLAG_SMART_RESET_SUSPECTED = "SMART_RESET_SUSPECTED"  # §15.1
 FLAG_DUPLICATE_SERIAL = "DUPLICATE_SERIAL"  # §15.7
+# TEST UNIT READY could not be run or interpreted (sg_turs missing, timeout,
+# permission error). Readiness is unknown; not a fail-gate (#128).
+FLAG_TUR_UNAVAILABLE = "TUR_UNAVAILABLE"
+# ATA/NVMe drive answered TUR Not Ready but returned valid SMART/health data;
+# the SAT/NVMe translation result is not treated as a fail-gate (#128).
+FLAG_TUR_NOT_READY = "TUR_NOT_READY"
 
 # Ungraded reason codes (§4.1, §15.5, §15.6)
 UNGRADED_SECURITY_LOCKED = "SECURITY_LOCKED"
@@ -269,12 +275,43 @@ def is_ungraded(device: dict) -> bool:
     return device.get("grading_status") == STATUS_UNGRADED or bool(ungraded_reasons(device))
 
 
+def _normalized_state(device: dict) -> str:
+    state = device.get("state")
+    if state is None:
+        state = device.get("State")
+    return str(state or "").strip().lower().replace("_", " ")
+
+
+def tur_state_unknown(device: dict) -> bool:
+    """True when TEST UNIT READY could not be run or interpreted (#128)."""
+    return _normalized_state(device) == "unknown"
+
+
+def tur_not_ready_waived(device: dict) -> bool:
+    """
+    True when an ATA/NVMe drive reported TUR Not Ready but still returned
+    valid SMART/health data (#128). TUR on these protocols goes through SAT /
+    NVMe translation, so a Not Ready there is not a trustworthy F-NO-RESPONSE
+    signal when the drive demonstrably answered SMART. SCSI keeps the #123
+    fail-gate.
+    """
+    if _normalized_state(device) not in ("not ready", "notready"):
+        return False
+    protocol = str(device.get("transport_protocol") or "").strip().upper()
+    return protocol in ("ATA", "NVME") and device.get("smart_data_readable") is True
+
+
 def warning_flags(device: dict) -> list[str]:
     """§15 warning flags (non-fatal anomalies that must surface in output)."""
     flags: list[str] = []
     for flag in device.get("warning_flags") or []:
         if flag and flag not in flags:
             flags.append(str(flag))
+
+    if tur_state_unknown(device) and FLAG_TUR_UNAVAILABLE not in flags:
+        flags.append(FLAG_TUR_UNAVAILABLE)
+    if tur_not_ready_waived(device) and FLAG_TUR_NOT_READY not in flags:
+        flags.append(FLAG_TUR_NOT_READY)
 
     if _smart_reset_suspected(device) and FLAG_SMART_RESET_SUSPECTED not in flags:
         flags.append(FLAG_SMART_RESET_SUSPECTED)
