@@ -111,9 +111,8 @@ async function request<T>(
     headers.set("Content-Type", "application/json")
   }
 
-  if (appConfig.apiToken) {
-    headers.set("X-API-Token", appConfig.apiToken)
-  }
+  // No X-API-Token here: the Vite dev proxy and nginx inject it server-side,
+  // so the token never ships in the browser bundle.
 
   const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
     ...init,
@@ -279,10 +278,6 @@ async function fetchReportBlob(
   const query = download ? "?download=true" : ""
   const headers = new Headers()
   headers.set("Accept", "*/*")
-
-  if (appConfig.apiToken) {
-    headers.set("X-API-Token", appConfig.apiToken)
-  }
 
   const response = await fetch(
     `${appConfig.apiBaseUrl}/api/v1/reports/${encodeURIComponent(filename)}${query}`,

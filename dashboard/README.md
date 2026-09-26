@@ -29,7 +29,7 @@ From the repository root:
 Open http://127.0.0.1:3000
 
 - **Discover** → subnet `192.168.0.0/24` to find `cdi-health-api` on the network.
-- **Use mock data** (Discover → Demo mode) is **off by default**; enable for fixture demos only.
+- **Mock data** (toggle in the app header) is **off by default**; enable for fixture demos only.
 
 Images (multi-arch):
 
@@ -55,7 +55,7 @@ Or all-in-one mock from repo root:
 ./scripts/start-local-mock.sh
 ```
 
-Live scans are the default; enable **Use mock data** on **Discover** for fixtures.
+Live scans are the default; enable **Mock data** in the app header for fixtures.
 
 ## Environment
 
@@ -65,11 +65,11 @@ Copy `apps/web/.env.example` to `apps/web/.env.local`.
 | --- | --- |
 | `VITE_CDI_API_BASE_URL` | Fetch base path (`/api/cdi` in dev) |
 | `VITE_CDI_API_PROXY_TARGET` | Vite proxy upstream (default `127.0.0.1:8844`) |
-| `VITE_CDI_API_TOKEN` | Sent as `X-API-Token` when API auth is enabled |
+| `CDI_HEALTH_API_TOKEN` | Injected as `X-API-Token` by the Vite dev/preview proxy (server-side only; not bundled). Legacy `VITE_CDI_API_TOKEN` is still accepted |
 | `VITE_CDI_MOCK_DATA_PATH` | Path sent to API when **Use mock data** is enabled |
 | `VITE_CDI_DISCOVER_SUBNET` | Default subnet placeholder on Discover |
 
-In Docker/nginx production mode, the UI uses `/api/cdi` on the same origin; nginx proxies to the API container or remote bench.
+In Docker/nginx production mode, the UI uses `/api/cdi` on the same origin; nginx proxies to the API container or remote bench and adds `X-API-Token` from `CDI_HEALTH_API_TOKEN`. The browser never holds the token.
 
 ## Adding components
 
