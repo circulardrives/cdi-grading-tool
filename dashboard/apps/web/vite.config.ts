@@ -2,7 +2,26 @@ import { readFileSync } from "fs"
 import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig, loadEnv } from "vite"
+import { defineConfig, loadEnv, type Plugin } from "vite"
+
+/**
+ * Demo build only: "CDI Health — Demo" page title, and a Cloudflare Pages
+ * `_redirects` SPA fallback so deep links (/drives/…) load index.html.
+ */
+function staticDemo(): Plugin {
+  return {
+    name: "cdi-static-demo",
+    transformIndexHtml: (html) =>
+      html.replace(/<title>[^<]*<\/title>/, "<title>CDI Health — Demo</title>"),
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "_redirects",
+        source: "/* /index.html 200\n",
+      })
+    },
+  }
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
@@ -15,12 +34,21 @@ export default defineConfig(({ mode }) => {
     readFileSync(path.resolve(__dirname, "package.json"), "utf8")
   ) as { version: string }
 
+  // VITE_DEMO=1: static public demo (scripts/build-demo.sh). The API is
+  // replaced by src/demo/backend.ts; normal builds never include it.
+  const isDemo = env.VITE_DEMO === "1"
+
   return {
-    plugins: [react(), tailwindcss()],
-    // Shown in Settings › About.
+    plugins: [react(), tailwindcss(), ...(isDemo ? [staticDemo()] : [])],
     define: {
+      // Shown in Settings › About.
       __APP_VERSION__: JSON.stringify(appVersion),
+      __CDI_DEMO__: JSON.stringify(isDemo),
     },
+    // The demo backend chunk carries the sample drives (~1 MB, ~90 kB gzip).
+    build: isDemo
+      ? { outDir: "dist-demo", chunkSizeWarningLimit: 1500 }
+      : undefined,
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
