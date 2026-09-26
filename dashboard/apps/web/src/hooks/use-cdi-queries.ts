@@ -10,6 +10,7 @@ import { toast } from "sonner"
 
 import {
   ApiError,
+  generateReport,
   getDevices,
   getFleetDevices,
   getHealth,
@@ -19,10 +20,23 @@ import {
   listHistory,
   listJobs,
   listMachines,
+  listReports,
   scanAllHosts,
 } from "@/lib/api"
 import { fleetScanToast } from "@/lib/host-utils"
 import { queryKeys } from "@/lib/query-keys"
+import {
+  deliverReport,
+  describeReportError,
+  loadLocalReports,
+  localReportsAsList,
+  OLD_API_REPORT_MESSAGE,
+  reportFileOf,
+  reportIgnoredSource,
+  reportReadyMessage,
+  saveLocalReport,
+} from "@/lib/report-utils"
+import type { ReportFormat, ReportListEntry } from "@/lib/types"
 
 export function useHealthQuery() {
   return useQuery({
@@ -160,19 +174,114 @@ export function useHistoryDetailQuery(scanId: string, enabled = true) {
   })
 }
 
-export function useJobsQuery() {
+/** Jobs on one bench (`null` = this bench). */
+export function useJobsQuery(machineId?: string | null) {
   return useQuery({
-    queryKey: queryKeys.jobs,
-    queryFn: listJobs,
+    queryKey: queryKeys.jobs(machineId),
+    queryFn: () => listJobs(machineId),
   })
 }
 
-export function useSelfTestStatusQuery(enabled = true) {
+/** Self-test status on one bench (`null` = this bench). */
+export function useSelfTestStatusQuery(
+  machineId?: string | null,
+  enabled = true
+) {
   return useQuery({
-    queryKey: queryKeys.selfTestStatus,
-    queryFn: () => getSelfTestStatus(),
+    queryKey: queryKeys.selfTestStatus(machineId),
+    queryFn: () => getSelfTestStatus(undefined, machineId),
     enabled,
   })
+}
+
+export type ReportsList = {
+  reports: ReportListEntry[]
+  /** False when the API has no GET /reports and the list lives in this browser. */
+  savedOnServer: boolean
+}
+
+/**
+ * Recent reports from GET /reports; falls back to the browser-only list
+ * when the API predates that endpoint (404).
+ */
+export function useReportsQuery() {
+  return useQuery({
+    queryKey: queryKeys.reports,
+    queryFn: async (): Promise<ReportsList> => {
+      try {
+        return { reports: await listReports(), savedOnServer: true }
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          return {
+            reports: localReportsAsList(loadLocalReports()),
+            savedOnServer: false,
+          }
+        }
+        throw error
+      }
+    },
+  })
+}
+
+/** POST /reports; refreshes the recent-reports list afterwards. */
+export function useGenerateReportMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: generateReport,
+    onSuccess: (result, variables) => {
+      // Browser copy only matters for older APIs without GET /reports.
+      saveLocalReport(result)
+      const invalidations = [
+        queryClient.invalidateQueries({ queryKey: queryKeys.reports }),
+      ]
+      if (!variables.source || variables.source === "scan") {
+        invalidations.push(
+          queryClient.invalidateQueries({ queryKey: ["devices"] }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.health })
+        )
+      }
+      return Promise.all(invalidations)
+    },
+  })
+}
+
+/**
+ * "Report" actions for one saved scan (History page): makes the report from
+ * that scan, then opens or downloads it.
+ */
+export function useSavedScanReport() {
+  const generate = useGenerateReportMutation()
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+
+  const makeReport = async (scanId: string, format: ReportFormat) => {
+    setBusyKey(`${scanId}:${format}`)
+    try {
+      const result = await generate.mutateAsync({
+        format,
+        source: "history",
+        history_ids: [scanId],
+      })
+      if (reportIgnoredSource("history", result)) {
+        toast.warning(OLD_API_REPORT_MESSAGE)
+      } else {
+        toast.success(reportReadyMessage(result))
+      }
+      await deliverReport(reportFileOf(result), format)
+    } catch (error) {
+      toast.error(describeReportError(error))
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  return {
+    makeReport,
+    isBusy: (scanId: string, format?: ReportFormat) =>
+      format
+        ? busyKey === `${scanId}:${format}`
+        : busyKey?.startsWith(`${scanId}:`) === true,
+    anyBusy: busyKey != null,
+  }
 }
 
 export function useInvalidateCdiQueries() {
@@ -195,10 +304,20 @@ export function useInvalidateCdiQueries() {
       queryClient.invalidateQueries({ queryKey: ["history"] }),
     invalidateHealth: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.health }),
-    invalidateJobs: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.jobs }),
-    invalidateSelfTest: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.selfTestStatus }),
+    invalidateJobs: (machineId?: string | null) =>
+      queryClient.invalidateQueries({
+        queryKey:
+          machineId !== undefined ? queryKeys.jobs(machineId) : ["jobs"],
+      }),
+    invalidateSelfTest: (machineId?: string | null) =>
+      queryClient.invalidateQueries({
+        queryKey:
+          machineId !== undefined
+            ? queryKeys.selfTestStatus(machineId)
+            : ["self-test-status"],
+      }),
+    invalidateReports: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports }),
     invalidateAfterScan: (machineId?: string | null) =>
       Promise.all([
         queryClient.invalidateQueries({
