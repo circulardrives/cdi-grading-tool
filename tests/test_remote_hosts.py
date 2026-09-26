@@ -28,6 +28,7 @@ import stat
 import threading
 import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -583,3 +584,27 @@ def test_fleet_devices_empty_without_scans(api_client: TestClient) -> None:
     assert body["hosts"] == []
     assert body["devices"] == []
     assert body["summary"] == {"total": 0, "healthy": 0, "warning": 0, "failed": 0, "ungraded": 0}
+
+
+def test_fleet_scan_post_scans_all_hosts(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    _register(api_client, "Bench Good", fake_remote.address)
+
+    response = api_client.post("/api/v1/fleet/scan")
+
+    assert response.status_code == 200, response.text
+    assert [h["device_count"] for h in response.json()["hosts"] if h["name"] == "Bench Good"] == [2]
+    assert len(fake_remote.scan_requests()) == 1
+
+
+def test_concurrent_fleet_scans_share_one_run(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    """A duplicate "scan all" (e.g. a browser resend) joins the run in progress."""
+    _register(api_client, "Bench Good", fake_remote.address)
+    fake_remote.scan_delay = 0.5
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _i: api_client.post("/api/v1/fleet/scan"), range(2)))
+
+    assert [r.status_code for r in responses] == [200, 200]
+    assert len(fake_remote.scan_requests()) == 1
+    for response in responses:
+        assert [h["device_count"] for h in response.json()["hosts"] if h["name"] == "Bench Good"] == [2]

@@ -19,6 +19,7 @@ import {
   listHistory,
   listJobs,
   listMachines,
+  scanAllHosts,
 } from "@/lib/api"
 import { fleetScanToast } from "@/lib/host-utils"
 import { queryKeys } from "@/lib/query-keys"
@@ -54,7 +55,7 @@ export function useFleetDevicesQuery(enabled = true) {
     queryKey: queryKeys.fleetDevices,
     queryFn: async () => {
       try {
-        return await getFleetDevices(false)
+        return await getFleetDevices()
       } catch (error) {
         if (isNotFoundError(error)) {
           return null
@@ -69,14 +70,14 @@ export function useFleetDevicesQuery(enabled = true) {
 const SCAN_ALL_MUTATION_KEY = ["fleet", "scan-all"] as const
 
 /**
- * Scans every host (GET /fleet/devices?refresh=true). Registered with a
+ * Scans every host (POST /fleet/scan). Registered with a
  * mutation key so the in-progress state is visible on every page.
  */
 export function useScanAllHostsMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationKey: SCAN_ALL_MUTATION_KEY,
-    mutationFn: () => getFleetDevices(true),
+    mutationFn: scanAllHosts,
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.fleetDevices, data)
       const toastMessage = fleetScanToast(data)
@@ -105,7 +106,10 @@ export function useScanAllHostsMutation() {
 }
 
 /** Whether a "Scan all hosts" run is in flight anywhere, and since when. */
-export function useScanAllStatus(): { pending: boolean; elapsedSeconds: number } {
+export function useScanAllStatus(): {
+  pending: boolean
+  elapsedSeconds: number
+} {
   const startedAt = useMutationState({
     filters: { mutationKey: SCAN_ALL_MUTATION_KEY, status: "pending" },
     select: (mutation) => mutation.state.submittedAt,
@@ -123,7 +127,8 @@ export function useScanAllStatus(): { pending: boolean; elapsedSeconds: number }
 
   return {
     pending: since != null,
-    elapsedSeconds: since != null ? Math.max(0, Math.floor((now - since) / 1000)) : 0,
+    elapsedSeconds:
+      since != null ? Math.max(0, Math.floor((now - since) / 1000)) : 0,
   }
 }
 
@@ -176,9 +181,7 @@ export function useInvalidateCdiQueries() {
   return {
     invalidateDevices: (machineId?: string | null) =>
       queryClient.invalidateQueries({
-        queryKey: machineId
-          ? queryKeys.devices(machineId)
-          : ["devices"],
+        queryKey: machineId ? queryKeys.devices(machineId) : ["devices"],
       }),
     // Host edits change names, status, and tokens shown in the fleet view.
     invalidateMachines: () =>

@@ -26,7 +26,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
-from threading import Lock
+from threading import Event, Lock
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -108,6 +108,14 @@ class HardwareBusyError(Exception):
     """Raised when another operation already holds the drive hardware lock."""
 
 
+class FleetRefresh:
+    """One in-flight fleet refresh that concurrent callers can wait on."""
+
+    def __init__(self) -> None:
+        self.done = Event()
+        self.errors: dict[str, str] = {}
+
+
 class ApiState:
     """Shared runtime state for the CDI Health API process."""
 
@@ -129,6 +137,9 @@ class ApiState:
         self.discover_in_progress = False
         self.latest_discover: dict | None = None
         self.selftest_inflight = 0
+        # Single-flight "scan all hosts": concurrent requests join the run in
+        # progress instead of rescanning every bench (browsers may resend).
+        self.fleet_refresh: FleetRefresh | None = None
 
     def try_acquire_hardware(self) -> bool:
         """Non-blocking acquire of the drive hardware lock."""
@@ -366,23 +377,20 @@ def create_app() -> FastAPI:
             logger.exception("Fleet refresh of host %s failed", machine.get("id"))
             return f"Host '{machine['name']}' scan failed"
 
-    @app.get("/api/v1/fleet/devices", response_model=FleetDevicesResponse)
-    def fleet_devices(
-        refresh: bool = False,
-        _: None = Depends(verify_api_token),
-    ) -> FleetDevicesResponse:
-        """Aggregate the latest scan of every remote host (plus this API's own).
-
-        ``refresh=true`` first rescans all remote hosts (at most
-        FLEET_REFRESH_MAX_WORKERS at a time). Per-host failures are reported
-        in ``hosts[].error`` and never fail the request; a host whose refresh
-        failed still contributes its previous cached scan.
-        """
+    def _refresh_fleet(remote_machines: list[dict[str, Any]]) -> dict[str, str]:
+        """Rescan all remote hosts once; concurrent callers share the same run."""
         runtime = app.state.runtime
-        remote_machines = [m for m in runtime.machine_store.list_machines() if _is_remote(m)]
+        with runtime.lock:
+            inflight = runtime.fleet_refresh
+            owner = inflight is None
+            if owner:
+                inflight = runtime.fleet_refresh = FleetRefresh()
+        if not owner:
+            inflight.done.wait()
+            return dict(inflight.errors)
 
         errors: dict[str, str] = {}
-        if refresh and remote_machines:
+        try:
             workers = min(FLEET_REFRESH_MAX_WORKERS, len(remote_machines))
             with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="cdi-fleet") as executor:
                 for machine, error in zip(
@@ -391,6 +399,42 @@ def create_app() -> FastAPI:
                 ):
                     if error:
                         errors[machine["id"]] = error
+        finally:
+            inflight.errors = errors
+            inflight.done.set()
+            with runtime.lock:
+                runtime.fleet_refresh = None
+        return errors
+
+    @app.get("/api/v1/fleet/devices", response_model=FleetDevicesResponse)
+    def fleet_devices(
+        refresh: bool = False,
+        _: None = Depends(verify_api_token),
+    ) -> FleetDevicesResponse:
+        """Aggregate the latest scan of every remote host (plus this API's own).
+
+        ``refresh=true`` (kept for compatibility; prefer ``POST /fleet/scan``)
+        first rescans all remote hosts.
+        """
+        return _fleet_response(refresh=refresh)
+
+    @app.post("/api/v1/fleet/scan", response_model=FleetDevicesResponse)
+    def fleet_scan(_: None = Depends(verify_api_token)) -> FleetDevicesResponse:
+        """Scan every remote host, then return the aggregated fleet view.
+
+        At most FLEET_REFRESH_MAX_WORKERS hosts are scanned at a time. A
+        request that arrives while a fleet scan is running joins it instead of
+        starting another. Per-host failures are reported in ``hosts[].error``
+        and never fail the request; a host whose scan failed still contributes
+        its previous cached scan.
+        """
+        return _fleet_response(refresh=True)
+
+    def _fleet_response(*, refresh: bool) -> FleetDevicesResponse:
+        runtime = app.state.runtime
+        remote_machines = [m for m in runtime.machine_store.list_machines() if _is_remote(m)]
+
+        errors: dict[str, str] = _refresh_fleet(remote_machines) if refresh and remote_machines else {}
 
         hosts: list[dict[str, Any]] = []
         devices: list[dict[str, Any]] = []

@@ -53,7 +53,11 @@ function normalizeErrorDetail(detail: unknown): string | null {
           return item
         }
         if (item && typeof item === "object") {
-          const entry = item as { msg?: unknown; loc?: unknown; message?: unknown }
+          const entry = item as {
+            msg?: unknown
+            loc?: unknown
+            message?: unknown
+          }
           const msg =
             typeof entry.msg === "string"
               ? entry.msg
@@ -102,10 +106,7 @@ async function parseErrorMessage(response: Response): Promise<string> {
   return message
 }
 
-async function request<T>(
-  path: string,
-  init: RequestInit = {}
-): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set("Accept", "application/json")
 
@@ -221,12 +222,12 @@ export function listHistory(
 }
 
 export function getHistory(scanId: string): Promise<HistoryDetail> {
-  return request<HistoryDetail>(
-    `/api/v1/history/${encodeURIComponent(scanId)}`
-  )
+  return request<HistoryDetail>(`/api/v1/history/${encodeURIComponent(scanId)}`)
 }
 
-export function deleteHistory(scanId: string): Promise<{ deleted: boolean; id: string }> {
+export function deleteHistory(
+  scanId: string
+): Promise<{ deleted: boolean; id: string }> {
   return request<{ deleted: boolean; id: string }>(
     `/api/v1/history/${encodeURIComponent(scanId)}`,
     { method: "DELETE" }
@@ -254,7 +255,9 @@ export function updateMachine(
   })
 }
 
-export function deleteMachine(machineId: string): Promise<{ deleted: boolean }> {
+export function deleteMachine(
+  machineId: string
+): Promise<{ deleted: boolean }> {
   return request<{ deleted: boolean }>(
     `/api/v1/machines/${encodeURIComponent(machineId)}`,
     { method: "DELETE" }
@@ -269,16 +272,23 @@ export function checkMachine(machineId: string): Promise<MachineCheckResponse> {
   )
 }
 
-/**
- * Drives from every registered host. `refresh` scans all hosts first, which
- * can take minutes; per-host failures are reported in `hosts[].error`.
- */
-export function getFleetDevices(refresh = false): Promise<FleetDevicesResponse> {
-  const query = refresh ? "?refresh=true" : ""
-  return request<FleetDevicesResponse>(`/api/v1/fleet/devices${query}`)
+/** Latest cached drives from every registered host (no scanning). */
+export function getFleetDevices(): Promise<FleetDevicesResponse> {
+  return request<FleetDevicesResponse>("/api/v1/fleet/devices")
 }
 
-export function discoverHosts(body: DiscoverRequest = {}): Promise<DiscoverResponse> {
+/**
+ * Scans every host, then returns the fleet view. Can take minutes; per-host
+ * failures are reported in `hosts[].error`. POST (not GET) so browsers and
+ * proxies never resend it; the API also merges overlapping requests.
+ */
+export function scanAllHosts(): Promise<FleetDevicesResponse> {
+  return request<FleetDevicesResponse>("/api/v1/fleet/scan", { method: "POST" })
+}
+
+export function discoverHosts(
+  body: DiscoverRequest = {}
+): Promise<DiscoverResponse> {
   return request<DiscoverResponse>("/api/v1/discover", {
     method: "POST",
     body: JSON.stringify(body),
