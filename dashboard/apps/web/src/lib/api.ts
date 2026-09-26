@@ -374,6 +374,32 @@ export async function downloadReportFile(filename: string): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
+/**
+ * Download the drive list as CSV — the same columns, in the same order, as
+ * `cdi-health scan -o csv`, from the latest saved scans (no rescan). `bench`
+ * is a machine id, "local" for this bench, or omitted for every bench (which
+ * adds one trailing `bench` column).
+ */
+export async function downloadDrivesCsv(bench?: string | null): Promise<void> {
+  const query = bench ? `?machine_id=${encodeURIComponent(bench)}` : ""
+  const response = await fetch(
+    `${appConfig.apiBaseUrl}/api/v1/fleet/devices.csv${query}`,
+    { headers: { Accept: "text/csv" } }
+  )
+  if (!response.ok) {
+    throw new ApiError(await parseErrorMessage(response), response.status)
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? ""
+  const filename =
+    /filename="([^"]+)"/.exec(disposition)?.[1] ?? "cdi-drives.csv"
+  const url = URL.createObjectURL(await response.blob())
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 /** True when the API predates an endpoint (older cdi-health-api). */
 export function isNotFoundError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404

@@ -201,6 +201,10 @@ Sends `GET <remote>/api/v1/health` and then `GET <remote>/api/v1/jobs?limit=1`, 
 
 Reachability problems are reported with HTTP 200, `status` set to `unreachable` / `auth_failed`, and a human-readable `error` (`health` is the remote payload when it was obtained, else `null`). Only a missing machine (404) or a machine with no / non-private address (400) fail the request.
 
+### `GET /api/v1/fleet/devices.csv`
+
+The drive list as CSV with **the same columns, in the same order, as `cdi-health scan -o csv`** (the CLI's `CSVFormatter`), built from each bench's latest saved scan — no rescan, grades exactly as recorded. The all-benches export adds one trailing `bench` column; `?machine_id=<id>` (or `local` for this API's own scan) exports a single bench with no extra column. `Content-Disposition: attachment; filename="cdi-drives-<bench|all-benches>-<YYYYmmdd-HHMM>.csv"`. 404 when the bench is unknown or has no saved scan.
+
 ### `GET /api/v1/fleet/devices`
 
 Aggregates every registered machine **with an address**, plus this API's own latest cached scan as a host named `"Local API"` (`machine_id: null`) when it has at least one device. Registry-only machines (no address) are not included. Without `refresh`, cached per-host scans are used. With `refresh=true`, all remote hosts are rescanned first (at most **4** concurrently; each result is persisted as above). Per-host failures are reported in `hosts[].error` and never fail the request; a host whose refresh failed still contributes its previous cached scan (check `scanned_at`).

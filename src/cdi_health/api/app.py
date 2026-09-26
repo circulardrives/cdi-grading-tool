@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import socket
 import time
 import urllib.parse
@@ -33,7 +34,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import ValidationError
 
 from cdi_health.api.discovery import DISCOVER_COOLDOWN_SECONDS, DiscoveryError, discover_hosts
@@ -97,6 +98,7 @@ from cdi_health.api.services import (
     run_selftest_start,
     weasyprint_available,
 )
+from cdi_health.classes.formatter import CSVFormatter
 from cdi_health.cli import __version__ as PACKAGE_VERSION
 from cdi_health.cli import check_prerequisites
 
@@ -451,6 +453,44 @@ def create_app() -> FastAPI:
         its previous cached scan.
         """
         return _fleet_response(refresh=True)
+
+    @app.get("/api/v1/fleet/devices.csv")
+    def fleet_devices_csv(
+        machine_id: str | None = None,
+        _: None = Depends(verify_api_token),
+    ) -> Response:
+        """Latest saved scan of every bench as CSV, in ``cdi-health scan -o csv`` columns.
+
+        Same columns, in the same order, as the CLI's CSV (``CSVFormatter``),
+        with grades exactly as recorded (no rescan, no re-scoring). A fleet
+        export adds one trailing ``bench`` column; ``machine_id=<id>`` (or
+        ``local`` for this API) exports one bench with no extra column.
+        """
+        pairs = _fleet_host_scans(_remote_machines(), {})
+        if machine_id:
+            wanted = None if machine_id == "local" else machine_id
+            pairs = [(host, scan) for host, scan in pairs if host["machine_id"] == wanted]
+            if not pairs:
+                raise HTTPException(status_code=404, detail="Bench not found or not scanned yet")
+
+        rows = [
+            {**device, "bench": host["name"]}
+            for host, scan in pairs
+            for device in (scan or {}).get("devices") or []
+            if isinstance(device, dict)
+        ]
+        formatter = CSVFormatter(include_scores=False)
+        if not machine_id:
+            formatter.FIELDS = [*CSVFormatter.FIELDS, "bench"]
+        text = formatter.format(rows) or ",".join(formatter.FIELDS) + "\r\n"
+
+        scope = "all-benches" if not machine_id else re.sub(r"[^A-Za-z0-9._-]+", "-", pairs[0][0]["name"])
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+        return Response(
+            content=text,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="cdi-drives-{scope}-{stamp}.csv"'},
+        )
 
     def _remote_machines() -> list[dict[str, Any]]:
         return [m for m in app.state.runtime.machine_store.list_machines() if _is_remote(m)]

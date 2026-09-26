@@ -630,3 +630,42 @@ def test_concurrent_fleet_scans_share_one_run(api_client: TestClient, fake_remot
     assert len(fake_remote.scan_requests()) == 1
     for response in responses:
         assert [h["device_count"] for h in response.json()["hosts"] if h["name"] == "Bench Good"] == [2]
+
+
+def test_fleet_csv_matches_cli_scan_csv_columns(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    """Drives CSV = `cdi-health scan -o csv` columns (same order), plus a trailing bench column."""
+    import csv
+    import io
+
+    from cdi_health.classes.formatter import CSVFormatter
+
+    _register(api_client, "Bench Good", fake_remote.address)
+    assert api_client.post("/api/v1/fleet/scan").status_code == 200
+
+    response = api_client.get("/api/v1/fleet/devices.csv")
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment" in response.headers["content-disposition"]
+    rows = list(csv.reader(io.StringIO(response.text)))
+    assert rows[0] == [*CSVFormatter.FIELDS, "bench"]
+    bench_rows = [r for r in rows[1:] if r[-1] == "Bench Good"]
+    assert len(bench_rows) == 2
+    serial_col = CSVFormatter.FIELDS.index("serial_number")
+    assert {r[serial_col] for r in bench_rows} == {"REMOTE-A", "REMOTE-B"}
+
+
+def test_fleet_csv_single_bench_has_exact_cli_columns(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    import csv
+    import io
+
+    from cdi_health.classes.formatter import CSVFormatter
+
+    machine_id = _register(api_client, "Bench Good", fake_remote.address)["id"]
+    assert api_client.post("/api/v1/fleet/scan").status_code == 200
+
+    response = api_client.get(f"/api/v1/fleet/devices.csv?machine_id={machine_id}")
+    assert response.status_code == 200, response.text
+    rows = list(csv.reader(io.StringIO(response.text)))
+    assert rows[0] == CSVFormatter.FIELDS
+    assert len(rows) == 3
+    assert api_client.get("/api/v1/fleet/devices.csv?machine_id=nope").status_code == 404
