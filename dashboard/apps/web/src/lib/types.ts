@@ -99,6 +99,19 @@ export type DeviceRecord = {
   smart_attributes?: unknown
   nvme_smart_health_information_log?: Record<string, unknown>
   ocp_smart_log?: Record<string, unknown>
+  // Raw logs and extra readings shown on the drive details page (devices.py).
+  available_spare_threshold?: number | string | null
+  endurance_group_critical_warning_summary?: number | string | null
+  warning_temperature?: number | string | null
+  warning_temp_time?: number | string | null
+  critical_comp_time?: number | string | null
+  points_deducted?: number | null
+  nvme_self_test_log?: Record<string, unknown> | null
+  nvme_self_test_history?: unknown[] | null
+  nvme_error_information_log?: Record<string, unknown> | null
+  smart_self_tests?: unknown
+  /** smartctl --json output the readings were parsed from. */
+  smartctl_json?: Record<string, unknown> | null
   // Host attribution, only present on GET /api/v1/fleet/devices rows.
   machine_id?: string | null
   machine_name?: string

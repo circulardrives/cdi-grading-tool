@@ -51,6 +51,23 @@ export function navItemFor(pathname: string): NavItem | null {
   )
 }
 
+/** Pages below a nav item with their own header title (and no scope switcher). */
+const SUB_PAGES: { pattern: RegExp; title: string }[] = [
+  // /drives/:benchKey/:serial — full-screen drive details.
+  { pattern: /^\/drives\/[^/]+\/[^/]+\/?$/, title: "Drive details" },
+]
+
+function subPageFor(pathname: string) {
+  return SUB_PAGES.find((page) => page.pattern.test(pathname)) ?? null
+}
+
 export function pageTitleFor(pathname: string): string {
-  return navItemFor(pathname)?.label ?? "CDI Health"
+  return (
+    subPageFor(pathname)?.title ?? navItemFor(pathname)?.label ?? "CDI Health"
+  )
+}
+
+/** Show the "All benches ▾" scope switcher on this path. */
+export function pageScopedFor(pathname: string): boolean {
+  return !subPageFor(pathname) && (navItemFor(pathname)?.scoped ?? false)
 }

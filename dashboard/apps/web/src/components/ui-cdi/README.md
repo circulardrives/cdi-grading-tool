@@ -26,6 +26,13 @@ render **no** h1, eyebrow, page-level scan button, or scan progress.
 | `gradeOutcome(g)` / `gradeQuality(g)` / `GRADE_INFO[g]` | "Reuse" / "Good" / `{symbol, outcome, quality, legend, description}`. |
 | `gradeReason(device)` | One plain sentence for non-A grades (age cap, spare, writes, defects, self-tests, failed checks, couldn't grade). Null for a clean A. |
 | `driveNote(device)` | Note from warning flags for any grade ("Readiness check not supported by this firmware — health data is fine"). |
+| `warningFlagText(flag)` / `ungradedReasonText(code)` | Plain words for one warning flag / couldn't-grade code, or null. |
+
+Drive names and hours live in `lib/drive-names.ts` (pure, shared): `friendlyModel`,
+`formatCapacity`, `driveTitle` ("KIOXIA CM5 960 GB"), `formatPoweredOn(hours)`
+("40,858 h (4 yrs 242 days)"; `poweredOnSpan` for the years/days part alone).
+Link to a drive's full-screen page with `driveDetailsHref(row)` from
+`pages/drive-details/drive-details-href.ts` (`/drives/:benchKey/:serial?dev=<slot>`).
 | `countByGrade(devices)` | `{A, B, C, D, F, UNGRADED}` counts. |
 | `benchName(machine)` / `benchAddress(machine)` | Bench's own hostname (`remote_hostname`), else name, else address / "10.100.10.57". |
 | `useBenchNames()` | `(machineId, fallback) => name` for drive rows and fleet hosts; `machineId` null = this bench (its `/health` hostname). |

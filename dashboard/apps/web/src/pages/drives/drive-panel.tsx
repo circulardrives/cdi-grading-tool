@@ -1,15 +1,10 @@
 /**
  * Drive detail panel: grade + why, key numbers, grade history, actions, and
- * "All data" (deductions and raw attributes) on demand.
+ * a "Full details" link to the full-screen drive page (every log, raw data).
  */
-import { useId, useState, type ReactNode } from "react"
-import { Link } from "react-router-dom"
-import {
-  ActivityIcon,
-  ChevronDownIcon,
-  FileTextIcon,
-  XIcon,
-} from "lucide-react"
+import { type ReactNode } from "react"
+import { Link, useLocation } from "react-router-dom"
+import { ActivityIcon, ArrowRightIcon, FileTextIcon, XIcon } from "lucide-react"
 
 import { Button } from "@workspace/ui/components/button"
 import { Spinner } from "@workspace/ui/components/spinner"
@@ -21,22 +16,22 @@ import {
   GradeChip,
   gradeReason,
   Note,
-  Pill,
   SectionLabel,
   StatTile,
   type Tone,
 } from "@/components/ui-cdi"
 import { useSavedScanReport } from "@/hooks/use-cdi-queries"
+import {
+  driveDetailsHref,
+  type DriveDetailsState,
+} from "@/pages/drive-details/drive-details-href"
 
 import {
-  deductionsOf,
-  driveDetails,
   formatScanTime,
   healthySignals,
   isNvme,
   isToday,
   keyNumbers,
-  rawAttributes,
 } from "./drive-format"
 import { useDriveHistory, type DriveHistoryEntry } from "./use-drive-history"
 import type { DriveRow } from "./use-drive-rows"
@@ -153,133 +148,8 @@ function HistorySummary({ entries }: { entries: DriveHistoryEntry[] }) {
 
 // ---------------------------------------------------------------------------
 
-function AllData({ row }: { row: DriveRow }) {
-  const deductions = deductionsOf(row.device)
-  const details = driveDetails(row.device)
-  const raw = rawAttributes(row.device)
-  const hasNormalized = raw.some((entry) => entry.extra)
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
-        <SectionLabel>Deductions</SectionLabel>
-        {deductions.length === 0 ? (
-          <span className="text-base text-muted-foreground">None.</span>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {deductions.map((deduction, index) => (
-              <li
-                key={`${deduction.field ?? ""}-${index}`}
-                className="flex flex-col gap-1 rounded-[10px] bg-muted px-3.5 py-2.5"
-              >
-                <span className="flex flex-wrap items-center gap-2">
-                  <Pill
-                    tone={
-                      deduction.severity === "critical"
-                        ? "bad"
-                        : deduction.severity === "warning"
-                          ? "warn"
-                          : "info"
-                    }
-                  >
-                    {deduction.severity === "critical"
-                      ? "Critical"
-                      : deduction.severity === "warning"
-                        ? "Warning"
-                        : (deduction.severity ?? "Note")}
-                  </Pill>
-                  <span className="text-base font-semibold">
-                    {deduction.reason ?? deduction.field ?? "Deduction"}
-                  </span>
-                </span>
-                <span className="font-mono text-[15px] text-muted-foreground">
-                  {[
-                    deduction.value != null
-                      ? `value ${String(deduction.value)}`
-                      : null,
-                    deduction.threshold != null
-                      ? `limit ${String(deduction.threshold)}`
-                      : null,
-                    deduction.points != null
-                      ? `−${deduction.points} points`
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {details.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          <SectionLabel>Details</SectionLabel>
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-base">
-            {details.map((entry) => (
-              <div key={entry.name} className="contents">
-                <dt className="text-muted-foreground">{entry.name}</dt>
-                <dd className="min-w-0 break-words">{entry.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      ) : null}
-
-      <div className="flex flex-col gap-2">
-        <SectionLabel>Raw attributes</SectionLabel>
-        {raw.length === 0 ? (
-          <span className="text-base text-muted-foreground">
-            The drive didn't report any.
-          </span>
-        ) : (
-          <div className="overflow-x-auto rounded-[10px] border">
-            <table className="w-full font-mono text-[15px]">
-              <thead>
-                <tr className="border-b text-left text-[13px] tracking-[0.04em] text-muted-foreground uppercase">
-                  <th scope="col" className="px-3 py-2 font-bold">
-                    Attribute
-                  </th>
-                  {hasNormalized ? (
-                    <th scope="col" className="px-3 py-2 text-right font-bold">
-                      Now / worst / limit
-                    </th>
-                  ) : null}
-                  <th scope="col" className="px-3 py-2 text-right font-bold">
-                    Raw
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {raw.map((entry, index) => (
-                  <tr
-                    key={`${entry.name}-${index}`}
-                    className="border-b last:border-0"
-                  >
-                    <td className="px-3 py-1.5 break-all">{entry.name}</td>
-                    {hasNormalized ? (
-                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
-                        {entry.extra ?? ""}
-                      </td>
-                    ) : null}
-                    <td className="px-3 py-1.5 text-right break-all">
-                      {entry.value}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-
-function ReportButton({ row }: { row: DriveRow }) {
+/** "Scan report" for the newest saved scan of the drive's bench. */
+export function ReportButton({ row }: { row: DriveRow }) {
   const history = useDriveHistory(row.benchId, row.serial, row.device.dut, true)
   const report = useSavedScanReport()
   const scanId = history.latestScanId
@@ -317,8 +187,7 @@ export function DrivePanel({
   titleId,
   className,
 }: DrivePanelProps) {
-  const [showAll, setShowAll] = useState(false)
-  const allDataId = useId()
+  const location = useLocation()
   const { device, grade } = row
 
   const reason = gradeReason(device)
@@ -331,6 +200,10 @@ export function DrivePanel({
     ...(row.benchId ? { bench: row.benchId } : {}),
     ...(row.serial ? { serial: row.serial } : {}),
   }).toString()}`
+  // "← Drives" on the details page comes back to this list, filters and all.
+  const detailsState: DriveDetailsState = {
+    fromDrives: `${location.pathname}${location.search}`,
+  }
 
   return (
     <div className={cn("flex min-h-0 flex-col", className)}>
@@ -402,15 +275,12 @@ export function DrivePanel({
               key={entry.label}
               label={entry.label}
               value={entry.value}
+              hint={entry.hint}
             />
           ))}
         </div>
 
         <HistoryLine row={row} />
-
-        <div id={allDataId} hidden={!showAll}>
-          {showAll ? <AllData row={row} /> : null}
-        </div>
       </div>
 
       <div className="flex flex-wrap gap-2.5 border-t px-6 py-4 max-sm:px-4">
@@ -423,17 +293,11 @@ export function DrivePanel({
           </Button>
         ) : null}
         <ReportButton row={row} />
-        <Button
-          variant="quiet"
-          aria-expanded={showAll}
-          aria-controls={allDataId}
-          onClick={() => setShowAll((value) => !value)}
-        >
-          All data
-          <ChevronDownIcon
-            data-icon="inline-end"
-            className={cn("transition-transform", showAll && "rotate-180")}
-          />
+        <Button variant="quiet" asChild>
+          <Link to={driveDetailsHref(row)} state={detailsState}>
+            Full details
+            <ArrowRightIcon data-icon="inline-end" />
+          </Link>
         </Button>
       </div>
     </div>

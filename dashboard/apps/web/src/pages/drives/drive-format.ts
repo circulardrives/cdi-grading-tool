@@ -1,5 +1,6 @@
 /**
- * Pure helpers for the Drives page: friendly model names, capacity, the
+ * Pure helpers for the Drives page (names, capacity and hours come from
+ * lib/drive-names and are re-exported here): the
  * numbers shown in the list and panel, and the "healthy signals" sentence.
  */
 import {
@@ -9,117 +10,36 @@ import {
   type GradeLetter,
 } from "@/components/ui-cdi"
 import { getReportCategory } from "@/lib/drive-labels"
+import {
+  formatHours,
+  formatInt,
+  poweredOnSpan,
+  reported,
+  toNumber,
+} from "@/lib/drive-names"
 import type { DeviceRecord, DriveClass, ScoreDeduction } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
-// Numbers
+// Numbers and names (shared with Overview and grade sentences)
 // ---------------------------------------------------------------------------
 
-/** Number from a reported value; null for "Not Reported", "", null. */
-export function toNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value
-  }
-  if (typeof value === "string") {
-    const trimmed = value.replace(/,/g, "").trim()
-    const parsed = Number(trimmed)
-    return trimmed && Number.isFinite(parsed) ? parsed : null
-  }
-  return null
-}
-
-export function formatInt(value: number): string {
-  return Math.round(value).toLocaleString("en-US")
-}
+export {
+  capacityLabel,
+  driveTitle,
+  formatCapacity,
+  formatHours,
+  formatInt,
+  formatPoweredOn,
+  friendlyModel,
+  modelNumber,
+  poweredOnSpan,
+  reported,
+  serialOf,
+  toNumber,
+} from "@/lib/drive-names"
 
 export function formatPercent(value: number | null): string {
   return value == null ? "—" : `${formatInt(value)}%`
-}
-
-export function formatHours(value: number | null): string {
-  return value == null ? "—" : `${formatInt(value)} h`
-}
-
-// ---------------------------------------------------------------------------
-// Names
-// ---------------------------------------------------------------------------
-
-/** Model-number prefixes → the name printed on the drive's box. */
-const MODEL_NAMES: [RegExp, string][] = [
-  [/^KCM5/, "KIOXIA CM5"],
-  [/^KCM6/, "KIOXIA CM6"],
-  [/^KCD8/, "KIOXIA CD8"],
-  [/^KCD6/, "KIOXIA CD6"],
-  [/^KXG60/, "Toshiba XG6"],
-  [/^SSDPF2KX/, "Intel D7-P5520"],
-  [/^SSDPF2KE/, "Intel D7-P5620"],
-  [/^SSDPE2KX/, "Intel DC P4510"],
-  [/^SSDPE2KE/, "Intel DC P4610"],
-  [/^SSDPF21Q/, "Intel Optane P5800X"],
-  [/^SSDPEK1A/, "Intel Optane P1600X"],
-  [/^SSDSC2BA/, "Intel DC S3710"],
-  [/^MZQL2/, "Samsung PM9A3"],
-  [/^MZQLB/, "Samsung PM983"],
-  [/^WDS\d+T?\d*[A-Z]?3XHC/, "WD Red SN700"],
-]
-
-const NOT_REPORTED = /^(unknown|not reported|n\/a|none|-+)$/i
-
-function reported(value: unknown): string {
-  const text = String(value ?? "").trim()
-  return NOT_REPORTED.test(text) ? "" : text
-}
-
-/** Vendor words some drives put in front of the model number. */
-const VENDOR_PREFIX =
-  /^(KIOXIA|TOSHIBA|INTEL|SAMSUNG|WDC|WD|SEAGATE|HGST|MICRON|HPE|DELL)\s+/i
-
-/**
- * "KCM5DRUG960G" → "KIOXIA CM5". Falls back to vendor + model as reported,
- * then to the drive type ("SAS HDD") when the drive reports neither.
- */
-export function friendlyModel(device: DeviceRecord): string {
-  const model = reported(device.model_number)
-  const bare = model.replace(VENDOR_PREFIX, "").toUpperCase()
-  for (const [pattern, name] of MODEL_NAMES) {
-    if (pattern.test(bare)) {
-      return name
-    }
-  }
-  const vendor = reported(device.vendor)
-  if (model) {
-    return vendor && !model.toLowerCase().startsWith(vendor.toLowerCase())
-      ? `${vendor} ${model}`
-      : model
-  }
-  return vendor ? `${vendor} ${driveType(device)}` : driveType(device)
-}
-
-/** Model number as reported, or "" when the drive doesn't report one. */
-export function modelNumber(device: DeviceRecord): string {
-  return reported(device.model_number)
-}
-
-export function serialOf(device: DeviceRecord): string {
-  return reported(device.serial_number)
-}
-
-/** Human capacity in decimal units, as printed on labels: 960 GB, 7.68 TB. */
-export function formatCapacity(device: DeviceRecord): string {
-  let bytes = toNumber(device.bytes)
-  if (!bytes) {
-    const gib = toNumber(device.gibibytes)
-    bytes = gib ? gib * 1024 ** 3 : null
-  }
-  if (!bytes || bytes <= 0) {
-    return ""
-  }
-  const tb = bytes / 1e12
-  if (tb >= 1) {
-    // Two decimals, trailing zeros dropped: 7.68, 3.84, 1.2, 1.
-    return `${Number(tb.toFixed(tb >= 10 ? 1 : 2))} TB`
-  }
-  return `${Math.round(bytes / 1e9)} GB`
 }
 
 /** "/dev/nvme1" → "nvme1". */
@@ -219,12 +139,17 @@ function pending(device: DeviceRecord): number | null {
   )
 }
 
-export type KeyNumber = { label: string; value: string }
+export type KeyNumber = { label: string; value: string; hint?: string }
 
 /** The numbers worth showing for this kind of drive, skipping unreported ones. */
 export function keyNumbers(device: DeviceRecord): KeyNumber[] {
   const out: KeyNumber[] = [
-    { label: "Powered on", value: formatHours(powerOnHours(device)) },
+    // formatPoweredOn split for a tile: "40,858 h" over "4 yrs 242 days".
+    {
+      label: "Powered on",
+      value: formatHours(powerOnHours(device)),
+      hint: poweredOnSpan(powerOnHours(device)) ?? undefined,
+    },
   ]
   const add = (label: string, value: number | null, format = formatInt) => {
     if (value != null) {
@@ -437,7 +362,7 @@ export function driveDetails(device: DeviceRecord): RawRow[] {
   ]
   return rows
     .map(([name, value]) => ({ name, value: scalarText(value) ?? "" }))
-    .filter((row) => row.value && !NOT_REPORTED.test(row.value))
+    .filter((row) => reported(row.value))
 }
 
 // ---------------------------------------------------------------------------

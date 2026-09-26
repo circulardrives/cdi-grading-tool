@@ -11,13 +11,24 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type KeyboardEvent,
 } from "react"
 import { useSearchParams } from "react-router-dom"
-import { HardDriveIcon, RefreshCwIcon, SearchIcon } from "lucide-react"
+import {
+  DownloadIcon,
+  HardDriveIcon,
+  RefreshCwIcon,
+  SearchIcon,
+} from "lucide-react"
+import { toast } from "sonner"
 
 import { Button } from "@workspace/ui/components/button"
+import { Spinner } from "@workspace/ui/components/spinner"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip"
 import {
   Select,
   SelectContent,
@@ -43,6 +54,7 @@ import {
   type GradeLetter,
 } from "@/components/ui-cdi"
 import { useScanAllStatus } from "@/hooks/use-cdi-queries"
+import { downloadDrivesCsv } from "@/lib/api"
 import type { DriveClass } from "@/lib/types"
 
 import { DrivePanel } from "@/pages/drives/drive-panel"
@@ -54,6 +66,7 @@ import {
   naturalCompare,
 } from "@/pages/drives/drive-format"
 import {
+  DriveStackedList,
   DriveTable,
   type SortKey,
   type SortState,
@@ -63,22 +76,24 @@ import {
   useDriveRows,
   type DriveRow,
 } from "@/pages/drives/use-drive-rows"
+import { useMediaQuery } from "@/pages/drives/use-media-query"
 
 const PAGE_SIZE = 200
 const ALL = "all"
-/** Side panel next to the list from this width; a sheet below it. */
-const WIDE_QUERY = "(min-width: 1280px)"
+/**
+ * Side panel next to the list from this width; a sheet below it. Under
+ * 1440px the list plus a 420px panel can't fit the table without clipping.
+ */
+const WIDE_QUERY = "(min-width: 1440px)"
+/** Phones: stacked card-rows instead of the table. */
+const PHONE_QUERY = "(max-width: 639px)"
+const CSV_LABEL =
+  "Download the drive list as CSV (same columns as cdi-health scan -o csv)"
 
-function useMediaQuery(query: string): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const mql = window.matchMedia(query)
-      mql.addEventListener("change", onChange)
-      return () => mql.removeEventListener("change", onChange)
-    },
-    () => window.matchMedia(query).matches,
-    () => false
-  )
+function errorText(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : "Couldn't download the CSV — try again."
 }
 
 function gradeParam(value: string | null): GradeLetter | null {
@@ -153,6 +168,8 @@ export function DrivesPage() {
   const searchId = useId()
   const titleId = useId()
   const wide = useMediaQuery(WIDE_QUERY)
+  const phone = useMediaQuery(PHONE_QUERY)
+  const [csvBusy, setCsvBusy] = useState(false)
 
   const grade = gradeParam(params.get("grade"))
   const type = driveTypeFromSlug(params.get("type"))
@@ -308,6 +325,20 @@ export function DrivesPage() {
     searchRef.current?.focus()
   }
 
+  // One bench when the header scope or the Bench filter picks one ("local" =
+  // this bench); every bench otherwise.
+  const downloadCsv = async () => {
+    setCsvBusy(true)
+    try {
+      await downloadDrivesCsv(scopeId ?? benchParam ?? undefined)
+      toast.success("Downloaded CSV")
+    } catch (csvError) {
+      toast.error(errorText(csvError))
+    } finally {
+      setCsvBusy(false)
+    }
+  }
+
   const shown = visible.slice(0, limit)
   const problemHosts = hosts.filter((host) => host.error)
   const serialNotFound =
@@ -424,6 +455,26 @@ export function DrivesPage() {
           </SelectContent>
         </Select>
       ) : null}
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            aria-label={CSV_LABEL}
+            aria-busy={csvBusy || undefined}
+            disabled={csvBusy}
+            onClick={() => void downloadCsv()}
+          >
+            {csvBusy ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <DownloadIcon data-icon="inline-start" />
+            )}
+            {csvBusy ? "Downloading…" : "Download CSV"}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{CSV_LABEL}</TooltipContent>
+      </Tooltip>
     </div>
   )
 
@@ -511,14 +562,24 @@ export function DrivesPage() {
   } else {
     body = (
       <Card className="overflow-hidden">
-        <DriveTable
-          rows={shown}
-          selectedKey={selected?.key ?? null}
-          onSelect={selectRow}
-          sort={sort}
-          onSort={onSort}
-          compact={wide && Boolean(selected)}
-        />
+        {phone ? (
+          <DriveStackedList
+            rows={shown}
+            selectedKey={selected?.key ?? null}
+            onSelect={selectRow}
+            sort={sort}
+            onSort={onSort}
+          />
+        ) : (
+          <DriveTable
+            rows={shown}
+            selectedKey={selected?.key ?? null}
+            onSelect={selectRow}
+            sort={sort}
+            onSort={onSort}
+            compact={wide && Boolean(selected)}
+          />
+        )}
         {visible.length > shown.length ? (
           <div className="flex items-center justify-center gap-3 border-t px-6 py-3">
             <span className="text-[15px] text-muted-foreground">

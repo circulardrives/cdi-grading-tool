@@ -15,8 +15,8 @@ import {
 } from "@workspace/ui/components/table"
 
 import { GradeChip, Note, PageSection } from "@/components/ui-cdi"
+import { driveTitle } from "@/lib/drive-names"
 import {
-  driveTitle,
   slotOf,
   whyLines,
   type OverviewDrive,

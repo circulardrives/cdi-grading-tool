@@ -7,18 +7,23 @@ import { useQueries, useQuery } from "@tanstack/react-query"
 
 import { gradeOf, type GradeLetter } from "@/components/ui-cdi"
 import { getHistory, listHistory } from "@/lib/api"
+import { toNumber } from "@/lib/drive-names"
 import { queryKeys } from "@/lib/query-keys"
 import type { HistorySummary } from "@/lib/types"
 
-/** Saved scans looked at per drive. */
+/** Saved scans looked at per drive (the panel); the details page asks for more. */
 const SCANS_TO_CHECK = 5
 /** The unfiltered list mixes benches; fetch enough to find this bench's scans. */
-const LOCAL_LIST_LIMIT = 40
+const LOCAL_LIST_MIN = 40
 
 export type DriveHistoryEntry = {
   scanId: string
   scannedAt: string
   grade: GradeLetter | null
+  /** Health score in that scan (null when ungraded or not reported). */
+  score: number | null
+  /** Power-on hours in that scan. */
+  hours: number | null
 }
 
 export type DriveHistory = {
@@ -26,6 +31,8 @@ export type DriveHistory = {
   latestScanId: string | null
   /** Newest first; only scans that contain this drive. */
   entries: DriveHistoryEntry[]
+  /** Saved scans of the bench that were looked at. */
+  scansChecked: number
   isLoading: boolean
   isError: boolean
 }
@@ -34,17 +41,20 @@ export function useDriveHistory(
   benchId: string | null,
   serial: string,
   devicePath: string | undefined,
-  enabled: boolean
+  enabled: boolean,
+  scanLimit: number = SCANS_TO_CHECK
 ): DriveHistory {
   const listQuery = useQuery({
     // "history" prefix: refreshed with the rest of the history after a scan.
-    queryKey: ["history", "drives-panel", benchId ?? "local"],
+    queryKey: ["history", "drives-panel", benchId ?? "local", scanLimit],
     queryFn: async (): Promise<HistorySummary[]> => {
       if (benchId) {
-        return listHistory(benchId, { limit: SCANS_TO_CHECK })
+        return listHistory(benchId, { limit: scanLimit })
       }
-      const all = await listHistory(null, { limit: LOCAL_LIST_LIMIT })
-      return all.filter((entry) => !entry.machine_id).slice(0, SCANS_TO_CHECK)
+      const all = await listHistory(null, {
+        limit: Math.max(LOCAL_LIST_MIN, scanLimit * 4),
+      })
+      return all.filter((entry) => !entry.machine_id).slice(0, scanLimit)
     },
     enabled,
     staleTime: 30_000,
@@ -78,6 +88,8 @@ export function useDriveHistory(
         scanId: scan.id,
         scannedAt: scan.scanned_at,
         grade: gradeOf(device),
+        score: toNumber(device.health_score),
+        hours: toNumber(device.power_on_hours),
       })
     }
   })
@@ -85,6 +97,7 @@ export function useDriveHistory(
   return {
     latestScanId: scans[0]?.id ?? null,
     entries,
+    scansChecked: scans.length,
     isLoading: listQuery.isLoading || details.some((query) => query.isLoading),
     isError: listQuery.isError,
   }

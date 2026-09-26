@@ -16,8 +16,8 @@ import { deviceRowKeys } from "@/lib/drive-labels"
 import type { DeviceRecord, DriveClass, FleetHost } from "@/lib/types"
 
 import {
+  capacityLabel,
   driveType,
-  formatCapacity,
   friendlyModel,
   modelNumber,
   powerOnHours,
@@ -55,6 +55,42 @@ export type DriveRow = {
 
 export function benchFilterId(benchId: string | null): string {
   return benchId ?? THIS_BENCH_ID
+}
+
+/** One drive's display row (also used by the drive details page). */
+export function driveRowOf(
+  device: DeviceRecord,
+  {
+    key,
+    benchName,
+    scannedAt,
+  }: { key: string; benchName: string; scannedAt: string | null }
+): DriveRow {
+  const serial = serialOf(device)
+  const model = modelNumber(device)
+  const name = friendlyModel(device)
+  const slot = shortDevicePath(device)
+  return {
+    key,
+    device,
+    benchId: device.machine_id ?? null,
+    benchName,
+    serial,
+    model,
+    name,
+    capacity: capacityLabel(device),
+    type: driveType(device),
+    grade: gradeOf(device),
+    hours: powerOnHours(device),
+    writes: writesUsed(device),
+    spare: spare(device),
+    slot,
+    scannedAt: device.scan_timestamp ?? scannedAt,
+    haystack: [serial, model, name, device.vendor, benchName, slot]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+  }
 }
 
 export type DriveRowsResult = {
@@ -104,35 +140,13 @@ export function useDriveRows(): DriveRowsResult {
     }
 
     const keys = deviceRowKeys(devices)
-    return devices.map((device): DriveRow => {
+    return devices.map((device) => {
       const benchId = device.machine_id ?? null
-      const benchName = nameOf(benchId, device.machine_name)
-      const serial = serialOf(device)
-      const model = modelNumber(device)
-      const name = friendlyModel(device)
-      const slot = shortDevicePath(device)
-      return {
-        key: keys.get(device) ?? serial,
-        device,
-        benchId,
-        benchName,
-        serial,
-        model,
-        name,
-        capacity: formatCapacity(device),
-        type: driveType(device),
-        grade: gradeOf(device),
-        hours: powerOnHours(device),
-        writes: writesUsed(device),
-        spare: spare(device),
-        slot,
-        scannedAt:
-          device.scan_timestamp ?? scannedAtByBench.get(benchId) ?? null,
-        haystack: [serial, model, name, device.vendor, benchName, slot]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase(),
-      }
+      return driveRowOf(device, {
+        key: keys.get(device) ?? serialOf(device),
+        benchName: nameOf(benchId, device.machine_name),
+        scannedAt: scannedAtByBench.get(benchId) ?? null,
+      })
     })
   }, [fleetMissing, fleetQuery.data, singleQuery.data, scopeId, nameOf])
 

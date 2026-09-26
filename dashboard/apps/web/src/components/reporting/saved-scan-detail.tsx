@@ -51,6 +51,7 @@ import {
 } from "@/hooks/use-cdi-queries"
 import { ApiError, deleteHistory } from "@/lib/api"
 import { deviceRowKeys } from "@/lib/drive-labels"
+import { formatPoweredOn } from "@/lib/drive-names"
 import {
   describeReportError,
   formatDrives,
@@ -79,7 +80,7 @@ function percent(value: unknown): string {
 
 function poweredOn(device: DeviceRecord): string {
   const hours = toNumber(device.power_on_hours)
-  return hours == null ? "—" : `${Math.round(hours).toLocaleString()} h`
+  return formatPoweredOn(hours)
 }
 
 /** SSD writes used (NVMe percentage used, or the SATA/SAS endurance figure). */

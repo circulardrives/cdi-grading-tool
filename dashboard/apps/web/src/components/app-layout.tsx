@@ -9,7 +9,7 @@ import { SidebarInset, SidebarProvider } from "@workspace/ui/components/sidebar"
 import { TooltipProvider } from "@workspace/ui/components/tooltip"
 
 import { AppHeader } from "@/components/app-header"
-import { navItemFor, pageTitleFor } from "@/components/app-routes"
+import { pageScopedFor, pageTitleFor } from "@/components/app-routes"
 import { AppSidebar } from "@/components/app-sidebar"
 
 /** Tablets and small laptops start with the sidebar collapsed to icons. */
@@ -27,7 +27,7 @@ export function AppLayout() {
   const location = useLocation()
   const [open, setOpen] = useState(() => !startsCollapsed())
   const title = pageTitleFor(location.pathname)
-  const showScope = navItemFor(location.pathname)?.scoped ?? false
+  const showScope = pageScopedFor(location.pathname)
 
   return (
     <TooltipProvider>

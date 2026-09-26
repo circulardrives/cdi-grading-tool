@@ -6,10 +6,12 @@
  * - `gradeQuality(grade)`   → "Excellent", "Good", "Fair", "Advisory", "Failed", "Couldn't grade"
  * - `gradeReason(device)`   → one plain sentence for non-A grades (null for a clean A)
  * - `driveNote(device)`     → informational note for any grade (e.g. readiness check unsupported)
+ * - `warningFlagText(flag)` / `ungradedReasonText(code)` → plain words for one code
  *
  * Field names follow src/cdi_health/classes/scoring.py (HealthScore.to_dict)
  * and revert.py (warning_flags, ungraded_reasons, fail_reason_codes).
  */
+import { poweredOnSpan } from "@/lib/drive-names"
 import { isUngradedDevice } from "@/lib/health-badges"
 import type { DeviceRecord, ScoreDeduction } from "@/lib/types"
 
@@ -186,6 +188,16 @@ const FLAG_TEXT: Record<string, string> = {
   DUPLICATE_SERIAL: "Same serial as another drive — check the label",
 }
 
+/** Plain words for one warning flag ("DUPLICATE_SERIAL" → "Same serial as …"), or null. */
+export function warningFlagText(flag: string): string | null {
+  return FLAG_TEXT[String(flag).trim().toUpperCase()] ?? null
+}
+
+/** Plain words for one couldn't-grade reason code, or null. */
+export function ungradedReasonText(code: string): string | null {
+  return UNGRADED_REASON_TEXT[String(code).trim().toUpperCase()] ?? null
+}
+
 /** Plain words for a failed hard check, keyed by deduction `field`. */
 const FAIL_FIELD_TEXT: Record<string, string> = {
   smart_status: "Drive reports its own health check failed",
@@ -237,9 +249,10 @@ function ageSentence(device: DeviceRecord, cap: GradeLetter): string {
   // The table lists the hours above which each grade caps; the cap grade's own
   // threshold is what this drive went past.
   const limit = table?.[cap]
+  const span = poweredOnSpan(hours)
   const hoursText =
     hours != null
-      ? `Powered on ${formatCount(hours)} hours`
+      ? `Powered on ${formatCount(hours)} hours${span ? ` (${span})` : ""}`
       : "High power-on hours"
   if (limit != null && driveClass) {
     return `${hoursText} — ${driveClass} drives over ${formatCount(limit)} hours can't grade higher than ${cap}`

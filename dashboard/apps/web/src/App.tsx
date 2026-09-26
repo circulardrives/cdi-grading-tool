@@ -17,6 +17,11 @@ const OverviewPage = lazy(() =>
 const DrivesPage = lazy(() =>
   import("@/pages/drives-page").then((m) => ({ default: m.DrivesPage }))
 )
+const DriveDetailsPage = lazy(() =>
+  import("@/pages/drive-details-page").then((m) => ({
+    default: m.DriveDetailsPage,
+  }))
+)
 const BenchesPage = lazy(() =>
   import("@/pages/benches-page").then((m) => ({ default: m.BenchesPage }))
 )
@@ -69,6 +74,14 @@ export function App() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <DrivesPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="drives/:benchKey/:serial"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <DriveDetailsPage />
               </Suspense>
             }
           />
