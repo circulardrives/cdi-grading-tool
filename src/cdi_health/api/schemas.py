@@ -34,6 +34,10 @@ BLOCK_DEVICE_PATTERN = re.compile(r"^/dev/[a-zA-Z0-9][a-zA-Z0-9._+/-]*$")
 GradingProfile = Literal["binary", "abcdf"]
 MachineStatusValue = Literal["unknown", "reachable", "unreachable", "auth_failed"]
 ExecutedOn = Literal["local", "remote"]
+ReportSource = Literal["scan", "history", "fleet"]
+ReportFormat = Literal["html", "pdf", "csv"]
+# Max scan-history entries one "history" report may combine.
+REPORT_MAX_HISTORY_IDS = 50
 
 
 def _reject_path_traversal(value: str, field_name: str) -> str:
@@ -158,7 +162,19 @@ class HistoryDetail(BaseModel):
 class ReportRequest(BaseModel):
     """Report generation request payload."""
 
-    format: Literal["html", "pdf", "csv"] = "html"
+    format: ReportFormat = "html"
+    source: ReportSource = Field(
+        default="scan",
+        description=(
+            "scan: fresh scan of this API's drives (default). fleet: latest stored scan of every "
+            "host (same set as GET /api/v1/fleet/devices). history: the listed scan-history entries. "
+            "fleet/history never rescan and render the recorded grades as-is."
+        ),
+    )
+    history_ids: list[str] | None = Field(
+        default=None,
+        description=f"Scan-history ids for source=history (1-{REPORT_MAX_HISTORY_IDS}).",
+    )
     output_file: str | None = None
     ignore_ata: bool = False
     ignore_nvme: bool = False
@@ -180,12 +196,34 @@ class ReportRequest(BaseModel):
         return _validate_optional_fs_path(value, info.field_name)
 
 
+class ReportHost(BaseModel):
+    """One host whose scan contributed devices to a report."""
+
+    name: str
+    machine_id: str | None = None
+    scanned_at: str | None = None
+    device_count: int = 0
+
+
 class ReportResponse(BaseModel):
     generated_at: datetime
     output_file: str
     filename: str
-    format: Literal["html", "pdf", "csv"]
+    format: ReportFormat
     devices_count: int
+    source: ReportSource = "scan"
+    hosts: list[ReportHost] = Field(default_factory=list)
+
+
+class ReportListEntry(BaseModel):
+    """GET /api/v1/reports entry (persisted report index)."""
+
+    filename: str
+    format: ReportFormat
+    generated_at: datetime
+    source: ReportSource = "scan"
+    devices_count: int = 0
+    hosts: list[ReportHost] = Field(default_factory=list)
 
 
 class SelfTestStartRequest(BaseModel):

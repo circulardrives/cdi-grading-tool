@@ -40,7 +40,7 @@ from cdi_health.api.schemas import (
 from cdi_health.classes.config import ThresholdConfig, get_default_config_path
 from cdi_health.classes.explain import attach_explanation
 from cdi_health.classes.nvme_selftest import NVMeSelfTest, classify_result, validate_nvme_device_path
-from cdi_health.classes.reporter import ReportGenerator
+from cdi_health.classes.reporter import ReportGenerator, format_scan_time
 from cdi_health.classes.scoring import HealthScoreCalculator
 from cdi_health.cli import (
     _filter_devices_by_path,
@@ -51,6 +51,10 @@ from cdi_health.cli import (
 )
 
 DEFAULT_MOCK_DATA_ENV = "CDI_HEALTH_API_MOCK_DATA"
+# Fleet / report display name of this API process's own drives.
+LOCAL_HOST_NAME = "Local API"
+FRESH_SCAN_SOURCE_LABEL = "Fresh scan on this bench"
+NO_SAVED_SCANS_DETAIL = "No saved scans to report on — run Scan all hosts first"
 ALLOWED_DATA_PATHS_ENV = "CDI_HEALTH_API_ALLOWED_DATA_PATHS"
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 SYSTEM_CONFIG_DIR = Path("/etc/cdi-health")
@@ -112,6 +116,11 @@ def resolve_report_output_path(output_file: str | None, report_format: str) -> P
     else:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         resolved = (reports_dir / f"cdi-report-{timestamp}.{report_format}").resolve()
+        # Two reports in the same second must not overwrite each other.
+        suffix = 2
+        while resolved.exists():
+            resolved = (reports_dir / f"cdi-report-{timestamp}-{suffix}.{report_format}").resolve()
+            suffix += 1
 
     try:
         resolved.relative_to(reports_dir)
@@ -342,10 +351,10 @@ def scoped_thresholds(threshold_config: ThresholdConfig) -> Iterator[ThresholdCo
             ThresholdConfig._instance = previous
 
 
-def report_generator_for(threshold_config: ThresholdConfig) -> ReportGenerator:
+def report_generator_for(threshold_config: ThresholdConfig, *, preserve_grades: bool = False) -> ReportGenerator:
     """Return a ReportGenerator whose scoring engine uses ``threshold_config``."""
     with scoped_thresholds(threshold_config):
-        return ReportGenerator()
+        return ReportGenerator(preserve_grades=preserve_grades)
 
 
 def _enrich_devices_with_scores(
@@ -725,12 +734,90 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
 
     # Same path as `cdi-health report`: the reporter scores raw devices itself.
     reporter = report_generator_for(threshold_config)
-    if request.format == "html":
-        reporter.generate_html(devices, str(output_path))
-    elif request.format == "csv":
+    _write_report(reporter, request.format, devices, output_path, FRESH_SCAN_SOURCE_LABEL)
+
+    generated_at = utc_now().isoformat()
+    resolved_path = output_path.resolve()
+    return {
+        "generated_at": generated_at,
+        "output_file": str(resolved_path),
+        "filename": resolved_path.name,
+        "format": request.format,
+        "devices_count": len(devices),
+        "source": "scan",
+        "hosts": [
+            {
+                "name": LOCAL_HOST_NAME,
+                "machine_id": None,
+                "scanned_at": generated_at,
+                "device_count": len(devices),
+            }
+        ],
+    }
+
+
+def _write_report(
+    reporter: ReportGenerator,
+    report_format: str,
+    devices: list[dict[str, Any]],
+    output_path: Path,
+    source_label: str,
+) -> None:
+    if report_format == "html":
+        reporter.generate_html(devices, str(output_path), source_label=source_label)
+    elif report_format == "csv":
         reporter.generate_csv(devices, str(output_path))
     else:
-        reporter.generate_pdf(devices, str(output_path))
+        reporter.generate_pdf(devices, str(output_path), source_label=source_label)
+
+
+def saved_scans_source_label(hosts: list[dict[str, Any]]) -> str:
+    """``Saved scans — pecan09 (2026-09-26 08:59 UTC), pecan10 (…)``."""
+    parts = [f"{host['name']} ({format_scan_time(host.get('scanned_at'))})" for host in hosts]
+    return "Saved scans — " + ", ".join(parts)
+
+
+def generate_report_from_scans(request: ReportRequest, scans: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Generate a report from stored scans (``source`` fleet / history) without rescanning.
+
+    ``scans`` items are ``{"name", "machine_id", "scanned_at", "devices"}``. Devices
+    keep the grades recorded when they were scanned (``preserve_grades``) and are
+    tagged with their host so the report shows Host / Scanned at columns. No
+    hardware, mock data, or config paths are touched.
+    """
+    devices: list[dict[str, Any]] = []
+    hosts: list[dict[str, Any]] = []
+    for scan in scans:
+        host_devices = [d for d in scan.get("devices") or [] if isinstance(d, dict)]
+        scanned_at = scan.get("scanned_at")
+        scanned_at = scanned_at.isoformat() if isinstance(scanned_at, datetime) else scanned_at
+        hosts.append(
+            {
+                "name": str(scan.get("name") or LOCAL_HOST_NAME),
+                "machine_id": scan.get("machine_id"),
+                "scanned_at": str(scanned_at) if scanned_at else None,
+                "device_count": len(host_devices),
+            }
+        )
+        for device in host_devices:
+            devices.append(
+                {
+                    **device,
+                    "machine_id": scan.get("machine_id"),
+                    "machine_name": hosts[-1]["name"],
+                    "host_scanned_at": hosts[-1]["scanned_at"],
+                }
+            )
+    if not devices:
+        raise ValueError(NO_SAVED_SCANS_DETAIL)
+
+    output_path = resolve_report_output_path(request.output_file, request.format)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Thresholds only matter for devices without a recorded grade (legacy snapshots).
+    threshold_config = build_threshold_config(None, request.grading_profile)
+    reporter = report_generator_for(threshold_config, preserve_grades=True)
+    _write_report(reporter, request.format, devices, output_path, saved_scans_source_label(hosts))
 
     resolved_path = output_path.resolve()
     return {
@@ -739,6 +826,8 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
         "filename": resolved_path.name,
         "format": request.format,
         "devices_count": len(devices),
+        "source": request.source,
+        "hosts": hosts,
     }
 
 
