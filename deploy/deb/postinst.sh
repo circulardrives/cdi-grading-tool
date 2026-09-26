@@ -69,6 +69,13 @@ install_venv() {
 
 install_venv
 
+# The API token lives in this file; it must not be readable by other users.
+ENV_FILE=/etc/default/cdi-health-api
+if [ -f "$ENV_FILE" ] && [ -n "$(find "$ENV_FILE" -perm /077 2>/dev/null)" ]; then
+  chmod 600 "$ENV_FILE" && chown root:root "$ENV_FILE" &&
+    echo "cdi-health: note: tightened ${ENV_FILE} to mode 600 (it holds CDI_HEALTH_API_TOKEN)" >&2
+fi
+
 if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
   # try-restart only restarts a unit that is already running: fresh installs
