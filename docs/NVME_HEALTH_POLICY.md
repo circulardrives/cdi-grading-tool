@@ -16,8 +16,10 @@ Configurable knobs live in `src/cdi_health/config/thresholds.yaml` under `nvme` 
 | EGCWS any bit | Yes | When reported |
 | `media_errors` (MDIE) > 0 | Yes | Unrecovered media/data integrity |
 | `available_spare` < drive AVSPT | Yes | Prefer drive threshold; fallback default **10%** (not 97) |
-| `percentage_used` > 100 | Yes | Spec allows >100; 100 alone is not automatic failure |
-| Failed NVMe self-test | Yes | |
+| `available_spare` ≥ AVSPT | No (graded) | `abcdf`: A ≥ 80, B ≥ 60, C ≥ 40, else D (`available_spare_bands`); primary SSD health signal |
+| `percentage_used` 80–99 | No | −5 at 80%, −10 at 90%; score only, never the letter |
+| `percentage_used` ≥ 100 | `binary` only (> 100) | `abcdf`: graded **C**, **D** if any other warning; flag `ENDURANCE_EXCEEDED` (`endurance_exceeded_grade`, set F to restore the fail-gate) |
+| Failed NVMe self-test (06h result 5–7) | Profile | `binary`: any failure is F. `abcdf`: 1 old → C, 1 recent / 2+ old → D, 2+ recent → F. Results 1–4, 8, 9 are aborts, not failures |
 | `critical_comp_time` (CCTT) > 0 | Yes | Lifetime minutes at/above CCTEMP |
 | `current_temperature` ≥ CCTEMP | Yes | Manufacturer critical composite threshold |
 | `current_temperature` ≥ WCTEMP (below CCTEMP) | No (warning) | Manufacturer warning band |
