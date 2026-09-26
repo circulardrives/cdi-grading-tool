@@ -266,12 +266,24 @@ def resolve_data_path(path: str) -> str:
         repo_root = PACKAGE_DIR.parents[1]
         options = [Path.cwd() / candidate, repo_root / candidate]
 
-    chosen = next((option for option in options if option.exists()), options[0])
-    resolved = chosen.resolve()
-
-    if not any(_is_within(resolved, root) for root in allowed_data_roots()):
+    # Check the allowlist before touching the filesystem: probing paths outside
+    # it (e.g. /root/...) can raise PermissionError and leaks existence.
+    roots = allowed_data_roots()
+    allowed = [resolved for resolved in (option.resolve() for option in options) if _is_within_any(resolved, roots)]
+    if not allowed:
         raise ValueError("Path is outside the allowed data directories")
-    return str(resolved)
+    return str(next((option for option in allowed if _exists(option)), allowed[0]))
+
+
+def _is_within_any(path: Path, roots: list[Path]) -> bool:
+    return any(_is_within(path, root) for root in roots)
+
+
+def _exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
 
 
 def apply_scan_defaults(request: ScanRequest) -> ScanRequest:
