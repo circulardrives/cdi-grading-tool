@@ -3,7 +3,7 @@
 ## Runtime Model
 
 - Backend runs locally on the same host that has attached drives.
-- One dashboard can also drive a fleet: registered machines with an `address` are other benches running their own `cdi-health-api`; scans for them are forwarded over the LAN (see [Remote Hosts](#remote-hosts)).
+- One dashboard can also drive a fleet: registered machines with an `address` are other benches running their own `cdi-health-api`; scans and NVMe self-tests for them are forwarded over the LAN, and reports can be built from their saved scans (see [Remote Hosts](#remote-hosts) and [Reports](#reports)).
 - Backend binds to `127.0.0.1` by default and is not intended for public hosting.
 - Backend process runs as root for real device access (`smartctl`, `nvme`, `sg3-utils`).
 - Static token auth via `CDI_HEALTH_API_TOKEN` (or `--api-token`) is **required** whenever `--host` is not loopback, unless lab mode (`--no-auth` / `CDI_HEALTH_API_NO_AUTH=1`) is on; the process fails fast at startup otherwise.
@@ -15,8 +15,9 @@
 - `cdi_health.api.services`: Scan, self-test, and report service layer.
 - `cdi_health.api.machines`: JSON-backed fleet host registry and scan association.
 - `cdi_health.api.history`: Append-only scan history (one JSON snapshot per successful scan).
+- `cdi_health.api.reports_index`: Persisted index of generated reports (`{data_dir}/reports/index.json`).
 - `cdi_health.api.discovery`: LAN subnet scanning and CDI Health API probing.
-- `cdi_health.api.remote`: Stdlib HTTP client that forwards scans / health checks to remote benches.
+- `cdi_health.api.remote`: Stdlib HTTP client that forwards scans, self-tests, jobs, and health checks to remote benches.
 - `cdi_health.api.jobs`: In-memory async job tracking for long-running actions.
 - `cdi_health.api.security`: Root enforcement, bind-host token checks, and token validation.
 
@@ -38,11 +39,11 @@
 - `DELETE /api/v1/machines/{id}` — remove host and cached scan snapshot
 - `GET /api/v1/discover` — return cached last discovery result (no side effects; 404 if none)
 - `POST /api/v1/discover` — run LAN scan (`subnet`, `subnets`, `port`, `timeout_seconds`, `probe_token`); 429 while a scan is in progress or within cooldown
-- `POST /api/v1/selftests`
-- `GET /api/v1/selftests/status`
-- `POST /api/v1/selftests/abort`
+- `POST /api/v1/selftests` — optional body `machine_id` (remote host → forwarded; see [Remote Hosts](#remote-hosts))
+- `GET /api/v1/selftests/status` — optional `device`, `machine_id` query params
+- `POST /api/v1/selftests/abort` — body `device`, optional `machine_id`
 
-**Hardware lock.** Only one drive-touching operation runs at a time: `POST /api/v1/scan`, `GET /api/v1/devices` when it rescans (`refresh=true` or empty cache), `POST /api/v1/reports`, and the start phase of `POST /api/v1/selftests`. Scans forwarded to a remote host do **not** take this API's lock; the remote API holds its own and answers 409 when busy, which is passed through. A request that arrives while another holds the lock gets **HTTP 409** (`{"detail": "Drive hardware is busy ..."}`) instead of queueing; retry after the running operation completes. Self-test `wait` polling, status, and abort do not take the lock.
+**Hardware lock.** Only one drive-touching operation runs at a time: `POST /api/v1/scan`, `GET /api/v1/devices` when it rescans (`refresh=true` or empty cache), `POST /api/v1/reports` with `source: "scan"`, and the start phase of `POST /api/v1/selftests`. Scans and self-test calls forwarded to a remote host, and reports built from saved scans (`source: "fleet"` / `"history"`), do **not** take this API's lock; the remote API holds its own and answers 409 when busy, which is passed through. A request that arrives while another holds the lock gets **HTTP 409** (`{"detail": "Drive hardware is busy ..."}`) instead of queueing; retry after the running operation completes. Self-test `wait` polling, status, and abort do not take the lock.
 
 **Scan payload.** Scan responses (and `GET /api/v1/devices`) include `grading_profile` (profile actually applied) and `summary: {total, healthy, warning, failed, ungraded}`. Devices carry the same Revert §13/§15 fields as CLI JSON and reports (`grading_status`, `final_grade`, `fail_reason_codes`, `warning_flags`, `ungraded_reasons`, `recommended_use`, ...). UNGRADED drives (e.g. security-locked, unreadable SMART) have `grading_status: "UNGRADED"`, `final_grade`/`health_grade: "UNGRADED"`, `health_score: null`, and are counted in `summary.ungraded`, **not** `failed`. `POST /api/v1/reports` also accepts `grading_profile`.
 
@@ -74,11 +75,53 @@ Each device object includes:
 `POST /api/v1/selftests` creates an async job. With `wait: false` (default),
 the job completes after tests are **started**; poll `GET /api/v1/selftests/status`
 or `GET /api/v1/jobs/{job_id}` until `in_progress` is false, then read
-`latest_result` for pass/fail details.
-- `GET /api/v1/jobs` — list jobs (`limit`/`offset`; completed jobs expire via TTL/max-size eviction)
-- `GET /api/v1/jobs/{job_id}`
-- `POST /api/v1/reports` — writes only under `{data_dir}/reports/` (basename or in-dir path)
-- `GET /api/v1/reports/{filename}` — serves registered reports under the reports directory
+`latest_result` for pass/fail details. For a remote host pass the same
+`machine_id` on every call (start, status, jobs, abort).
+- `GET /api/v1/jobs` — list jobs (`limit`/`offset`, optional `machine_id`; completed jobs expire via TTL/max-size eviction)
+- `GET /api/v1/jobs/{job_id}` — optional `machine_id` (required to poll a job that runs on a remote host)
+- `POST /api/v1/reports` — generate a report (see [Reports](#reports)); writes only under `{data_dir}/reports/` (basename or in-dir path)
+- `GET /api/v1/reports` — list generated reports, newest first (persisted index)
+- `GET /api/v1/reports/{filename}` — serve a generated report from the reports directory (`download=true` → attachment)
+
+## Reports
+
+`POST /api/v1/reports` body:
+
+| Field | Description |
+| ----- | ----------- |
+| `format` | `html` (default), `pdf`, or `csv` |
+| `source` | `scan` (default): fresh scan of **this** API's drives, exactly as before (takes the hardware lock; honours `ignore_*`, `device`, `config`, `mock_data`, `mock_file`, `grading_profile`). `fleet`: the latest stored scan of every host — the same set as `GET /api/v1/fleet/devices` (each remote machine's cached scan plus this API's own latest scan when it has devices). `history`: the scan-history entries listed in `history_ids` |
+| `history_ids` | Required for `source: "history"`: 1–50 ids from `GET /api/v1/history` (duplicates ignored). Missing / empty / more than 50 → **400**; any unknown id → **404** |
+| `output_file` | Optional basename under `{data_dir}/reports/`; default `cdi-report-YYYYMMDD-HHMMSS.<format>` (a `-2`, `-3`… suffix is added when that name exists) |
+
+**Saved-scan reports** (`fleet` / `history`) never rescan, never take the hardware lock, and ignore the fresh-scan options (`ignore_*`, `device`, `config`, `mock_*`). When the selected scans contain no devices the request fails with **400** `No saved scans to report on — run Scan all hosts first`.
+
+**Recorded grades are preserved.** Devices in stored scans already carry `health_score`, `health_grade` / `final_grade`, `health_deductions`, certification fields, etc. Saved-scan reports render those as recorded (`ReportGenerator(preserve_grades=True)`); they are **not** re-scored with the current thresholds. The `cdi-health report` CLI and `source: "scan"` score fresh devices as before.
+
+**Host columns.** Saved-scan reports tag every device with its host, and the HTML (simple and advanced tables) and CSV gain **Host** and **Scanned at** (`YYYY-MM-DD HH:MM UTC`) columns right after **Serial**. Fresh single-host scans keep the original layout. The HTML header shows a **Source** line: `Saved scans — pecan09 (2026-09-26 08:59 UTC), pecan10 (…)` or `Fresh scan on this bench`. Scan-history entries of a deleted machine are labelled `Removed host <id-prefix>`; scans of this API's own drives are `Local API`.
+
+Response (`ReportResponse`):
+
+```json
+{
+  "generated_at": "2026-09-26T12:00:05+00:00",
+  "output_file": "/var/lib/cdi-health/reports/cdi-report-20260926-120005.html",
+  "filename": "cdi-report-20260926-120005.html",
+  "format": "html",
+  "devices_count": 16,
+  "source": "fleet",
+  "hosts": [
+    { "name": "pecan09", "machine_id": "…", "scanned_at": "2026-09-26T08:59:00+00:00", "device_count": 8 },
+    { "name": "pecan10", "machine_id": "…", "scanned_at": "2026-09-26T09:30:00+00:00", "device_count": 8 }
+  ]
+}
+```
+
+For `source: "scan"`, `hosts` is a single `{"name": "Local API", "machine_id": null, "scanned_at": <generated_at>, …}` entry.
+
+**Report index.** Every generated report is recorded in `{data_dir}/reports/index.json` (mode **0600**), so `GET /api/v1/reports` and downloads survive API restarts. `GET /api/v1/reports` returns `[{filename, format, generated_at, source, devices_count, hosts}]`, newest first, skipping entries whose file was removed. Only the newest **200** records are kept; older records are dropped from the index but their files are not deleted (they can still be downloaded by name).
+
+**PDF** needs `weasyprint` (`GET /api/v1/health` → `weasyprint_available`); without it `format: "pdf"` fails with **400** `Report failed`.
 
 ## Host Registry Model
 
@@ -130,7 +173,16 @@ Timeouts: health/check **5 s**; scan **300 s** (override with `CDI_HEALTH_REMOTE
 | Other 4xx | same code | remote `detail`, sanitized (single line, ≤ 200 chars) | `reachable` |
 | 5xx, or a response that is not a valid scan | 502 | `Host '<name>' scan failed` / `… returned an invalid scan response` | `reachable` |
 
-Self-tests and reports always run on the local API; they are not forwarded.
+The same mapping applies to forwarded self-test / job calls (described below).
+
+**Self-test forwarding.** `POST /api/v1/selftests`, `POST /api/v1/selftests/abort` (body `machine_id`), and `GET /api/v1/selftests/status`, `GET /api/v1/jobs`, `GET /api/v1/jobs/{job_id}` (query `machine_id`) are forwarded to the same path on the remote host when `machine_id` names a machine with an `address`:
+
+1. `machine_id` is stripped from the body / query; everything else (`device`, `test_type`, `wait`, `limit`, `offset`, …) is forwarded unchanged. The stored token is sent as `X-API-Token` (no header when none is stored).
+2. The remote JSON is returned unchanged plus `machine_id` (added to each `JobResponse`, and to the status / abort objects). Remote job ids are opaque: poll `GET /api/v1/jobs/{job_id}?machine_id=…` with the same `machine_id`.
+3. This API's hardware lock and self-test worker pool are not used; the job runs on the remote.
+4. Timeout **30 s** per call (starting a test returns immediately). Errors map exactly as in the scan table above (a 5xx or non-JSON reply is `Host '<name>' request failed` / `… returned an invalid response`; the remote's 404 `Job not found` is passed through). The machine `status` becomes `unreachable` / `auth_failed` on failure and `reachable` on the next success.
+
+A `machine_id` of a machine **without** an address runs locally (as without `machine_id`); an unknown `machine_id` is **404** `Machine not found`. The dashboard's self-test page also reads `GET /api/v1/devices?machine_id=…` (the host's cached scan) for serial numbers. Reports use stored scans instead of forwarding: see [Reports](#reports).
 
 **Private-network restriction.** Calls are only forwarded to private, link-local, or loopback IPv4 addresses (`10/8`, `172.16/12`, `192.168/16`, `169.254/16`, `127/8`) or hostnames whose every resolved address is in those ranges. Anything else (public IPs, IPv6, `https://` for now, userinfo) returns **400** `Remote host address must be on a private network` (or a specific invalid-address message). The resolved IP is pinned for the request (with the original `Host` header) so DNS rebinding cannot redirect it; redirects are never followed and `HTTP(S)_PROXY` is ignored, so the token only goes to the validated address. Transport is plain HTTP today (tokens cross the LAN unencrypted; trusted lab networks only); the client is structured so `https://` can be added later.
 
