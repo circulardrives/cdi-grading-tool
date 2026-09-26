@@ -30,6 +30,26 @@ import pytest
 from cdi_health.classes.config import ThresholdConfig
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _no_real_sudo(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """
+    Shadow ``sudo`` with a stub that fails immediately.
+
+    Tests must never reach real hardware tools; on a dev laptop a real sudo
+    pops a password / Touch ID prompt that blocks the run (and any agent).
+    """
+    import os
+
+    stub_dir = tmp_path_factory.mktemp("no-sudo")
+    stub = stub_dir / "sudo"
+    stub.write_text('#!/bin/sh\necho "tests: real sudo is disabled: $*" >&2\nexit 1\n', encoding="utf-8")
+    stub.chmod(0o755)
+    previous = os.environ.get("PATH", "")
+    os.environ["PATH"] = f"{stub_dir}{os.pathsep}{previous}"
+    yield
+    os.environ["PATH"] = previous
+
+
 @pytest.fixture(autouse=True)
 def _reset_threshold_config() -> None:
     """Isolate grading.profile mutations across tests (binary vs abcdf)."""
