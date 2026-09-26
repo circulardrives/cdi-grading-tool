@@ -45,6 +45,7 @@ import os
 import re
 import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
@@ -52,6 +53,9 @@ from typing import Any
 from cdi_health.api.discovery import DEFAULT_CDI_PORT, is_private_ipv4
 
 HEALTH_TIMEOUT_SECONDS = 5.0
+# Self-test start/abort/status and job polling: starting a test returns quickly
+# (the job itself runs on the remote), so these never wait for completion.
+REMOTE_CALL_TIMEOUT_SECONDS = 30.0
 DEFAULT_SCAN_TIMEOUT_SECONDS = 300.0
 SCAN_TIMEOUT_ENV = "CDI_HEALTH_REMOTE_SCAN_TIMEOUT"
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
@@ -337,4 +341,28 @@ class RemoteHostClient:
         self._raise_for_status(status, payload, failure=f"Host '{self.name}' scan failed")
         if not isinstance(payload, dict) or not isinstance(payload.get("devices"), list):
             raise RemoteHostError(502, f"Host '{self.name}' returned an invalid scan response", "reachable")
+        return payload
+
+    def call(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        query: dict[str, Any] | None = None,
+        timeout: float = REMOTE_CALL_TIMEOUT_SECONDS,
+    ) -> Any:
+        """Forward one JSON API call to the remote host and return its decoded payload.
+
+        ``path`` must be a fixed API path (callers quote any path parameters);
+        ``query`` values of ``None`` are dropped. Errors map like :meth:`scan`.
+        """
+        if query:
+            params = {key: value for key, value in query.items() if value is not None}
+            if params:
+                path = f"{path}?{urllib.parse.urlencode(params)}"
+        status, payload = self._request(method, path, timeout=timeout, body=body)
+        self._raise_for_status(status, payload, failure=f"Host '{self.name}' request failed")
+        if payload is None:
+            raise RemoteHostError(502, f"Host '{self.name}' returned an invalid response", "reachable")
         return payload

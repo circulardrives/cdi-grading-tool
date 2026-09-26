@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+import urllib.parse
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
@@ -707,9 +708,63 @@ def create_app() -> FastAPI:
     ) -> DiscoverResponse:
         return _run_discovery(request)
 
+    def _remote_machine_for(machine_id: str | None) -> dict[str, Any] | None:
+        """The registered remote host for ``machine_id``; None means run locally.
+
+        Unknown ids are 404; a registered machine without an address is local.
+        """
+        if not machine_id:
+            return None
+        machine = _get_machine_or_404(machine_id)
+        return machine if _is_remote(machine) else None
+
+    def _forward_call(
+        machine: dict[str, Any],
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        query: dict[str, Any] | None = None,
+    ) -> Any:
+        """Forward one API call to a remote host and track its reachability.
+
+        Never takes the local hardware lock: the remote serializes its own drives.
+        """
+        store = app.state.runtime.machine_store
+        try:
+            payload = _remote_client(machine).call(method, path, body=body, query=query)
+        except RemoteHostError as exc:
+            if exc.machine_status:
+                store.set_status(machine["id"], exc.machine_status)
+            raise
+        # Polling runs every few seconds: only persist a status change.
+        if machine.get("status") != "reachable":
+            store.set_status(machine["id"], "reachable", seen=True)
+        return payload
+
+    def _invalid_remote_response(machine: dict[str, Any]) -> RemoteHostError:
+        return RemoteHostError(502, f"Host '{machine['name']}' returned an invalid response", "reachable")
+
+    def _remote_job(machine: dict[str, Any], payload: Any) -> JobResponse:
+        if not isinstance(payload, dict):
+            raise _invalid_remote_response(machine)
+        try:
+            return JobResponse.model_validate({**payload, "machine_id": machine["id"]})
+        except ValidationError as exc:
+            raise _invalid_remote_response(machine) from exc
+
+    def _remote_object(machine: dict[str, Any], payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise _invalid_remote_response(machine)
+        return {**payload, "machine_id": machine["id"]}
+
     @app.post("/api/v1/selftests", response_model=JobResponse)
     def start_selftests(request: SelfTestStartRequest, _: None = Depends(verify_api_token)) -> JobResponse:
         runtime = app.state.runtime
+        remote = _remote_machine_for(request.machine_id)
+        if remote is not None:
+            body = request.model_dump(mode="json", exclude={"machine_id"})
+            return _remote_job(remote, _forward_call(remote, "POST", "/api/v1/selftests", body=body))
         with runtime.lock:
             # Only accept a job when a worker is free: a job queued behind
             # long wait-mode jobs would otherwise sit holding the hardware lock.
@@ -734,7 +789,7 @@ def create_app() -> FastAPI:
                     released = True
                     runtime.hardware_lock.release()
 
-        payload = request.model_dump(mode="python")
+        payload = request.model_dump(mode="python", exclude={"machine_id"})
 
         def _run_job(job_id: str, request_payload: dict) -> None:
             runtime.job_store.start(job_id)
@@ -761,19 +816,32 @@ def create_app() -> FastAPI:
         return JobResponse.model_validate(job.to_dict())
 
     @app.get("/api/v1/selftests/status")
-    def selftest_status(device: str | None = None, _: None = Depends(verify_api_token)) -> dict:
+    def selftest_status(
+        device: str | None = None,
+        machine_id: str | None = None,
+        _: None = Depends(verify_api_token),
+    ) -> dict:
         try:
             if device is not None:
                 # Re-validate via schema so injection attempts fail with 422/400.
                 SelfTestAbortRequest(device=device)
-            return get_selftest_status(device=device)
         except ValidationError as exc:
             raise HTTPException(status_code=400, detail="Invalid device path") from exc
+        remote = _remote_machine_for(machine_id)
+        if remote is not None:
+            payload = _forward_call(remote, "GET", "/api/v1/selftests/status", query={"device": device})
+            return _remote_object(remote, payload)
+        try:
+            return get_selftest_status(device=device)
         except Exception as exc:
             _raise_mapped(exc, context="self-test status")
 
     @app.post("/api/v1/selftests/abort")
     def selftest_abort(request: SelfTestAbortRequest, _: None = Depends(verify_api_token)) -> dict:
+        remote = _remote_machine_for(request.machine_id)
+        if remote is not None:
+            payload = _forward_call(remote, "POST", "/api/v1/selftests/abort", body={"device": request.device})
+            return _remote_object(remote, payload)
         try:
             return abort_selftest(request.device)
         except Exception as exc:
@@ -783,13 +851,29 @@ def create_app() -> FastAPI:
     def list_jobs(
         limit: int = Query(default=100, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
+        machine_id: str | None = None,
         _: None = Depends(verify_api_token),
     ) -> list[JobResponse]:
+        remote = _remote_machine_for(machine_id)
+        if remote is not None:
+            payload = _forward_call(remote, "GET", "/api/v1/jobs", query={"limit": limit, "offset": offset})
+            if not isinstance(payload, list):
+                raise _invalid_remote_response(remote)
+            return [_remote_job(remote, item) for item in payload]
         jobs = [job.to_dict() for job in app.state.runtime.job_store.list(limit=limit, offset=offset)]
         return [JobResponse.model_validate(job) for job in jobs]
 
     @app.get("/api/v1/jobs/{job_id}", response_model=JobResponse)
-    def get_job(job_id: str, _: None = Depends(verify_api_token)) -> JobResponse:
+    def get_job(
+        job_id: str,
+        machine_id: str | None = None,
+        _: None = Depends(verify_api_token),
+    ) -> JobResponse:
+        remote = _remote_machine_for(machine_id)
+        if remote is not None:
+            # Remote job ids are opaque: quote so they stay one path segment.
+            path = f"/api/v1/jobs/{urllib.parse.quote(job_id, safe='')}"
+            return _remote_job(remote, _forward_call(remote, "GET", path))
         job = app.state.runtime.job_store.get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")

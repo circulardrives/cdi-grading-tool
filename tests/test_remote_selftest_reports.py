@@ -385,3 +385,112 @@ def test_report_index_is_capped(tmp_path: Path) -> None:
     assert [r["filename"] for r in store.list()] == ["r4.csv", "r3.csv", "r2.csv"]
     # Dropped records never delete report files.
     assert (tmp_path / "reports" / "r0.csv").is_file()
+
+
+# --- self-tests forwarded to remote benches ---------------------------------
+
+
+def test_forwarded_selftest_start_status_jobs_abort(api_client: TestClient, bench: FakeBench) -> None:
+    machine = _register(api_client, "pecan09", bench.address)
+    runtime = api_client.app.state.runtime
+    # The local hardware lock is never taken for forwarded calls.
+    assert runtime.hardware_lock.acquire(blocking=False)
+    try:
+        started = api_client.post(
+            "/api/v1/selftests",
+            json={"machine_id": machine["id"], "device": "/dev/nvme0", "test_type": "extended"},
+        )
+    finally:
+        runtime.hardware_lock.release()
+    assert started.status_code == 200, started.text
+    assert started.json()["job_id"] == "remote-job-1"
+    assert started.json()["machine_id"] == machine["id"]
+    sent = bench.last()
+    assert sent["path"] == "/api/v1/selftests"
+    assert sent["headers"]["x-api-token"] == REMOTE_TOKEN
+    assert "machine_id" not in sent["body"]
+    assert sent["body"]["device"] == "/dev/nvme0"
+    assert sent["body"]["test_type"] == "extended"
+    assert runtime.job_store.list(limit=10, offset=0) == []
+
+    status = api_client.get("/api/v1/selftests/status", params={"machine_id": machine["id"], "device": "/dev/nvme0"})
+    assert status.status_code == 200
+    assert status.json() == {**REMOTE_STATUS, "machine_id": machine["id"]}
+    assert bench.last()["path"] == "/api/v1/selftests/status?device=%2Fdev%2Fnvme0"
+
+    jobs = api_client.get("/api/v1/jobs", params={"machine_id": machine["id"], "limit": 5})
+    assert jobs.status_code == 200
+    assert [(j["job_id"], j["machine_id"]) for j in jobs.json()] == [("remote-job-1", machine["id"])]
+    assert bench.last()["path"] == "/api/v1/jobs?limit=5&offset=0"
+
+    job = api_client.get("/api/v1/jobs/remote-job-1", params={"machine_id": machine["id"]})
+    assert job.status_code == 200
+    assert job.json()["status"] == "running"
+    assert job.json()["machine_id"] == machine["id"]
+    assert "machine_id" not in bench.last()["path"]
+
+    missing = api_client.get("/api/v1/jobs/nope", params={"machine_id": machine["id"]})
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Job not found"
+
+    aborted = api_client.post("/api/v1/selftests/abort", json={"machine_id": machine["id"], "device": "/dev/nvme0"})
+    assert aborted.status_code == 200
+    assert aborted.json() == {"device": "/dev/nvme0", "aborted": True, "machine_id": machine["id"]}
+    assert bench.last()["body"] == {"device": "/dev/nvme0"}
+
+    assert api_client.get(f"/api/v1/machines/{machine['id']}").json()["status"] == "reachable"
+
+
+def test_forwarded_selftest_to_no_auth_bench_sends_no_token(api_client: TestClient) -> None:
+    no_auth = FakeBench(token=None)
+    try:
+        machine = _register(api_client, "lab", no_auth.address, token=None)
+        response = api_client.get("/api/v1/selftests/status", params={"machine_id": machine["id"]})
+        assert response.status_code == 200
+        assert "x-api-token" not in no_auth.last()["headers"]
+    finally:
+        no_auth.stop()
+
+
+def test_forwarded_selftest_errors(api_client: TestClient, bench: FakeBench) -> None:
+    down = _register(api_client, "down", f"127.0.0.1:{_closed_port()}")
+    response = api_client.post("/api/v1/selftests", json={"machine_id": down["id"]})
+    assert response.status_code == 502
+    assert "unreachable" in response.json()["detail"]
+    assert api_client.get(f"/api/v1/machines/{down['id']}").json()["status"] == "unreachable"
+
+    wrong = _register(api_client, "wrong-token", bench.address, token="nope")
+    response = api_client.get("/api/v1/jobs", params={"machine_id": wrong["id"]})
+    assert response.status_code == 502
+    assert "token" in response.json()["detail"]
+    assert api_client.get(f"/api/v1/machines/{wrong['id']}").json()["status"] == "auth_failed"
+
+    public = _register(api_client, "public", "8.8.8.8:8844")
+    response = api_client.get("/api/v1/selftests/status", params={"machine_id": public["id"]})
+    assert response.status_code == 400
+
+    unknown = api_client.post("/api/v1/selftests/abort", json={"machine_id": "missing", "device": "/dev/nvme0"})
+    assert unknown.status_code == 404
+    assert unknown.json()["detail"] == "Machine not found"
+
+    bad_device = api_client.get(
+        "/api/v1/selftests/status", params={"machine_id": wrong["id"], "device": "/dev/nvme0;id"}
+    )
+    assert bad_device.status_code == 400
+
+
+def test_selftest_machine_without_address_runs_locally(api_client: TestClient, bench: FakeBench) -> None:
+    local = _register(api_client, "this-bench", "", token=None)
+    status = api_client.get("/api/v1/selftests/status", params={"machine_id": local["id"]})
+    assert status.status_code == 200
+    assert status.json() == api_client.get("/api/v1/selftests/status").json()
+
+    started = api_client.post("/api/v1/selftests", json={"machine_id": local["id"]})
+    assert started.status_code == 200, started.text
+    job_id = started.json()["job_id"]
+    assert started.json()["machine_id"] is None
+    assert "machine_id" not in started.json()["payload"]
+    local_job = api_client.get(f"/api/v1/jobs/{job_id}", params={"machine_id": local["id"]})
+    assert local_job.status_code == 200
+    assert any(j["job_id"] == job_id for j in api_client.get("/api/v1/jobs").json())
+    assert bench.requests == []
