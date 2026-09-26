@@ -65,6 +65,8 @@ class FakeRemote:
         self.token = token
         # None mimics an older API whose /health has no hostname.
         self.hostname: str | None = "bench-01"
+        # Set to the dashboard API's own id to impersonate "this bench itself".
+        self.instance_id: str | None = None
         self.scan_status = 200
         self.scan_payload: Any = REMOTE_SCAN
         self.scan_delay = 0.0
@@ -99,8 +101,9 @@ class FakeRemote:
             def do_GET(self) -> None:  # noqa: N802
                 self._record()
                 if self.path.startswith("/api/v1/health"):
+                    extra = {"instance_id": fake.instance_id} if fake.instance_id else {}
                     if fake.token and not self._authorized():
-                        self._send(200, {"status": "ok", "version": "9.9.9", "hostname": fake.hostname})
+                        self._send(200, {"status": "ok", "version": "9.9.9", "hostname": fake.hostname, **extra})
                     else:
                         self._send(
                             200,
@@ -111,6 +114,7 @@ class FakeRemote:
                                 "is_root": True,
                                 "api_token_enabled": bool(fake.token),
                                 "auth_mode": "token" if fake.token else "none",
+                                **extra,
                             },
                         )
                 elif self.path.startswith("/api/v1/jobs"):
@@ -669,3 +673,103 @@ def test_fleet_csv_single_bench_has_exact_cli_columns(api_client: TestClient, fa
     assert rows[0] == CSVFormatter.FIELDS
     assert len(rows) == 3
     assert api_client.get("/api/v1/fleet/devices.csv?machine_id=nope").status_code == 404
+
+
+# --- self-discovery: never add this bench as a remote of itself ------------
+
+SELF_DETAIL = "That address is this bench itself"
+
+
+def _own_instance_id(client: TestClient) -> str:
+    instance_id = client.get("/api/v1/health").json()["instance_id"]
+    assert len(instance_id) == 32
+    return instance_id
+
+
+def test_instance_id_is_persistent_and_private(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CDI_HEALTH_API_ALLOW_NON_ROOT", "1")
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(tmp_path / "api-data"))
+    monkeypatch.delenv("CDI_HEALTH_API_TOKEN", raising=False)
+    from cdi_health.api.app import create_app
+
+    first = _own_instance_id(TestClient(create_app()))
+    second = _own_instance_id(TestClient(create_app()))
+    assert first == second
+    path = tmp_path / "api-data" / "instance_id"
+    assert path.read_text().strip() == first
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+
+    other = tmp_path / "other-data"
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(other))
+    assert _own_instance_id(TestClient(create_app())) != first
+
+
+def test_add_bench_refuses_own_address(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    fake_remote.instance_id = _own_instance_id(api_client)
+    response = api_client.post(
+        "/api/v1/machines",
+        json={"name": "Me", "hostname": "me", "address": fake_remote.address, "api_token": REMOTE_TOKEN},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == SELF_DETAIL
+    assert api_client.get("/api/v1/machines").json() == []
+
+    # Another bench (different instance id) is added normally.
+    fake_remote.instance_id = "0" * 32
+    _register(api_client, "Other", fake_remote.address)
+
+
+def test_edit_bench_address_refuses_own_address(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    machine_id = _register(api_client, "Bench", f"127.0.0.1:{_closed_port()}")["id"]
+    fake_remote.instance_id = _own_instance_id(api_client)
+
+    response = api_client.patch(f"/api/v1/machines/{machine_id}", json={"address": fake_remote.address})
+    assert response.status_code == 400
+    assert response.json()["detail"] == SELF_DETAIL
+    assert api_client.get(f"/api/v1/machines/{machine_id}").json()["address"] != fake_remote.address
+
+    # Edits that do not touch the address never probe.
+    assert api_client.patch(f"/api/v1/machines/{machine_id}", json={"notes": "rack 2"}).status_code == 200
+
+
+def test_check_refuses_self_and_fleet_skips_it(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    # Registered before 0.13.1 (or while the remote was an older API).
+    machine_id = _register(api_client, "Me Too", fake_remote.address)["id"]
+    fake_remote.instance_id = _own_instance_id(api_client)
+
+    response = api_client.post(f"/api/v1/machines/{machine_id}/check")
+    assert response.status_code == 400
+    assert response.json()["detail"] == SELF_DETAIL
+
+    fake_remote.requests.clear()
+    fleet = api_client.post("/api/v1/fleet/scan")
+    assert fleet.status_code == 200
+    assert fake_remote.scan_requests() == []
+    host = next(h for h in fleet.json()["hosts"] if h["machine_id"] == machine_id)
+    assert host["error"] == SELF_DETAIL
+    assert all(d.get("machine_id") != machine_id for d in fleet.json()["devices"])
+
+    direct = api_client.post("/api/v1/scan", json={"machine_id": machine_id})
+    assert direct.status_code == 400
+    assert direct.json()["detail"] == SELF_DETAIL
+    assert fake_remote.scan_requests() == []
+
+
+def test_discovery_marks_this_bench(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import discovery
+
+    own = "a" * 32
+    payloads = {
+        "192.168.50.1": {"status": "ok", "version": "x", "instance_id": own},
+        "192.168.50.2": {"status": "ok", "version": "x", "instance_id": "b" * 32},
+    }
+    monkeypatch.setattr(discovery, "is_port_open", lambda ip, port, timeout: ip in payloads)
+    monkeypatch.setattr(discovery, "reverse_hostname", lambda ip: None)
+    monkeypatch.setattr(discovery, "probe_cdi_health", lambda ip, port, **_kwargs: payloads.get(ip))
+
+    result = discovery.discover_hosts(subnet="192.168.50.0/30", timeout_seconds=0.5, self_instance_id=own)
+    marks = {host["ip"]: host["is_this_bench"] for host in result["found"]}
+    assert marks == {"192.168.50.1": True, "192.168.50.2": False}
+
+    result = discovery.discover_hosts(subnet="192.168.50.0/30", timeout_seconds=0.5)
+    assert not any(host["is_this_bench"] for host in result["found"])

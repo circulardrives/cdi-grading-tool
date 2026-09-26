@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import os
+import re
 import socket
 import time
 from pathlib import Path
@@ -288,7 +289,9 @@ def test_api_health_minimal_when_unauthenticated_non_loopback(
     assert response.status_code == 200
     body = response.json()
     # auth_mode tells discovering clients a token is needed and the hostname
-    # (not sensitive) names the bench, without leaking anything else.
+    # (not sensitive) names the bench, without leaking anything else. The
+    # random instance_id lets a dashboard recognise itself among benches.
+    assert re.fullmatch(r"[0-9a-f]{32}", body.pop("instance_id"))
     assert body == {
         "status": "ok",
         "version": PACKAGE_VERSION,

@@ -232,12 +232,15 @@ def discover_hosts(
     timeout_seconds: float = 1.5,
     probe_token: str | None = None,
     registered_machines: list[dict[str, Any]] | None = None,
+    self_instance_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Scan private LAN subnet(s) for CDI Health API instances on the given port.
 
     Discovery runs from the machine hosting this API process (technician laptop or jump host).
     ``X-API-Token`` is sent only when ``probe_token`` is explicitly provided.
+    A host whose ``/health`` reports ``self_instance_id`` is this API itself
+    and is marked ``is_this_bench``.
     """
     started = time.monotonic()
     subnet_values = resolve_subnets(subnet, subnets)
@@ -286,6 +289,7 @@ def discover_hosts(
                     token,
                     timeout_seconds,
                     machines,
+                    self_instance_id,
                 ): host
                 for host in open_hosts
             }
@@ -316,6 +320,7 @@ def _probe_discovered_host(
     probe_token: str | None,
     timeout_seconds: float,
     registered_machines: list[dict[str, Any]],
+    self_instance_id: str | None = None,
 ) -> dict[str, Any]:
     health = probe_cdi_health(
         ip,
@@ -335,4 +340,12 @@ def _probe_discovered_host(
         "health": health,
         "cdi_api": cdi_api,
         "already_registered": is_already_registered(ip, port, registered_machines),
+        "is_this_bench": is_same_instance(health, self_instance_id),
     }
+
+
+def is_same_instance(health: dict[str, Any] | None, self_instance_id: str | None) -> bool:
+    """True when a /health payload carries this API's own instance id."""
+    if not self_instance_id or not isinstance(health, dict):
+        return False
+    return health.get("instance_id") == self_instance_id
