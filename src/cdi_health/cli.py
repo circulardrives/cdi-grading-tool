@@ -1481,6 +1481,19 @@ def main() -> int:
     if not hasattr(args, "ignore_scsi"):
         args.ignore_scsi = False
 
+    # An explicit --config that cannot be loaded / validated is a hard error
+    # rather than a silent fallback to default thresholds (#137).
+    from cdi_health.classes.config import ConfigError
+
+    try:
+        return _dispatch_command(parser, args)
+    except ConfigError as exc:
+        logger.error("Configuration error: %s", exc)
+        return 2
+
+
+def _dispatch_command(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    """Run the selected sub-command."""
     # Execute command
     if args.command == "scan" or args.command is None:
         # Default output format for scan

@@ -75,6 +75,21 @@ def resolve_tool_path(tool_name: str, fallback: str | None = None) -> str:
     return fallback if fallback is not None else tool_name
 
 
+# TEST UNIT READY outcomes (#128). "Unknown" means the TUR could not be run
+# or interpreted (tool missing, timeout, permission error) and is a warning,
+# not a fail-gate; only "Not Ready" is a genuine device response.
+TUR_READY = "Ready"
+TUR_NOT_READY = "Not Ready"
+TUR_UNKNOWN = "Unknown"
+
+# sg3_utils exit statuses (sg_lib.h SG_LIB_CAT_*) that carry a genuine device
+# sense response meaning the unit is not ready: 2 = NOT READY sense key,
+# 3 = MEDIUM ERROR / HARDWARE ERROR. Everything else (1 syntax / sudo failure,
+# 15 device open failure, 33 transport timeout, 50+ OS errors, 97-99 other)
+# is inconclusive.
+TUR_DEVICE_NOT_READY_CODES = frozenset({2, 3})
+
+
 class Command:
     """
     Command Class
@@ -279,6 +294,11 @@ class SG3Utils:
     SG3Utils Class
     """
 
+    # TUR should answer in well under a second; keep a bounded timeout so a
+    # wedged path cannot stall a scan thread for the full Command default.
+    TUR_TIMEOUT: int = 30
+    START_UNIT_TIMEOUT: int = 60
+
     # Tool paths are process-wide; cache so each Device does not re-run whereis.
     _path_cache: dict[str, str] = {}
 
@@ -290,6 +310,7 @@ class SG3Utils:
         # Get the full paths for sg3_utils binaries
         self.sg_map26_path = self.get_sg3utils_path("sg_map26")
         self.sg_turs_path = self.get_sg3utils_path("sg_turs")
+        self.sg_start_path = self.get_sg3utils_path("sg_start")
 
         # Properties
         self.dut = device_id
@@ -349,32 +370,61 @@ class SG3Utils:
             # Return
             return False
 
-    def test_unit_ready(self):
+    def _run_tur(self) -> str:
         """
-        Test Unit Ready
-        :return:
-        """
+        Run one TEST UNIT READY and classify the outcome.
 
-        # Try
+        :return: "Ready", "Not Ready" (the device answered with a genuine
+            NOT READY / MEDIUM-HARDWARE ERROR sense response) or "Unknown"
+            (sg_turs missing, timed out, permission/sudo failure, device open
+            failure or any other tool-side error — not evidence of a bad drive)
+        """
         try:
-            # Set Command
-            command = Command(f"sudo {self.sg_turs_path} -vvvv {self.dut}")
-
-            # Run Command
+            command = Command(f"sudo {self.sg_turs_path} -vvvv {self.dut}", timeout=self.TUR_TIMEOUT)
             command.run()
-
-            # If Error
-            if command.get_return_code() != 0:
-                # Return
-                return "Not Ready"
-
-            # Return
-            return "Ready"
-
-        # Command Exception
         except CommandException:
-            # Return
-            return "Not Ready"
+            # Tool missing (FileNotFoundError), subprocess timeout, or launch error
+            return TUR_UNKNOWN
+
+        return_code = command.get_return_code()
+        if return_code == 0:
+            return TUR_READY
+        if return_code in TUR_DEVICE_NOT_READY_CODES:
+            return TUR_NOT_READY
+        return TUR_UNKNOWN
+
+    def _start_unit(self) -> None:
+        """
+        Best-effort START STOP UNIT (start) so a spun-down / "initializing
+        command required" SAS drive gets a fair second TUR. Failures ignored.
+        """
+        try:
+            Command(f"sudo {self.sg_start_path} --start {self.dut}", timeout=self.START_UNIT_TIMEOUT).run()
+        except CommandException:
+            pass
+
+    def test_unit_ready(self) -> str:
+        """
+        Test Unit Ready (#128).
+
+        A genuine NOT READY response is retried once (after a best-effort
+        START UNIT) before it is reported, because Not Ready is a Stage 1
+        fail-gate (F-NO-RESPONSE). Tool-side errors are reported as
+        "Unknown" so a missing sg3_utils install never fails a drive.
+
+        :return: "Ready" | "Not Ready" | "Unknown"
+        """
+        state = self._run_tur()
+        if state != TUR_NOT_READY:
+            return state
+
+        self._start_unit()
+        retry = self._run_tur()
+        if retry == TUR_READY:
+            return retry
+        # Only report Not Ready when the device itself answered NOT READY on
+        # the final attempt; otherwise the outcome is inconclusive.
+        return TUR_NOT_READY if retry == TUR_NOT_READY else TUR_UNKNOWN
 
 
 class Smartctl:

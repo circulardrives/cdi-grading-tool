@@ -51,6 +51,19 @@ UNGRADED_GRADE = "UNGRADED"
 # Warning flags (§15)
 FLAG_SMART_RESET_SUSPECTED = "SMART_RESET_SUSPECTED"  # §15.1
 FLAG_DUPLICATE_SERIAL = "DUPLICATE_SERIAL"  # §15.7
+# TEST UNIT READY could not be run or interpreted (sg_turs missing, timeout,
+# permission error). Readiness is unknown; not a fail-gate (#128).
+FLAG_TUR_UNAVAILABLE = "TUR_UNAVAILABLE"
+# ATA/NVMe drive answered TUR Not Ready but returned valid SMART/health data;
+# the SAT/NVMe translation result is not treated as a fail-gate (#128).
+FLAG_TUR_NOT_READY = "TUR_NOT_READY"
+# Power-on hours were not reported: the §5 age cap and §15.1 SMART-reset
+# heuristic could not be evaluated (#129). Unknown POH is never treated as 0.
+FLAG_POH_NOT_REPORTED = "POH_NOT_REPORTED"
+# A critical defect/health counter (ATA 5/197, SCSI grown defects / uncorrected
+# errors, NVMe available spare) was not reported. Missing data is never graded
+# as healthy; the scoring engine caps the grade (#134).
+FLAG_MISSING_DEFECT_DATA = "MISSING_DEFECT_DATA"
 
 # Ungraded reason codes (§4.1, §15.5, §15.6)
 UNGRADED_SECURITY_LOCKED = "SECURITY_LOCKED"
@@ -93,6 +106,7 @@ _FAIL_CODE_BY_FIELD = {
     "ssd_percentage_used_endurance": "F-ENDURANCE",
     "percentage_used": "F-ENDURANCE",
     "available_spare": "F-SPARE-BLOCKS",
+    "available_reserved_space": "F-SPARE-BLOCKS",
 }
 
 
@@ -269,6 +283,77 @@ def is_ungraded(device: dict) -> bool:
     return device.get("grading_status") == STATUS_UNGRADED or bool(ungraded_reasons(device))
 
 
+def _normalized_state(device: dict) -> str:
+    state = device.get("state")
+    if state is None:
+        state = device.get("State")
+    return str(state or "").strip().lower().replace("_", " ")
+
+
+def tur_state_unknown(device: dict) -> bool:
+    """True when TEST UNIT READY could not be run or interpreted (#128)."""
+    return _normalized_state(device) == "unknown"
+
+
+def tur_not_ready_waived(device: dict) -> bool:
+    """
+    True when an ATA/NVMe drive reported TUR Not Ready but still returned
+    valid SMART/health data (#128). TUR on these protocols goes through SAT /
+    NVMe translation, so a Not Ready there is not a trustworthy F-NO-RESPONSE
+    signal when the drive demonstrably answered SMART. SCSI keeps the #123
+    fail-gate.
+    """
+    if _normalized_state(device) not in ("not ready", "notready"):
+        return False
+    protocol = str(device.get("transport_protocol") or "").strip().upper()
+    return protocol in ("ATA", "NVME") and device.get("smart_data_readable") is True
+
+
+def _field_missing(device: dict, *keys: str) -> bool:
+    """
+    True when the first of ``keys`` present in the record has no usable value
+    (None, non-numeric, or a negative "not reported" sentinel such as -1).
+    Records carrying none of the keys are not judged (hand-built dicts).
+    """
+    for key in keys:
+        if key in device:
+            value = _int_or_none(device.get(key))
+            return value is None or value < 0
+    return False
+
+
+def missing_defect_data(device: dict) -> list[str]:
+    """
+    Critical defect/health fields a graded drive failed to report (#134).
+
+    Only counters that every healthy drive of that protocol reports are
+    critical: ATA reallocated sectors (5) and, for HDDs, pending sectors
+    (197 — many SSDs legitimately omit it); SCSI grown defects and
+    uncorrected errors; NVMe available spare. Optional attributes such as
+    ATA 198 are never flagged.
+    """
+    if is_ungraded(device):
+        return []
+    protocol = str(device.get("transport_protocol") or "").strip().upper()
+    missing: list[str] = []
+    if protocol == "ATA":
+        if _field_missing(device, "reallocated_sectors"):
+            missing.append("reallocated_sectors")
+        if str(device.get("media_type") or "").strip().upper() == "HDD" and _field_missing(
+            device, "pending_sectors", "pending_reallocated_sectors"
+        ):
+            missing.append("pending_sectors")
+    elif protocol in ("SCSI", "SAS"):
+        if _field_missing(device, "grown_defects", "reallocated_sectors"):
+            missing.append("grown_defects")
+        if _field_missing(device, "uncorrected_errors", "uncorrectable_errors"):
+            missing.append("uncorrected_errors")
+    elif protocol == "NVME":
+        if _field_missing(device, "available_spare"):
+            missing.append("available_spare")
+    return missing
+
+
 def warning_flags(device: dict) -> list[str]:
     """§15 warning flags (non-fatal anomalies that must surface in output)."""
     flags: list[str] = []
@@ -276,9 +361,30 @@ def warning_flags(device: dict) -> list[str]:
         if flag and flag not in flags:
             flags.append(str(flag))
 
+    if tur_state_unknown(device) and FLAG_TUR_UNAVAILABLE not in flags:
+        flags.append(FLAG_TUR_UNAVAILABLE)
+    if tur_not_ready_waived(device) and FLAG_TUR_NOT_READY not in flags:
+        flags.append(FLAG_TUR_NOT_READY)
+
     if _smart_reset_suspected(device) and FLAG_SMART_RESET_SUSPECTED not in flags:
         flags.append(FLAG_SMART_RESET_SUSPECTED)
+    if _poh_not_reported(device) and FLAG_POH_NOT_REPORTED not in flags:
+        flags.append(FLAG_POH_NOT_REPORTED)
+    if missing_defect_data(device) and FLAG_MISSING_DEFECT_DATA not in flags:
+        flags.append(FLAG_MISSING_DEFECT_DATA)
     return flags
+
+
+def _poh_not_reported(device: dict) -> bool:
+    """
+    True when a graded drive carries a ``power_on_hours`` field with no usable
+    value (#129). Records without the field at all (hand-built dicts) and
+    UNGRADED records (which already explain themselves) are not flagged.
+    """
+    if "power_on_hours" not in device or is_ungraded(device):
+        return False
+    poh = _int_or_none(device.get("power_on_hours"))
+    return poh is None or poh < 0
 
 
 def _smart_reset_suspected(device: dict) -> bool:
@@ -288,7 +394,8 @@ def _smart_reset_suspected(device: dict) -> bool:
     suggests the SMART counters were reset.
     """
     poh = _int_or_none(device.get("power_on_hours"))
-    if poh is None or poh >= 100:
+    # Unknown POH is unknown, not "brand new" (#129)
+    if poh is None or poh < 0 or poh >= 100:
         return False
 
     power_cycles = _int_or_none(device.get("power_cycle_count")) or 0

@@ -55,6 +55,7 @@ from cdi_health.classes.config import (
     GRADING_PROFILE_BINARY,
     get_config,
 )
+from cdi_health.classes.revert import missing_defect_data, tur_not_ready_waived
 
 # Grade ordering, best to worst
 GRADE_ORDER: tuple[str, ...] = ("A", "B", "C", "D", "F")
@@ -270,6 +271,11 @@ class HealthScoreCalculator:
         deductions.extend(temp_deductions)
         score -= sum(d.points for d in temp_deductions)
 
+        # Missing critical defect data caps the grade (#134)
+        missing_deductions = self._check_missing_defect_data(device, None)
+        deductions.extend(missing_deductions)
+        score -= sum(d.points for d in missing_deductions)
+
         score = max(0, min(100, score))
 
         has_failed_selftest = any("failed" in d.reason.lower() and "self-test" in d.reason.lower() for d in deductions)
@@ -333,13 +339,16 @@ class HealthScoreCalculator:
         if protocol == "ATA":
             deductions.extend(self._check_ata_metrics(device, attribute_grades))
         elif protocol == "NVME":
-            deductions.extend(self._check_nvme_metrics(device))
+            deductions.extend(self._check_nvme_metrics(device, attribute_grades))
         elif protocol == "SCSI":
             deductions.extend(self._check_scsi_metrics(device, attribute_grades))
 
         # Self-test history (§10) — graduated and recency-weighted, cross-protocol
         if protocol in ("ATA", "NVME", "SCSI"):
             deductions.extend(self._check_selftest_history(device, protocol, attribute_grades))
+
+        # Missing critical defect data caps the grade (#134)
+        deductions.extend(self._check_missing_defect_data(device, attribute_grades))
 
         # Temperature (§11)
         deductions.extend(self._check_temperature(device))
@@ -418,6 +427,51 @@ class HealthScoreCalculator:
             if s.lstrip("-").isdigit():
                 return int(s)
         return None
+
+    @classmethod
+    def _defect_value(cls, device: dict, *keys: str) -> int | None:
+        """
+        First usable value among ``keys`` (canonical name, then legacy aliases).
+
+        Returns None when a key is present but unreported (None / negative
+        sentinel) so missing data is never graded as a healthy 0 (#134);
+        records carrying none of the keys (hand-built dicts) read as 0.
+        """
+        present = False
+        for key in keys:
+            if key not in device:
+                continue
+            present = True
+            value = cls._coerce_int(device.get(key))
+            if value is not None and value >= 0:
+                return value
+        return None if present else 0
+
+    def _check_missing_defect_data(self, device: dict, attribute_grades: dict | None) -> list[ScoreDeduction]:
+        """
+        Cap drives that did not report critical defect/health counters (#134).
+
+        The cap grade comes from ``grading.missing_defect_data_grade_cap``
+        (default B), so such a drive can never certify as A. Under abcdf it is
+        recorded in ``attribute_grades`` (worst-attribute-wins); under binary
+        it is a warning deduction that lowers the score into the cap band.
+        """
+        missing = missing_defect_data(device)
+        if not missing:
+            return []
+        cap = self.config.missing_defect_data_grade_cap
+        if attribute_grades is not None:
+            attribute_grades["missing_defect_data"] = {"value": list(missing), "grade": cap}
+        return [
+            ScoreDeduction(
+                reason="Critical defect data not reported (" + ", ".join(missing) + ")",
+                points=100 - self._band_base_score(cap),
+                severity="warning",
+                field="missing_defect_data",
+                value=list(missing),
+                attribute_grade=cap if attribute_grades is not None else None,
+            )
+        ]
 
     @staticmethod
     def _determine_drive_class(device: dict) -> str:
@@ -534,6 +588,156 @@ class HealthScoreCalculator:
             if threshold is not None and poh > int(threshold):
                 cap = worst_grade(cap, grade)
         return cap
+
+    @classmethod
+    def _first_value(cls, device: dict, *keys: str) -> int | None:
+        """First non-negative integer value among ``keys`` (None when absent)."""
+        for key in keys:
+            value = cls._coerce_int(device.get(key))
+            if value is not None and value >= 0:
+                return value
+        return None
+
+    def _check_ssd_wear(self, pct_used: int | None, *, field: str, label: str) -> list[ScoreDeduction]:
+        """
+        SSD wear (NVMe percentage used, ATA/SAS SSD endurance) per #133.
+
+        Below 100% wear never drives the letter grade: under the moderate
+        tier there is no effect; at/above the moderate / high tiers a minor
+        point deduction applies (attribute_grade=None, so under abcdf it only
+        lowers the score within the band). Above ``maximum_percentage_used``
+        remains a critical fail-gate (F-ENDURANCE).
+        """
+        if pct_used is None or pct_used < 0:
+            return []
+        threshold = self.config.maximum_ssd_percentage_used
+        if pct_used > threshold:
+            return [
+                ScoreDeduction(
+                    reason=f"{label[0].upper()}{label[1:]} exceeds threshold",
+                    points=self.THRESHOLD_EXCEEDED_DEDUCTION,
+                    severity="critical",
+                    field=field,
+                    value=pct_used,
+                    threshold=threshold,
+                )
+            ]
+        if pct_used >= self.config.ssd_wear_warning_high:
+            return [
+                ScoreDeduction(
+                    reason=f"High {label}",
+                    points=self.config.ssd_wear_high_deduction,
+                    severity="warning",
+                    field=field,
+                    value=pct_used,
+                    threshold=self.config.ssd_wear_warning_high,
+                )
+            ]
+        if pct_used >= self.config.ssd_wear_warning_moderate:
+            return [
+                ScoreDeduction(
+                    reason=f"Moderate {label}",
+                    points=self.config.ssd_wear_moderate_deduction,
+                    severity="info",
+                    field=field,
+                    value=pct_used,
+                    threshold=self.config.ssd_wear_warning_moderate,
+                )
+            ]
+        return []
+
+    def _spare_band_grade(self, value: int) -> str:
+        """Grade A-D for a spare percentage from minimum-spare bands (#133)."""
+        bands = self.config.available_spare_bands
+        for grade in ("A", "B", "C"):
+            minimum = bands.get(grade)
+            if minimum is not None and value >= minimum:
+                return grade
+        return "D"
+
+    def _grade_spare(
+        self,
+        value: int,
+        *,
+        floor: int,
+        failed: bool,
+        field: str,
+        label: str,
+        attribute_grades: dict | None,
+    ) -> list[ScoreDeduction]:
+        """
+        Grade remaining spare capacity (#133).
+
+        ``failed`` (spare below the drive threshold) keeps the critical
+        fail-gate (F-SPARE-BLOCKS). Otherwise ``nvme.available_spare_bands``
+        (minimum % per grade) give A/B/C and anything below C's minimum is D.
+        Under abcdf (``attribute_grades`` given) the band grade is recorded
+        for worst-attribute-wins / multi-factor; under binary only the D
+        range adds a warning deduction.
+        """
+        if failed:
+            if attribute_grades is not None:
+                attribute_grades[field] = {"value": value, "grade": "F", "threshold": floor}
+            return [
+                ScoreDeduction(
+                    reason=f"{label} below threshold",
+                    points=self.THRESHOLD_EXCEEDED_DEDUCTION,
+                    severity="critical",
+                    field=field,
+                    value=value,
+                    threshold=floor,
+                )
+            ]
+
+        grade = self._spare_band_grade(value)
+        if attribute_grades is None:
+            if grade != "D":
+                return []
+            return [
+                ScoreDeduction(
+                    reason=f"Low {label.lower()} (above drive threshold)",
+                    points=self.config.available_spare_low_deduction,
+                    severity="warning",
+                    field=field,
+                    value=value,
+                    threshold=floor,
+                )
+            ]
+
+        attribute_grades[field] = {"value": value, "grade": grade, "threshold": floor}
+        if grade == "A":
+            return []
+        return [
+            ScoreDeduction(
+                reason=f"Low {label.lower()}",
+                points=100 - self._band_base_score(grade),
+                severity="info" if grade == "B" else "warning",
+                field=field,
+                value=value,
+                threshold=floor,
+                attribute_grade=grade,
+            )
+        ]
+
+    def _check_ata_reserved_space(self, device: dict, attribute_grades: dict | None) -> list[ScoreDeduction]:
+        """
+        ATA SSD attribute 232 Available_Reservd_Space (normalized) graded with
+        the same spare bands as NVMe (#133). The attribute's own threshold is
+        the fail floor (ATA semantics: failed when value <= thresh, thresh > 0).
+        Optional attribute: absence is not flagged.
+        """
+        value = self._coerce_int(device.get("available_reserved_space"))
+        if value is None or value < 0:
+            return []
+        thresh = self._coerce_int(device.get("available_reserved_space_threshold")) or 0
+        return self._grade_spare(
+            value,
+            floor=thresh,
+            failed=thresh > 0 and value <= thresh,
+            field="available_reserved_space",
+            label="Available reserved space",
+            attribute_grades=attribute_grades,
+        )
 
     # ------------------------------------------------------------------
     # Binary-profile helpers (CDI v0.11.0 path)
@@ -809,44 +1013,17 @@ class HealthScoreCalculator:
                 )
             )
 
-        # SSD Percentage Used Endurance (for ATA SSDs)
-        # Check both ssd_percentage_used_endurance and percentage_used fields
-        pct_used = device.get("ssd_percentage_used_endurance") or device.get("percentage_used")
-        if pct_used is not None and pct_used >= 0:
-            threshold = self.config.maximum_ssd_percentage_used
-            warn_high = self.config.ssd_wear_warning_high
-            warn_moderate = self.config.ssd_wear_warning_moderate
-            if pct_used > threshold:
-                deductions.append(
-                    ScoreDeduction(
-                        reason="SSD percentage used exceeds threshold",
-                        points=self.THRESHOLD_EXCEEDED_DEDUCTION,
-                        severity="critical",
-                        field="ssd_percentage_used_endurance",
-                        value=pct_used,
-                        threshold=threshold,
-                    )
-                )
-            elif pct_used > warn_high:
-                deductions.append(
-                    ScoreDeduction(
-                        reason="High SSD percentage used",
-                        points=self.config.ssd_wear_high_deduction,
-                        severity="warning",
-                        field="ssd_percentage_used_endurance",
-                        value=pct_used,
-                    )
-                )
-            elif pct_used > warn_moderate:
-                deductions.append(
-                    ScoreDeduction(
-                        reason="Moderate SSD percentage used",
-                        points=self.config.ssd_wear_moderate_deduction,
-                        severity="info",
-                        field="ssd_percentage_used_endurance",
-                        value=pct_used,
-                    )
-                )
+        # SSD wear (ATA SSDs): minor point tiers only below 100% used (#133)
+        deductions.extend(
+            self._check_ssd_wear(
+                self._first_value(device, "ssd_percentage_used_endurance", "percentage_used"),
+                field="ssd_percentage_used_endurance",
+                label="SSD percentage used",
+            )
+        )
+
+        # Available reserved space (ATA SSD attribute 232), same bands as NVMe spare (#133)
+        deductions.extend(self._check_ata_reserved_space(device, None))
 
         # ATA SMART self-test history (same critical fail-gate as NVMe)
         deductions.extend(self._check_ata_scsi_selftest(device, protocol_label="ATA"))
@@ -907,6 +1084,15 @@ class HealthScoreCalculator:
                 )
             )
 
+        # SAS SSD wear (#133): same minor tiers as ATA/NVMe
+        deductions.extend(
+            self._check_ssd_wear(
+                self._first_value(device, "ssd_percentage_used_endurance", "percentage_used"),
+                field="ssd_percentage_used_endurance",
+                label="SSD percentage used",
+            )
+        )
+
         # SCSI self-test history (same critical fail-gate as NVMe/ATA)
         deductions.extend(self._check_ata_scsi_selftest(device, protocol_label="SCSI"))
 
@@ -923,6 +1109,10 @@ class HealthScoreCalculator:
         ``Fail`` and TUR ``Not Ready`` are Stage 1 fail-gates (F-NO-RESPONSE).
         Wired here because ``state`` is never set to the literal "fail" after
         commit 3537842 — live scans report Ready / Not Ready from sg_turs.
+
+        #128: ``Unknown`` (TUR tool missing / errored / timed out) is not a
+        fail-gate, and an ATA/NVMe TUR Not Ready is waived when the drive
+        returned valid SMART/health data; both surface as warning flags.
         """
         state = device.get("state") or device.get("State")
         if state is None:
@@ -931,6 +1121,8 @@ class HealthScoreCalculator:
         if state_norm == "fail":
             reason = "Device operational state failed"
         elif state_norm in ("not ready", "notready"):
+            if tur_not_ready_waived(device):
+                return []
             reason = "Device not ready (TUR / F-NO-RESPONSE)"
         else:
             return []
@@ -992,7 +1184,7 @@ class HealthScoreCalculator:
         # Reallocated sectors (graduated bands, worst-attribute-wins)
         d = self._grade_attribute(
             field_name="reallocated_sectors",
-            value=device.get("reallocated_sectors", 0) or 0,
+            value=self._defect_value(device, "reallocated_sectors"),
             bands=self.config.ata_reallocated_sectors_bands,
             reason="Reallocated sectors",
             attribute_grades=attribute_grades,
@@ -1001,12 +1193,9 @@ class HealthScoreCalculator:
             deductions.append(d)
 
         # Pending sectors
-        pending_raw = device.get("pending_sectors")
-        if pending_raw is None:
-            pending_raw = device.get("pending_reallocated_sectors")
         d = self._grade_attribute(
             field_name="pending_sectors",
-            value=pending_raw or 0,
+            value=self._defect_value(device, "pending_sectors", "pending_reallocated_sectors"),
             bands=self.config.ata_pending_sectors_bands,
             reason="Pending sectors",
             attribute_grades=attribute_grades,
@@ -1015,12 +1204,9 @@ class HealthScoreCalculator:
             deductions.append(d)
 
         # Uncorrectable / offline uncorrectable (canonical + legacy alias; grade once)
-        uncorrectable_raw = device.get("uncorrectable_errors")
-        if uncorrectable_raw is None:
-            uncorrectable_raw = device.get("offline_uncorrectable_sectors")
         d = self._grade_attribute(
             field_name="uncorrectable_errors",
-            value=uncorrectable_raw or 0,
+            value=self._defect_value(device, "uncorrectable_errors", "offline_uncorrectable_sectors"),
             bands=self.config.ata_uncorrectable_errors_bands,
             reason="Uncorrectable errors",
             attribute_grades=attribute_grades,
@@ -1028,44 +1214,17 @@ class HealthScoreCalculator:
         if d:
             deductions.append(d)
 
-        # SSD Percentage Used Endurance (for ATA SSDs)
-        # Check both ssd_percentage_used_endurance and percentage_used fields
-        pct_used = device.get("ssd_percentage_used_endurance") or device.get("percentage_used")
-        if pct_used is not None and pct_used >= 0:
-            threshold = self.config.maximum_ssd_percentage_used
-            warn_high = self.config.ssd_wear_warning_high
-            warn_moderate = self.config.ssd_wear_warning_moderate
-            if pct_used > threshold:
-                deductions.append(
-                    ScoreDeduction(
-                        reason="SSD percentage used exceeds threshold",
-                        points=self.THRESHOLD_EXCEEDED_DEDUCTION,
-                        severity="critical",
-                        field="ssd_percentage_used_endurance",
-                        value=pct_used,
-                        threshold=threshold,
-                    )
-                )
-            elif pct_used > warn_high:
-                deductions.append(
-                    ScoreDeduction(
-                        reason="High SSD percentage used",
-                        points=self.config.ssd_wear_high_deduction,
-                        severity="warning",
-                        field="ssd_percentage_used_endurance",
-                        value=pct_used,
-                    )
-                )
-            elif pct_used > warn_moderate:
-                deductions.append(
-                    ScoreDeduction(
-                        reason="Moderate SSD percentage used",
-                        points=self.config.ssd_wear_moderate_deduction,
-                        severity="info",
-                        field="ssd_percentage_used_endurance",
-                        value=pct_used,
-                    )
-                )
+        # SSD wear (ATA SSDs): minor point tiers only below 100% used (#133)
+        deductions.extend(
+            self._check_ssd_wear(
+                self._first_value(device, "ssd_percentage_used_endurance", "percentage_used"),
+                field="ssd_percentage_used_endurance",
+                label="SSD percentage used",
+            )
+        )
+
+        # Available reserved space (ATA SSD attribute 232), same bands as NVMe spare (#133)
+        deductions.extend(self._check_ata_reserved_space(device, attribute_grades))
 
         return deductions
 
@@ -1078,12 +1237,9 @@ class HealthScoreCalculator:
         deductions = []
 
         # Grown defects: A=0, B=1-9, C=10-50, D=51-100, F>100
-        grown_raw = device.get("grown_defects")
-        if grown_raw is None:
-            grown_raw = device.get("reallocated_sectors")
         d = self._grade_attribute(
             field_name="grown_defects",
-            value=grown_raw or 0,
+            value=self._defect_value(device, "grown_defects", "reallocated_sectors"),
             bands=self.config.scsi_grown_defects_bands,
             reason="Grown defects",
             attribute_grades=attribute_grades,
@@ -1092,20 +1248,26 @@ class HealthScoreCalculator:
             deductions.append(d)
 
         # Uncorrected read/write errors: A=0, B=1-5, C=6-25, D=26-100, F>100
-        uncorrected = device.get("uncorrected_errors")
-        if uncorrected is None:
-            uncorrected = device.get("uncorrectable_errors")
-        if uncorrected is None:
-            uncorrected = device.get("offline_uncorrectable_sectors")
         d = self._grade_attribute(
             field_name="uncorrected_errors",
-            value=uncorrected or 0,
+            value=self._defect_value(
+                device, "uncorrected_errors", "uncorrectable_errors", "offline_uncorrectable_sectors"
+            ),
             bands=self.config.scsi_uncorrected_errors_bands,
             reason="Uncorrected read/write errors",
             attribute_grades=attribute_grades,
         )
         if d:
             deductions.append(d)
+
+        # SAS SSD wear (#133): same minor tiers as ATA/NVMe
+        deductions.extend(
+            self._check_ssd_wear(
+                self._first_value(device, "ssd_percentage_used_endurance", "percentage_used"),
+                field="ssd_percentage_used_endurance",
+                label="SSD percentage used",
+            )
+        )
 
         return deductions
 
@@ -1278,63 +1440,40 @@ class HealthScoreCalculator:
     # NVMe checks (§9 — fail-gates and wear tiers)
     # ------------------------------------------------------------------
 
-    def _check_nvme_metrics(self, device: dict) -> list[ScoreDeduction]:
-        """Check NVMe-specific metrics."""
+    def _check_nvme_metrics(self, device: dict, attribute_grades: dict | None = None) -> list[ScoreDeduction]:
+        """
+        Check NVMe-specific metrics.
+
+        ``attribute_grades`` is passed by the abcdf profile so available
+        spare feeds worst-attribute-wins (#133); binary passes None.
+        """
         deductions = []
 
-        # Percentage used
-        pct_used = device.get("percentage_used", 0) or 0
-        threshold = self.config.maximum_ssd_percentage_used
-        if pct_used > threshold:
-            deductions.append(
-                ScoreDeduction(
-                    reason="Percentage used exceeds threshold",
-                    points=self.THRESHOLD_EXCEEDED_DEDUCTION,
-                    severity="critical",
-                    field="percentage_used",
-                    value=pct_used,
-                    threshold=threshold,
-                )
+        # Percentage used: minor point tiers below 100%; > maximum is F (#133)
+        deductions.extend(
+            self._check_ssd_wear(
+                self._coerce_int(device.get("percentage_used")),
+                field="percentage_used",
+                label="percentage used",
             )
-        elif pct_used > self.config.ssd_wear_warning_high:
-            deductions.append(
-                ScoreDeduction(
-                    reason="High percentage used",
-                    points=self.config.ssd_wear_high_deduction,
-                    severity="warning",
-                    field="percentage_used",
-                    value=pct_used,
-                    threshold=threshold,
-                )
-            )
-        elif pct_used > self.config.ssd_wear_warning_moderate:
-            deductions.append(
-                ScoreDeduction(
-                    reason="Moderate percentage used",
-                    points=self.config.ssd_wear_moderate_deduction,
-                    severity="info",
-                    field="percentage_used",
-                    value=pct_used,
-                    threshold=threshold,
-                )
-            )
+        )
 
-        # Available spare — prefer drive AVSPT; YAML fallback is ~10%, not 97%
-        spare = device.get("available_spare")
-        if spare is None:
-            spare = 100
-        threshold = device.get("available_spare_threshold")
-        if threshold is None:
-            threshold = self.config.minimum_ssd_available_spare
-        if spare < threshold:
-            deductions.append(
-                ScoreDeduction(
-                    reason="Available spare below threshold",
-                    points=self.THRESHOLD_EXCEEDED_DEDUCTION,
-                    severity="critical",
+        # Available spare: graduated bands above the drive AVSPT (#133).
+        # Missing spare is unknown, never assumed 100% (#134): no band is
+        # recorded and _check_missing_defect_data caps the grade.
+        spare = self._coerce_int(device.get("available_spare"))
+        if spare is not None:
+            avspt = self._coerce_int(device.get("available_spare_threshold"))
+            if avspt is None:
+                avspt = self.config.minimum_ssd_available_spare
+            deductions.extend(
+                self._grade_spare(
+                    spare,
+                    floor=avspt,
+                    failed=spare < avspt,
                     field="available_spare",
-                    value=spare,
-                    threshold=threshold,
+                    label="Available spare",
+                    attribute_grades=attribute_grades,
                 )
             )
 

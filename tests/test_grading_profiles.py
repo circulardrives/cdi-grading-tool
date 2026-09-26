@@ -288,3 +288,147 @@ class TestFixtureFilesExist:
         data = json.loads((FIXTURES / "report_1SHK383Z.json").read_text())
         assert data["serial_number"] == "1SHK383Z"
         assert data["scsi_grown_defect_list"] == 13
+
+
+def _nvme(pu: int | None = 0, spare: int | None = 100, avspt: int | None = 10) -> dict:
+    device = {"transport_protocol": "NVME", "smart_status": True, "smart_data_readable": True}
+    device["percentage_used"] = pu
+    device["available_spare"] = spare
+    if avspt is not None:
+        device["available_spare_threshold"] = avspt
+    return device
+
+
+class TestWearAndSparePolicy:
+    """#133: wear below 100% is points-only; available spare is graded."""
+
+    def test_nvme_wear_tiers_lower_score_not_grade(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        results = [calculate_health_score(_nvme(pu=pu)) for pu in (79, 85, 95)]
+        assert [r.grade for r in results] == ["A", "A", "A"]
+        scores = [r.score for r in results]
+        assert scores[0] > scores[1] > scores[2]
+        assert scores == [100, 95, 90]
+        # Tier deductions are visible and non-graduated
+        assert not any(d.field == "percentage_used" for d in results[0].deductions)
+        wear = [d for d in results[2].deductions if d.field == "percentage_used"]
+        assert wear and wear[0].attribute_grade is None and wear[0].severity == "warning"
+        assert "percentage_used" not in results[2].attribute_grades
+
+    def test_wear_tiers_are_inclusive_at_boundary(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        assert calculate_health_score(_nvme(pu=80)).score == 95
+        assert calculate_health_score(_nvme(pu=90)).score == 90
+
+    def test_wear_over_100_still_fails(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        result = calculate_health_score(_nvme(pu=101))
+        assert result.grade == "F"
+
+    @pytest.mark.parametrize(
+        ("spare", "avspt", "grade"),
+        [(100, 10, "A"), (80, 10, "A"), (70, 10, "B"), (45, 10, "C"), (20, 10, "D"), (10, 10, "D"), (5, 10, "F")],
+    )
+    def test_nvme_available_spare_bands(self, spare: int, avspt: int, grade: str) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        result = calculate_health_score(_nvme(spare=spare, avspt=avspt))
+        assert result.grade == grade
+        info = result.attribute_grades["available_spare"]
+        assert info == {"value": spare, "grade": grade, "threshold": avspt}
+
+    def test_spare_feeds_multi_factor(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        device = _nvme(spare=45)  # C
+        device["nvme_self_test_log"] = {
+            "entries": [{"self_test_result": {"value": 1}, "power_on_hours": 0} for _ in range(1)]
+        }
+        device["power_on_hours"] = 5000  # one old failure -> C
+        result = calculate_health_score(device)
+        assert result.attribute_grades["available_spare"]["grade"] == "C"
+        assert result.attribute_grades["self_test_history"]["grade"] == "C"
+        assert result.grade == "C"  # only two C-or-worse attributes: no escalation
+
+    def test_spare_threshold_fallback_from_yaml(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        result = calculate_health_score(_nvme(spare=8, avspt=None))
+        assert result.grade == "F"  # below minimum_available_spare fallback (10)
+
+    def test_binary_spare_d_range_warning(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("binary")
+        healthy = calculate_health_score(_nvme(spare=70))
+        assert healthy.score == 100
+        low = calculate_health_score(_nvme(spare=20))
+        assert low.score == 90
+        assert any(d.field == "available_spare" and d.severity == "warning" for d in low.deductions)
+        assert calculate_health_score(_nvme(spare=5)).grade == "F"
+
+    def test_binary_wear_tiers(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("binary")
+        assert [calculate_health_score(_nvme(pu=pu)).score for pu in (79, 80, 90)] == [100, 95, 90]
+
+    def test_missing_spare_warning_flag(self) -> None:
+        from cdi_health.classes.revert import FLAG_MISSING_DEFECT_DATA, warning_flags
+
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        device = _nvme(spare=None)
+        result = calculate_health_score(device)
+        assert "available_spare" not in result.attribute_grades
+        assert result.grade == "B"
+        assert FLAG_MISSING_DEFECT_DATA in warning_flags(device)
+
+    @pytest.mark.parametrize("profile", ["abcdf", "binary"])
+    def test_ata_ssd_wear_tiers(self, profile: str) -> None:
+        ThresholdConfig.get_instance().set_grading_profile(profile)
+        base = {"transport_protocol": "ATA", "media_type": "SSD", "smart_status": True, "reallocated_sectors": 0}
+        scores = [calculate_health_score({**base, "ssd_percentage_used_endurance": pu}).score for pu in (79, 80, 90)]
+        assert scores == [100, 95, 90]
+        # 0% used must not fall through to another field (was `a or b`)
+        zero = calculate_health_score({**base, "ssd_percentage_used_endurance": 0, "percentage_used": 95})
+        assert zero.score == 100
+
+    @pytest.mark.parametrize("profile", ["abcdf", "binary"])
+    def test_sas_ssd_wear_tiers(self, profile: str) -> None:
+        ThresholdConfig.get_instance().set_grading_profile(profile)
+        base = {"transport_protocol": "SCSI", "smart_status": True, "grown_defects": 0, "uncorrectable_errors": 0}
+        scores = [calculate_health_score({**base, "ssd_percentage_used_endurance": pu}).score for pu in (79, 85, 95)]
+        assert scores == [100, 95, 90]
+
+    @pytest.mark.parametrize(("value", "grade"), [(100, "A"), (70, "B"), (45, "C"), (20, "D"), (4, "F")])
+    def test_ata_reserved_space_bands(self, value: int, grade: str) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        device = {
+            "transport_protocol": "ATA",
+            "media_type": "SSD",
+            "smart_status": True,
+            "reallocated_sectors": 0,
+            "available_reserved_space": value,
+            "available_reserved_space_threshold": 4,
+        }
+        result = calculate_health_score(device)
+        assert result.grade == grade
+        assert result.attribute_grades["available_reserved_space"]["grade"] == grade
+
+    def test_ata_232_parsed_only_when_named_reserved_space(self) -> None:
+        from cdi_health.classes.mock import create_mock_device
+
+        mock_dir = Path(__file__).parent.parent / "src" / "cdi_health" / "mock_data" / "ata"
+        with (mock_dir / "SDSSDH3_512G_healthy.json").open() as f:
+            data = json.load(f)
+        device = create_mock_device(mock_data=data)
+        assert device.available_reserved_space == 100
+        assert device.available_reserved_space_threshold == 4
+
+        for attr in data["ata_smart_attributes"]["table"]:
+            if attr["id"] == 232:
+                attr["name"] = "Unknown_Attribute"
+        assert create_mock_device(mock_data=data).available_reserved_space is None
+
+    def test_spare_bands_configurable_and_validated(self) -> None:
+        from cdi_health.classes.config import ConfigError
+
+        cfg = ThresholdConfig.get_instance()
+        cfg.load_from_dict({"nvme": {"available_spare_bands": {"A": 90, "B": 70, "C": 50}}})
+        cfg.set_grading_profile("abcdf")
+        assert calculate_health_score(_nvme(spare=85)).grade == "B"
+        with pytest.raises(ConfigError):
+            cfg.load_from_dict({"nvme": {"available_spare_bands": {"A": 40, "B": 60}}})

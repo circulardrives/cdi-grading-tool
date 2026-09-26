@@ -58,6 +58,13 @@ DEFAULT_THRESHOLDS = {
     "nvme": {
         "maximum_percentage_used": 100,
         "minimum_available_spare": 10,
+        # Available spare bands (#133): minimum spare % for each grade. Below
+        # C's minimum but >= the drive AVSPT (fallback minimum_available_spare)
+        # is D; below AVSPT is the F-SPARE-BLOCKS fail-gate. Also applied to
+        # ATA SSD attribute 232 (Available_Reservd_Space) normalized values.
+        "available_spare_bands": {"A": 80, "B": 60, "C": 40},
+        # Binary profile: warning deduction when spare is in the D range.
+        "available_spare_low_deduction": 10,
         # Wear warning tiers (percentage used); critical still uses maximum_percentage_used
         "wear_warning_moderate": 80,
         "wear_warning_high": 90,
@@ -123,6 +130,10 @@ DEFAULT_THRESHOLDS = {
         },
         # Self-test recency window (§10 / #121) — abcdf profile only.
         "selftest_recent_poh_window": 1000,
+        # Best grade a drive can receive when it does not report a critical
+        # defect/health counter (ATA 5/197, SCSI grown defects / uncorrected
+        # errors, NVMe available spare) (#134).
+        "missing_defect_data_grade_cap": "B",
         "deductions": {
             "smart_failure": 50,
             "per_sector": 5,
@@ -147,6 +158,146 @@ _GRADING_PROFILE_ALIASES = {
     "graduated": GRADING_PROFILE_ABCDF,
     "standard": GRADING_PROFILE_ABCDF,
 }
+
+
+class ConfigError(ValueError):
+    """
+    Raised when an explicitly supplied thresholds config cannot be loaded or
+    fails schema validation (#137). Grading with a silently wrong policy is
+    worse than failing, so callers must surface this (CLI exits non-zero).
+    """
+
+
+_GRADE_KEYS = ("A", "B", "C", "D", "F")
+
+# Grade-keyed maps whose keys may be any subset of A-F (value = numeric limit).
+# Paths are relative to the config root.
+_GRADE_MAP_PATHS = {
+    ("nvme", "available_spare_bands"),
+    ("ata", "reallocated_sectors_bands"),
+    ("ata", "pending_sectors_bands"),
+    ("ata", "uncorrectable_errors_bands"),
+    ("scsi", "grown_defects_bands"),
+    ("scsi", "uncorrected_errors_bands"),
+    ("grading", "grade_bands"),
+    ("grading", "grade_band_base_scores"),
+    ("grading", "age_cap", "enterprise"),
+    ("grading", "age_cap", "consumer"),
+}
+
+# Grade maps whose limits must rise from A towards F (defect-count maximums,
+# age-cap POH thresholds) or fall (minimum score per grade).
+_ASCENDING_GRADE_MAPS = {
+    ("ata", "reallocated_sectors_bands"),
+    ("ata", "pending_sectors_bands"),
+    ("ata", "uncorrectable_errors_bands"),
+    ("scsi", "grown_defects_bands"),
+    ("scsi", "uncorrected_errors_bands"),
+    ("grading", "age_cap", "enterprise"),
+    ("grading", "age_cap", "consumer"),
+}
+_DESCENDING_GRADE_MAPS = {
+    ("nvme", "available_spare_bands"),
+    ("grading", "grade_bands"),
+    ("grading", "grade_band_base_scores"),
+}
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _type_name(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if _is_number(value):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, dict):
+        return "mapping"
+    if isinstance(value, list):
+        return "list"
+    return type(value).__name__
+
+
+def validate_thresholds(config: Any, schema: dict | None = None) -> list[str]:
+    """
+    Validate a (partial) thresholds mapping against the DEFAULT_THRESHOLDS
+    schema (#137): unknown keys, wrong value types, invalid grade-map keys,
+    non-monotonic bands, unknown grading profile / grade cap.
+
+    :return: list of human-readable problems (empty when valid)
+    """
+    if schema is None:
+        schema = DEFAULT_THRESHOLDS
+    errors: list[str] = []
+    if not isinstance(config, dict):
+        return [f"top level must be a mapping, got {_type_name(config)}"]
+    _validate_node(config, schema, (), errors)
+
+    grading = config.get("grading")
+    if isinstance(grading, dict):
+        profile = grading.get("profile")
+        if isinstance(profile, str) and profile.strip().lower() not in _GRADING_PROFILE_ALIASES:
+            errors.append(
+                f"grading.profile: unknown profile {profile!r} "
+                f"(expected one of: {', '.join(sorted(_GRADING_PROFILE_ALIASES))})"
+            )
+        cap = grading.get("missing_defect_data_grade_cap")
+        if isinstance(cap, str) and cap.strip().upper() not in _GRADE_KEYS:
+            errors.append(f"grading.missing_defect_data_grade_cap: must be one of A-F, got {cap!r}")
+    return errors
+
+
+def _validate_node(node: dict, schema: dict, path: tuple[str, ...], errors: list[str]) -> None:
+    for key, value in node.items():
+        key_path = path + (str(key),)
+        dotted = ".".join(key_path)
+        if key not in schema:
+            errors.append(f"{dotted}: unknown key")
+            continue
+        expected = schema[key]
+        if key_path in _GRADE_MAP_PATHS:
+            _validate_grade_map(value, key_path, errors)
+            continue
+        if isinstance(expected, dict):
+            if not isinstance(value, dict):
+                errors.append(f"{dotted}: expected a mapping, got {_type_name(value)}")
+                continue
+            _validate_node(value, expected, key_path, errors)
+        elif isinstance(expected, bool):
+            if not isinstance(value, bool):
+                errors.append(f"{dotted}: expected a boolean, got {_type_name(value)}")
+        elif _is_number(expected):
+            if not _is_number(value):
+                errors.append(f"{dotted}: expected a number, got {_type_name(value)}")
+        elif isinstance(expected, str):
+            if not isinstance(value, str):
+                errors.append(f"{dotted}: expected a string, got {_type_name(value)}")
+
+
+def _validate_grade_map(value: Any, key_path: tuple[str, ...], errors: list[str]) -> None:
+    dotted = ".".join(key_path)
+    if not isinstance(value, dict):
+        errors.append(f"{dotted}: expected a mapping of grade -> number, got {_type_name(value)}")
+        return
+    ok = True
+    for grade, limit in value.items():
+        if str(grade) not in _GRADE_KEYS:
+            errors.append(f"{dotted}.{grade}: unknown grade (expected A-F)")
+            ok = False
+        elif not _is_number(limit):
+            errors.append(f"{dotted}.{grade}: expected a number, got {_type_name(limit)}")
+            ok = False
+    if not ok:
+        return
+    ordered = [(g, value[g]) for g in _GRADE_KEYS if g in value]
+    for (g1, v1), (g2, v2) in zip(ordered, ordered[1:]):
+        if key_path in _ASCENDING_GRADE_MAPS and v2 < v1:
+            errors.append(f"{dotted}: non-monotonic bands ({g2}={v2} is below {g1}={v1})")
+        elif key_path in _DESCENDING_GRADE_MAPS and v2 > v1:
+            errors.append(f"{dotted}: non-monotonic bands ({g2}={v2} is above {g1}={v1})")
 
 
 def normalize_grading_profile(profile: str | None) -> str:
@@ -219,44 +370,52 @@ class ThresholdConfig:
         """
         Load configuration from a YAML file.
 
-        :param path: Path to YAML file
-        :return: True if loaded successfully, False otherwise
-        """
-        if not YAML_AVAILABLE:
-            print("Warning: PyYAML not installed, using default thresholds")
-            return False
+        An explicitly provided file that is missing, unreadable, unparseable
+        or fails schema validation raises ``ConfigError`` instead of falling
+        back to defaults (#137).
 
+        :param path: Path to YAML file
+        :return: True when loaded
+        :raises ConfigError: on any load or validation failure
+        """
         path = Path(path)
 
-        if not path.exists():
-            print(f"Warning: Config file not found: {path}")
-            return False
+        if not YAML_AVAILABLE:
+            raise ConfigError(f"Cannot load config file {path}: PyYAML is not installed")
+
+        if not path.is_file():
+            raise ConfigError(f"Config file not found: {path}")
 
         try:
             with open(path, encoding="utf-8") as f:
                 loaded_config = yaml.safe_load(f)
-
-            if loaded_config:
-                # Merge with defaults (loaded config overrides defaults)
-                self._config = self._merge_dicts(DEFAULT_THRESHOLDS, loaded_config)
-                self._config_path = path
-                return True
-
         except yaml.YAMLError as e:
-            print(f"Warning: Failed to parse config file: {e}")
-            return False
-        except Exception as e:
-            print(f"Warning: Error loading config file: {e}")
-            return False
+            raise ConfigError(f"Failed to parse config file {path}: {e}") from e
+        except OSError as e:
+            raise ConfigError(f"Cannot read config file {path}: {e}") from e
 
-        return False
+        # An empty file overrides nothing; the defaults apply explicitly.
+        if loaded_config is None:
+            loaded_config = {}
+
+        problems = validate_thresholds(loaded_config)
+        if problems:
+            raise ConfigError(f"Invalid config file {path}:\n  - " + "\n  - ".join(problems))
+
+        self._config = self._merge_dicts(DEFAULT_THRESHOLDS, loaded_config)
+        self._config_path = path
+        return True
 
     def load_from_dict(self, config: dict) -> None:
         """
         Load configuration from a dictionary.
 
         :param config: Configuration dictionary
+        :raises ConfigError: when the mapping fails schema validation (#137)
         """
+        problems = validate_thresholds(config)
+        if problems:
+            raise ConfigError("Invalid config:\n  - " + "\n  - ".join(problems))
         self._config = self._merge_dicts(DEFAULT_THRESHOLDS, config)
 
     def _merge_dicts(self, base: dict, override: dict) -> dict:
@@ -340,6 +499,16 @@ class ThresholdConfig:
     def minimum_ssd_available_spare(self) -> int:
         """Fallback AVSPT (%) when the drive omits available_spare_threshold."""
         return self.get("nvme", "minimum_available_spare", default=10)
+
+    @property
+    def available_spare_bands(self) -> dict:
+        """Minimum available-spare % per grade (A/B/C); below C (>= AVSPT) is D (#133)."""
+        return self._bands("nvme", "available_spare_bands", {"A": 80, "B": 60, "C": 40})
+
+    @property
+    def available_spare_low_deduction(self) -> int:
+        """Binary-profile points deducted when spare is in the D band (#133)."""
+        return self.get("nvme", "available_spare_low_deduction", default=10)
 
     @property
     def ssd_wear_warning_moderate(self) -> int:
@@ -507,6 +676,12 @@ class ThresholdConfig:
     def selftest_recent_poh_window(self) -> int:
         """POH window within which a failed self-test counts as 'recent' (§10 / #121)."""
         return int(self.get("grading", "selftest_recent_poh_window", default=1000))
+
+    @property
+    def missing_defect_data_grade_cap(self) -> str:
+        """Best grade allowed when critical defect data is missing (#134)."""
+        cap = str(self.get("grading", "missing_defect_data_grade_cap", default="B") or "B").strip().upper()
+        return cap if cap in ("A", "B", "C", "D", "F") else "B"
 
     @property
     def grade_band_base_scores(self) -> dict:
