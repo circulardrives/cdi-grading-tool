@@ -445,3 +445,95 @@ class TestMissingDefectData:
     def test_ungraded_record_not_flagged(self) -> None:
         record = Devices._ungraded_placeholder({"name": "/dev/sdz", "error": "open failed", "protocol": "ATA"})
         assert missing_defect_data(record) == []
+
+
+def _ata_ssd_with_wear(mock_data_dir: Path, model: str, attributes: list[dict]) -> dict:
+    """ATA SSD smartctl JSON with the given wear attributes and no Device Statistics wear."""
+    data = copy.deepcopy(_load_mock(mock_data_dir, "ata", "MK000960GWSSD_healthy.json"))
+    data["model_name"] = model
+    data["rotation_rate"] = 0
+    data.pop("ata_device_statistics", None)
+    base = [a for a in data["ata_smart_attributes"]["table"] if a["id"] in (5, 9, 12)]
+    data["ata_smart_attributes"]["table"] = base + attributes
+    return data
+
+
+def _attr(attr_id: int, name: str, value: int, raw: int = 0) -> dict:
+    return {"id": attr_id, "name": name, "value": value, "worst": value, "thresh": 0, "raw": {"value": raw}}
+
+
+class TestATASSDWearSemantics:
+    """Per-vendor ATA SSD wear attribute semantics (#135)."""
+
+    def test_micron_202_percent_lifetime_remain_is_remaining(self, mock_data_dir: Path) -> None:
+        # New Micron drive: normalized 100 = 100% life remaining -> 0% used (was 100% used).
+        data = _ata_ssd_with_wear(
+            mock_data_dir, "Micron_5300_MTFDDAK960TDS", [_attr(202, "Percent_Lifetime_Remain", 100, 0)]
+        )
+        device = _device_from_mock(data)
+        assert device.ssd_percentage_used_endurance == 0
+        assert device.cdi_grade == "A"
+
+    def test_crucial_202_by_vendor_when_name_unknown(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "Crucial_CT500MX200SSD1", [_attr(202, "Unknown_SSD_Attribute", 93)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 7
+
+    def test_kingston_231_ssd_life_left_is_remaining(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "KINGSTON SA400S37240G", [_attr(231, "SSD_Life_Left", 97)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 3
+
+    def test_kingston_231_by_vendor_when_name_unknown(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "KINGSTON SV300S37A120G", [_attr(231, "Unknown_Attribute", 90)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 10
+
+    def test_samsung_177_wear_leveling_count(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(
+            mock_data_dir, "Samsung SSD 860 EVO 500GB", [_attr(177, "Wear_Leveling_Count", 88, 150)]
+        )
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 12
+
+    def test_intel_233_media_wearout_indicator(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "INTEL SSDSC2KB480G8", [_attr(233, "Media_Wearout_Indicator", 98)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 2
+
+    def test_used_named_attribute_reads_raw(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "Generic SSD", [_attr(202, "Perc_Rated_Life_Used", 100, 42)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 42
+
+    def test_unknown_semantics_are_not_guessed(self, mock_data_dir: Path) -> None:
+        # Unknown vendor + generic name: normalized 100 used to read as 100% used (F-ENDURANCE).
+        data = _ata_ssd_with_wear(mock_data_dir, "Generic SSD", [_attr(202, "Unknown_SSD_Attribute", 100)])
+        device = _device_from_mock(data)
+        assert device.ssd_percentage_used_endurance is None
+        assert device.cdi_grade != "F"
+
+    def test_resolve_prefers_name_over_vendor_rule(self) -> None:
+        from cdi_health.classes.devices import WEAR_USED, resolve_wear_semantics
+
+        attr = _attr(202, "Percent_Lifetime_Used", 10, 90)
+        assert resolve_wear_semantics(attr, "Crucial_CT500MX200SSD1")[0] == WEAR_USED
+
+
+class TestVendorPrefixDetection:
+    """HGST / Toshiba / WDC prefixes were dead behind a digit guard (#135)."""
+
+    @pytest.mark.parametrize(
+        ("model", "brand"),
+        [
+            ("HUS726T4TALA6L4", "HGST"),
+            ("HUSMM1640ASS204", "HGST"),
+            ("THNSNJ256GCSU", "Toshiba"),
+            ("WDC-WD40EFRX", "Western Digital"),
+            ("MB4000GCWDC", "HPE"),
+            ("SSDSC2KB480G8", "Intel"),
+        ],
+    )
+    def test_prefix_detection(self, model: str, brand: str) -> None:
+        assert Device.determine_brand_by_model_number_starts_with(model) == brand
+
+    def test_brand_list_shared(self) -> None:
+        from cdi_health.classes.devices import KNOWN_BRANDS
+
+        assert len(KNOWN_BRANDS) == len(set(KNOWN_BRANDS))
+        assert Device.determine_brand_by_model_number("KINGSTON SA400") == "KINGSTON"
+        assert Device.determine_model_by_model_number("KINGSTON SA400") == "SA400"

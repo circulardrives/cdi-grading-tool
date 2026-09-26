@@ -128,6 +128,110 @@ def parse_nvme_composite_temp_thresholds(smartctl: dict) -> tuple[int | None, in
     return warning_c, critical_c
 
 
+# Brand tokens searched for in model strings (single list; #135).
+KNOWN_BRANDS: tuple[str, ...] = (
+    "SAMSUNG",
+    "SEAGATE",
+    "WESTERN",
+    "TOSHIBA",
+    "HITACHI",
+    "HGST",
+    "INTEL",
+    "MICRON",
+    "CRUCIAL",
+    "KINGSTON",
+    "SANDISK",
+    "WD",
+    "WDC",
+)
+
+# ATA SSD wear-attribute semantics (#135).
+#
+# Vendors disagree on what attributes 202 / 230 / 231 mean. Resolution order:
+#   1. smartctl drivedb attribute ``name`` (most reliable signal),
+#   2. per-vendor rule matched on vendor / model string,
+#   3. otherwise the attribute is ignored (unknown semantics are not guessed).
+#
+# ``semantics``: "used" (value is percent of rated life consumed) or
+# "remaining" (value is percent of rated life left; used = 100 - value).
+# ``source``: "normalized" (the 0-100 ``value`` field) or "raw" (``raw.value``).
+WEAR_USED = "used"
+WEAR_REMAINING = "remaining"
+
+
+@dataclass(frozen=True)
+class WearAttributeRule:
+    """One per-vendor ATA SSD wear-attribute interpretation."""
+
+    vendor: str  # human label for docs/tests
+    model_pattern: str  # regex matched (case-insensitive) against vendor + model
+    attribute_id: int
+    semantics: str
+    source: str
+
+
+ATA_SSD_WEAR_VENDOR_RULES: tuple[WearAttributeRule, ...] = (
+    # Crucial / Micron: 202 Percent_Lifetime_Remain (normalized = life remaining)
+    WearAttributeRule("Micron/Crucial", r"CRUCIAL|MICRON|(^|[\s_])(CT\d{3,}|MTFD)", 202, WEAR_REMAINING, "normalized"),
+    # Kingston / SandForce-family: 231 SSD_Life_Left (normalized = life remaining)
+    WearAttributeRule(
+        "Kingston/SandForce",
+        r"KINGSTON|(^|[\s_])(SV300|SKC|SUV|SA400|SEDC|SHFS|SNS|SH10)|SANDFORCE|OCZ|CORSAIR",
+        231,
+        WEAR_REMAINING,
+        "normalized",
+    ),
+)
+
+
+def wear_semantics_from_name(name: str | None) -> tuple[str, str] | None:
+    """
+    Wear semantics from a smartctl attribute name, or None when the name
+    carries no reliable meaning (e.g. ``Unknown_SSD_Attribute``).
+    """
+    text = str(name or "").strip().lower()
+    if not text or text.startswith("unknown"):
+        return None
+    if "remain" in text or "life_left" in text or "wearout" in text:
+        return WEAR_REMAINING, "normalized"
+    if "used" in text and "unused" not in text:
+        return WEAR_USED, "raw"
+    return None
+
+
+def resolve_wear_semantics(attribute: dict, model: str | None, vendor: str | None = None) -> tuple[str, str] | None:
+    """Resolve (semantics, source) for an ATA SSD wear attribute (#135)."""
+    by_name = wear_semantics_from_name(attribute.get("name"))
+    if by_name is not None:
+        return by_name
+    haystack = f"{vendor or ''} {model or ''}".strip()
+    for rule in ATA_SSD_WEAR_VENDOR_RULES:
+        if rule.attribute_id == attribute.get("id") and re.search(rule.model_pattern, haystack, re.IGNORECASE):
+            return rule.semantics, rule.source
+    return None
+
+
+def ata_wear_percent_used(attribute: dict, model: str | None, vendor: str | None = None) -> int | None:
+    """
+    Percent of rated life used from an ATA SSD wear attribute, or None when
+    the attribute's semantics are unknown or its value is out of range.
+    """
+    semantics = resolve_wear_semantics(attribute, model, vendor)
+    if semantics is None:
+        return None
+    meaning, source = semantics
+    if source == "raw":
+        raw = attribute.get("raw")
+        value = int_or_none(raw.get("value")) if isinstance(raw, dict) else None
+    else:
+        value = int_or_none(attribute.get("value"))
+    if value is None or value < 0:
+        return None
+    if meaning == WEAR_REMAINING:
+        return max(0, 100 - value) if value <= 100 else None
+    return value if value <= 255 else None
+
+
 def power_on_hours_from_smartctl(smartctl: dict) -> int | str:
     """
     Power-on hours from smartctl JSON, or "Not Reported" when absent (#129).
@@ -496,22 +600,7 @@ class Device:
         """
 
         # Loop Brands
-        known_brands_list = [
-            "SAMSUNG",
-            "SEAGATE",
-            "WESTERN",
-            "TOSHIBA",
-            "HITACHI",
-            "HGST",
-            "INTEL",
-            "MICRON",
-            "CRUCIAL",
-            "KINGSTON",
-            "SANDISK",
-            "WD",
-            "WDC",
-        ]
-        for brand in known_brands_list:
+        for brand in KNOWN_BRANDS:
             # If Brand equals Model
             if brand in model:
                 # Return Brand
@@ -557,7 +646,7 @@ class Device:
         ]
 
         for prefix in hgst_devices:
-            if model.startswith(prefix) and len(model) >= 5 and model[2:5].isdigit():
+            if model.startswith(prefix):
                 return "HGST"
 
         """
@@ -615,7 +704,7 @@ class Device:
         ]
 
         for prefix in toshiba_devices:
-            if model.startswith(prefix) and len(model) >= 5 and model[2:5].isdigit():
+            if model.startswith(prefix):
                 return "Toshiba"
 
         """
@@ -628,7 +717,7 @@ class Device:
         ]
 
         for prefix in wdc_devices:
-            if model.startswith(prefix) and len(model) >= 5 and model[2:5].isdigit():
+            if model.startswith(prefix):
                 return "Western Digital"
 
         # No match, return None
@@ -643,22 +732,7 @@ class Device:
         """
 
         # Loop Brands
-        known_brands_list = [
-            "SAMSUNG",
-            "SEAGATE",
-            "WESTERN",
-            "TOSHIBA",
-            "HITACHI",
-            "HGST",
-            "INTEL",
-            "MICRON",
-            "CRUCIAL",
-            "KINGSTON",
-            "SANDISK",
-            "WD",
-            "WDC",
-        ]
-        for brand in known_brands_list:
+        for brand in KNOWN_BRANDS:
             # If Brand in Model Number
             if brand in model:
                 # Return Model Number with the Brand removed
@@ -1297,34 +1371,13 @@ class ATAProtocol:
                             device.ssd_media_wearout_indicator = normalized_value
                             device.ssd_percentage_used_endurance = 100 - normalized_value
 
-            # Priority 3: Attribute 230 - Some vendors use this for percentage used
-            # Check if normalized value is in reasonable range (0-100)
-            if device.ssd_percentage_used_endurance is None:
-                attr_230 = self.get_smart_attribute_by_id(attribute_id=230, attributes=device.smart_attributes)
-                if attr_230 is not None:
-                    attr_230_obj = next((a for a in device.smart_attributes if a.get("id") == 230), None)
-                    if attr_230_obj:
-                        normalized_value = attr_230_obj.get("value")
-                        # Some vendors report percentage used directly in normalized value
-                        if normalized_value is not None and 0 <= normalized_value <= 100:
-                            device.ssd_percentage_used_endurance = normalized_value
-
-            # Priority 4: Attribute 231 - Wear Leveling Count (some vendors)
-            if device.ssd_percentage_used_endurance is None:
-                wear_leveling = self.get_smart_attribute_by_id(
-                    attribute_id=231, attributes=device.smart_attributes, default=0
-                )
-                if wear_leveling and wear_leveling != 0:
-                    # Some vendors use raw value as percentage used directly
-                    attr_231_obj = next((a for a in device.smart_attributes if a.get("id") == 231), None)
-                    if attr_231_obj:
-                        raw_value = attr_231_obj.get("raw", {}).get("value")
-                        normalized_value = attr_231_obj.get("value")
-                        # Try normalized first (if in 0-100 range), then raw
-                        if normalized_value is not None and 0 <= normalized_value <= 100:
-                            device.ssd_percentage_used_endurance = normalized_value
-                        elif raw_value is not None and 0 <= raw_value <= 100:
-                            device.ssd_percentage_used_endurance = raw_value
+            # Priority 3/4: Attributes 230 / 231 — per-vendor semantics (#135)
+            for wear_id in (230, 231):
+                if device.ssd_percentage_used_endurance is not None:
+                    break
+                wear_attr = next((a for a in device.smart_attributes if a.get("id") == wear_id), None)
+                if wear_attr:
+                    device.ssd_percentage_used_endurance = ata_wear_percent_used(wear_attr, model_name, device.vendor)
 
             # Priority 5: Attribute 177 - Wear Leveling Count (Samsung) - value is remaining life
             if device.ssd_percentage_used_endurance is None:
@@ -1351,21 +1404,14 @@ class ATAProtocol:
                         if normalized_value is not None and 0 <= normalized_value <= 100:
                             device.ssd_percentage_used_endurance = 100 - normalized_value
 
-            # Priority 7: Attribute 202 - Percentage Used (some vendors)
+            # Priority 7: Attribute 202 — per-vendor semantics (#135); e.g.
+            # Micron/Crucial Percent_Lifetime_Remain is life *remaining*
             if device.ssd_percentage_used_endurance is None:
-                pct_used = self.get_smart_attribute_by_id(
-                    attribute_id=202, attributes=device.smart_attributes, default=0
-                )
-                if pct_used and pct_used != 0:
-                    attr_202_obj = next((a for a in device.smart_attributes if a.get("id") == 202), None)
-                    if attr_202_obj:
-                        normalized_value = attr_202_obj.get("value")
-                        raw_value = attr_202_obj.get("raw", {}).get("value")
-                        # Try normalized first, then raw
-                        if normalized_value is not None and 0 <= normalized_value <= 100:
-                            device.ssd_percentage_used_endurance = normalized_value
-                        elif raw_value is not None and 0 <= raw_value <= 100:
-                            device.ssd_percentage_used_endurance = raw_value
+                attr_202_obj = next((a for a in device.smart_attributes if a.get("id") == 202), None)
+                if attr_202_obj:
+                    device.ssd_percentage_used_endurance = ata_wear_percent_used(
+                        attr_202_obj, model_name, device.vendor
+                    )
 
             # Priority 8: Attribute 232 - Available Reserved Space (Intel) - can indicate wear
             # Lower normalized value indicates more wear (100 = 100% reserved = 0% used)
