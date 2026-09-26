@@ -357,6 +357,8 @@ class HealthScoreCalculator:
         # ---- Stage 2: age cap (§5) ----
         age_cap_grade = self._age_cap_grade(device, drive_class) if self.config.age_cap_enabled else "A"
 
+        self._apply_endurance_escalation(deductions, attribute_grades)
+
         # ---- Stage 3: worst-attribute-wins (§12.4) ----
         defect_grade = "A"
         for info in attribute_grades.values():
@@ -599,19 +601,51 @@ class HealthScoreCalculator:
                 return value
         return None
 
-    def _check_ssd_wear(self, pct_used: int | None, *, field: str, label: str) -> list[ScoreDeduction]:
+    def _check_ssd_wear(
+        self,
+        pct_used: int | None,
+        *,
+        field: str,
+        label: str,
+        attribute_grades: dict | None = None,
+    ) -> list[ScoreDeduction]:
         """
         SSD wear (NVMe percentage used, ATA/SAS SSD endurance) per #133.
 
         Below 100% wear never drives the letter grade: under the moderate
         tier there is no effect; at/above the moderate / high tiers a minor
         point deduction applies (attribute_grade=None, so under abcdf it only
-        lowers the score within the band). Above ``maximum_percentage_used``
-        remains a critical fail-gate (F-ENDURANCE).
+        lowers the score within the band).
+
+        At/above ``maximum_percentage_used`` (past rated endurance):
+        - abcdf (``attribute_grades`` given): graded attribute ``endurance`` at
+          ``endurance_exceeded_grade`` (default C; escalated to D when the drive
+          has other warnings, see ``_apply_endurance_escalation``). Setting the
+          grade to F restores the F-ENDURANCE fail-gate.
+        - binary: above the maximum remains a critical fail-gate (F-ENDURANCE).
         """
         if pct_used is None or pct_used < 0:
             return []
         threshold = self.config.maximum_ssd_percentage_used
+        exceeded_grade = self.config.endurance_exceeded_grade
+        if attribute_grades is not None and pct_used >= threshold and exceeded_grade != "F":
+            attribute_grades["endurance"] = {
+                "value": pct_used,
+                "grade": exceeded_grade,
+                "threshold": threshold,
+                "field": field,
+            }
+            return [
+                ScoreDeduction(
+                    reason=f"{label[0].upper()}{label[1:]} at or past rated endurance",
+                    points=0,
+                    severity="warning",
+                    field=field,
+                    value=pct_used,
+                    threshold=threshold,
+                    attribute_grade=exceeded_grade,
+                )
+            ]
         if pct_used > threshold:
             return [
                 ScoreDeduction(
@@ -646,6 +680,31 @@ class HealthScoreCalculator:
                 )
             ]
         return []
+
+    @staticmethod
+    def _apply_endurance_escalation(deductions: list[ScoreDeduction], attribute_grades: dict) -> None:
+        """
+        A drive past rated endurance grades C only when it has no other
+        warnings; any other attribute graded below A or any other warning /
+        critical deduction escalates the endurance attribute to D (#133).
+        """
+        endurance = attribute_grades.get("endurance")
+        if not endurance or _GRADE_RANK[endurance["grade"]] >= _GRADE_RANK["D"]:
+            return
+        endurance_field = endurance.get("field")
+        other_attribute = any(
+            name != "endurance" and _GRADE_RANK[info["grade"]] > _GRADE_RANK["A"]
+            for name, info in attribute_grades.items()
+        )
+        other_warning = any(d.severity in ("warning", "critical") and d.field != endurance_field for d in deductions)
+        if not (other_attribute or other_warning):
+            return
+        endurance["grade"] = "D"
+        endurance["escalated"] = "other warnings present"
+        for d in deductions:
+            if d.field == endurance_field and d.attribute_grade is not None:
+                d.attribute_grade = "D"
+                d.reason += " with other warnings"
 
     def _spare_band_grade(self, value: int) -> str:
         """Grade A-D for a spare percentage from minimum-spare bands (#133)."""
@@ -1221,6 +1280,7 @@ class HealthScoreCalculator:
                 self._first_value(device, "ssd_percentage_used_endurance", "percentage_used"),
                 field="ssd_percentage_used_endurance",
                 label="SSD percentage used",
+                attribute_grades=attribute_grades,
             )
         )
 
@@ -1267,6 +1327,7 @@ class HealthScoreCalculator:
                 self._first_value(device, "ssd_percentage_used_endurance", "percentage_used"),
                 field="ssd_percentage_used_endurance",
                 label="SSD percentage used",
+                attribute_grades=attribute_grades,
             )
         )
 
@@ -1457,6 +1518,7 @@ class HealthScoreCalculator:
                 self._coerce_int(device.get("percentage_used")),
                 field="percentage_used",
                 label="percentage used",
+                attribute_grades=attribute_grades,
             )
         )
 

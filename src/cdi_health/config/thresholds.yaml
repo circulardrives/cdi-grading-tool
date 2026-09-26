@@ -36,6 +36,11 @@ nvme:
   # Maximum percentage used endurance (0-100, some drives report >100)
   maximum_percentage_used: 100
 
+  # SSDs at/past rated endurance (percentage used >= maximum_percentage_used)
+  # grade C under abcdf, or D when the drive has any other warning. Set F to
+  # restore the F-ENDURANCE fail-gate. Binary profile: > maximum is still F.
+  endurance_exceeded_grade: C
+
   # Fallback Available Spare Threshold (%) when the drive omits AVSPT.
   # Real drive AVSPT values are typically 0–12%; prefer the drive value always.
   minimum_available_spare: 10

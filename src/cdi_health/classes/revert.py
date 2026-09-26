@@ -64,6 +64,9 @@ FLAG_POH_NOT_REPORTED = "POH_NOT_REPORTED"
 # errors, NVMe available spare) was not reported. Missing data is never graded
 # as healthy; the scoring engine caps the grade (#134).
 FLAG_MISSING_DEFECT_DATA = "MISSING_DEFECT_DATA"
+# SSD percentage used is at/past rated endurance (>= maximum_percentage_used).
+# Not a fail-gate under abcdf: graded C, or D with other warnings (#133).
+FLAG_ENDURANCE_EXCEEDED = "ENDURANCE_EXCEEDED"
 
 # Ungraded reason codes (§4.1, §15.5, §15.6)
 UNGRADED_SECURITY_LOCKED = "SECURITY_LOCKED"
@@ -372,7 +375,20 @@ def warning_flags(device: dict) -> list[str]:
         flags.append(FLAG_POH_NOT_REPORTED)
     if missing_defect_data(device) and FLAG_MISSING_DEFECT_DATA not in flags:
         flags.append(FLAG_MISSING_DEFECT_DATA)
+    if _endurance_exceeded(device) and FLAG_ENDURANCE_EXCEEDED not in flags:
+        flags.append(FLAG_ENDURANCE_EXCEEDED)
     return flags
+
+
+def _endurance_exceeded(device: dict) -> bool:
+    """True when an SSD reports percentage used at/past rated endurance (#133)."""
+    from cdi_health.classes.config import get_config
+
+    for key in ("ssd_percentage_used_endurance", "percentage_used"):
+        value = _int_or_none(device.get(key))
+        if value is not None and value >= 0:
+            return value >= get_config().maximum_ssd_percentage_used
+    return False
 
 
 def _poh_not_reported(device: dict) -> bool:

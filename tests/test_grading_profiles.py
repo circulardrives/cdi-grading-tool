@@ -320,10 +320,47 @@ class TestWearAndSparePolicy:
         assert calculate_health_score(_nvme(pu=80)).score == 95
         assert calculate_health_score(_nvme(pu=90)).score == 90
 
-    def test_wear_over_100_still_fails(self) -> None:
+    @pytest.mark.parametrize("pu", [100, 101, 150])
+    def test_wear_at_or_past_endurance_grades_c(self, pu: int) -> None:
         ThresholdConfig.get_instance().set_grading_profile("abcdf")
-        result = calculate_health_score(_nvme(pu=101))
+        result = calculate_health_score(_nvme(pu=pu))
+        assert result.grade == "C"
+        assert result.certification == "true"
+        assert not result.fail_gates
+        assert result.attribute_grades["endurance"]["grade"] == "C"
+
+    def test_wear_past_endurance_with_other_warning_grades_d(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        # spare 70 is its own B attribute: any other warning drops endurance to D
+        result = calculate_health_score(_nvme(pu=100, spare=70))
+        assert result.attribute_grades["endurance"]["grade"] == "D"
+        assert result.grade == "D"
+        assert result.certification == "Advisory"
+
+    def test_wear_past_endurance_worse_attribute_still_wins(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("abcdf")
+        assert calculate_health_score(_nvme(pu=100, spare=5)).grade == "F"
+
+    def test_endurance_exceeded_grade_f_restores_fail_gate(self) -> None:
+        config = ThresholdConfig.get_instance()
+        config.set_grading_profile("abcdf")
+        config._config["nvme"]["endurance_exceeded_grade"] = "F"
+        try:
+            result = calculate_health_score(_nvme(pu=101))
+        finally:
+            config._config["nvme"]["endurance_exceeded_grade"] = "C"
         assert result.grade == "F"
+        assert result.fail_gates
+
+    def test_binary_profile_wear_over_100_still_fails(self) -> None:
+        ThresholdConfig.get_instance().set_grading_profile("binary")
+        assert calculate_health_score(_nvme(pu=101)).grade == "F"
+
+    def test_endurance_exceeded_warning_flag(self) -> None:
+        from cdi_health.classes.revert import FLAG_ENDURANCE_EXCEEDED, warning_flags
+
+        assert FLAG_ENDURANCE_EXCEEDED in warning_flags(_nvme(pu=100))
+        assert FLAG_ENDURANCE_EXCEEDED not in warning_flags(_nvme(pu=99))
 
     @pytest.mark.parametrize(
         ("spare", "avspt", "grade"),

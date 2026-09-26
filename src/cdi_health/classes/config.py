@@ -57,6 +57,10 @@ DEFAULT_THRESHOLDS = {
     },
     "nvme": {
         "maximum_percentage_used": 100,
+        # Grade for SSDs at/past rated endurance (percentage used >= maximum)
+        # under abcdf: C, or D when the drive has other warnings. F restores
+        # the F-ENDURANCE fail-gate (#133).
+        "endurance_exceeded_grade": "C",
         "minimum_available_spare": 10,
         # Available spare bands (#133): minimum spare % for each grade. Below
         # C's minimum but >= the drive AVSPT (fallback minimum_available_spare)
@@ -499,6 +503,14 @@ class ThresholdConfig:
     def minimum_ssd_available_spare(self) -> int:
         """Fallback AVSPT (%) when the drive omits available_spare_threshold."""
         return self.get("nvme", "minimum_available_spare", default=10)
+
+    @property
+    def endurance_exceeded_grade(self) -> str:
+        """Grade for SSDs at/past rated endurance under abcdf (C, D or F; #133)."""
+        grade = str(self.get("nvme", "endurance_exceeded_grade", default="C")).strip().upper()
+        if grade not in ("C", "D", "F"):
+            raise ConfigError(f"nvme.endurance_exceeded_grade must be C, D or F (got {grade!r})")
+        return grade
 
     @property
     def available_spare_bands(self) -> dict:
