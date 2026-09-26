@@ -987,8 +987,9 @@ class Devices:
         except json.JSONDecodeError as e:
             raise CommandException(f"Failed to parse smartctl JSON: {e}. Output: {output[:200]}")
 
-        # Loop Devices
-        for device in json_output["devices"]:
+        # Loop Devices — smartctl omits "devices" entirely when none are visible
+        # (e.g. an API container without /dev access); that is zero drives, not an error.
+        for device in json_output.get("devices") or []:
             # If Open Error in Drive
             if "open_error" in device:
                 # Append to Failure List
