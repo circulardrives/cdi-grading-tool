@@ -23,7 +23,10 @@ import {
   ScanAllProgressBar,
 } from "@/components/scan-all-hosts"
 import { benchAddress, benchName } from "@/components/ui-cdi/bench"
-import { useScanAllBenches } from "@/hooks/use-cdi-queries"
+import {
+  useFleetDevicesQuery,
+  useScanAllBenches,
+} from "@/hooks/use-cdi-queries"
 import { useBenchScope, useLastScan } from "@/components/ui-cdi/use-benches"
 
 function formatScanTime(at: Date, now = new Date()): string {
@@ -37,12 +40,18 @@ function formatScanTime(at: Date, now = new Date()): string {
 
 function ScopeSwitcher() {
   const { scopeId, setScope, scopedBench, benches } = useBenchScope()
+  // "All" also covers the bench this dashboard runs on once it has drives, so
+  // the count matches the Overview headline ("14 drives on 3 benches").
+  const thisBenchHasDrives = (useFleetDevicesQuery().data?.hosts ?? []).some(
+    (host) => host.machine_id === null && host.device_count > 0
+  )
   if (benches.length === 0) {
     return null
   }
+  const allCount = benches.length + (thisBenchHasDrives ? 1 : 0)
   const label = scopedBench
     ? benchName(scopedBench)
-    : `All benches (${benches.length})`
+    : `All benches (${allCount})`
 
   return (
     <DropdownMenu>
@@ -67,7 +76,7 @@ function ScopeSwitcher() {
             aria-hidden="true"
             className={scopeId ? "invisible" : undefined}
           />
-          All benches ({benches.length})
+          All benches ({allCount})
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {benches.map((bench) => (
