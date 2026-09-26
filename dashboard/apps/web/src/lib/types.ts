@@ -99,12 +99,23 @@ export type DeviceRecord = {
   smart_attributes?: unknown
   nvme_smart_health_information_log?: Record<string, unknown>
   ocp_smart_log?: Record<string, unknown>
+  // Host attribution, only present on GET /api/v1/fleet/devices rows.
+  machine_id?: string | null
+  machine_name?: string
+  host_address?: string | null
 }
+
+/** Where a scan actually ran: on the API serving this dashboard, or forwarded to the host. */
+export type ScanExecutedOn = "local" | "remote"
 
 export type ScanResponse = {
   scanned_at: string
   summary: ScanSummary
   devices: DeviceRecord[]
+  // Present on newer APIs that forward scans to registered hosts.
+  machine_id?: string | null
+  executed_on?: ScanExecutedOn | null
+  remote_address?: string | null
 }
 
 export type HistorySummary = {
@@ -183,6 +194,12 @@ export type ManualMachine = {
 
 export type MachineScanSummary = ScanSummary
 
+export type MachineStatus =
+  | "unknown"
+  | "reachable"
+  | "unreachable"
+  | "auth_failed"
+
 export type Machine = {
   id: string
   name: string
@@ -190,7 +207,11 @@ export type Machine = {
   address: string
   location: string
   notes: string
-  status: "unknown" | "reachable" | "unreachable"
+  status: MachineStatus
+  /** True when an access token is stored for this host (the token itself is never returned). */
+  has_api_token?: boolean
+  /** CDI Health version reported by the host at the last connection check. */
+  remote_version?: string | null
   last_seen_at?: string | null
   last_scan_at?: string | null
   last_scan_status?: "success" | "failed" | null
@@ -205,10 +226,43 @@ export type MachineCreateRequest = {
   address?: string
   location?: string
   notes?: string
+  /** Write-only. "" clears the stored token; omit to leave it unchanged. */
+  api_token?: string
 }
 
 export type MachineUpdateRequest = Partial<MachineCreateRequest> & {
-  status?: Machine["status"]
+  status?: MachineStatus
+}
+
+export type MachineCheckResponse = {
+  machine: Machine
+  health: HealthResponse | null
+  error: string | null
+}
+
+export type FleetHost = {
+  machine_id: string | null
+  name: string
+  address: string | null
+  status: MachineStatus | string
+  scanned_at: string | null
+  summary: ScanSummary | null
+  device_count: number
+  error: string | null
+  executed_on: ScanExecutedOn
+}
+
+export type FleetDevice = DeviceRecord & {
+  machine_id: string | null
+  machine_name: string
+  host_address: string | null
+}
+
+export type FleetDevicesResponse = {
+  hosts: FleetHost[]
+  devices: FleetDevice[]
+  summary: ScanSummary
+  generated_at: string
 }
 
 export type DriveClass =

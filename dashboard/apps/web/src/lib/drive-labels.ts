@@ -29,8 +29,9 @@ export function getReportCategory(device: DeviceRecord): DriveClass {
 }
 
 /**
- * Stable React keys for device rows: serial plus device path, so multipath
- * duplicates and drives without a serial do not collide. Falls back to the
+ * Stable React keys for device rows: host plus serial plus device path, so
+ * multipath duplicates, drives without a serial, and the same serial/path on
+ * two fleet hosts do not collide. Falls back to the
  * row index only when both are missing, and suffixes exact repeats (e.g.
  * mock fixtures that reuse a serial and path) so keys stay unique.
  */
@@ -40,7 +41,10 @@ export function deviceRowKeys(devices: DeviceRecord[]): Map<DeviceRecord, string
   devices.forEach((device, index) => {
     const serial = String(device.serial_number ?? "").trim()
     const path = String(device.dut ?? "").trim()
-    const base = serial || path ? `${serial}|${path}` : `row-${index}`
+    // Fleet rows carry their host; single-host rows leave this empty.
+    const host = String(device.machine_id ?? device.machine_name ?? "").trim()
+    const base =
+      serial || path ? `${host}|${serial}|${path}` : `${host}|row-${index}`
     const repeat = seen.get(base) ?? 0
     seen.set(base, repeat + 1)
     keys.set(device, repeat ? `${base}#${repeat}` : base)
