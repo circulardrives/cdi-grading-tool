@@ -294,7 +294,10 @@ class DiscoverRequest(BaseModel):
     )
     probe_token: str | None = Field(
         default=None,
-        description="Optional X-API-Token sent when probing remote CDI APIs.",
+        description=(
+            "Optional X-API-Token sent (over plain HTTP) when probing remote CDI APIs. "
+            "Omitted by default; this bench's own token is never sent."
+        ),
     )
 
 

@@ -112,7 +112,7 @@ at that API; the **Hosts & Scans** page triggers discovery through the backend.
 
 1. Derive subnet(s) from local IPv4 interfaces when `subnet` is omitted (defaults to /24 per interface).
 2. TCP-probe each address on port **8844** (configurable) with parallel workers (~1–2s timeout per host).
-3. For open ports, `GET http://{ip}:{port}/api/v1/health` (optional `X-API-Token` via `probe_token` or `CDI_HEALTH_API_TOKEN`).
+3. For open ports, `GET http://{ip}:{port}/api/v1/health` (`X-API-Token` is sent **only** when the request supplies an explicit `probe_token`; the bench's own `CDI_HEALTH_API_TOKEN` is never sent, since probes are plain HTTP to every open host. The unauthenticated `{status, version}` payload is enough to identify a CDI bench).
 4. Return discovered hosts with health payload and `already_registered` when the address matches the fleet registry.
 
 **Security / limits**

@@ -298,3 +298,72 @@ def test_report_accepts_grading_profile(api_client: TestClient) -> None:
         json={"format": "csv", "mock_file": str(MOCK_NVME_FILE), "grading_profile": "binary"},
     )
     assert response.status_code == 200, response.text
+
+
+# ---------------------------------------------------------------------------
+# #132: discovery never leaks this bench's API token to LAN hosts
+# ---------------------------------------------------------------------------
+
+
+class _FakeHealthResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self) -> bytes:
+        return b'{"status": "ok", "version": "x"}'
+
+
+def _capture_probe_headers(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, str]]:
+    from cdi_health.api import discovery
+
+    captured: list[dict[str, str]] = []
+
+    def fake_urlopen(request, timeout=None):
+        captured.append({k.lower(): v for k, v in request.header_items()})
+        return _FakeHealthResponse()
+
+    monkeypatch.setattr(discovery.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(discovery, "is_port_open", lambda ip, port, timeout: ip == "192.168.50.1")
+    monkeypatch.setattr(discovery, "reverse_hostname", lambda ip: None)
+    return captured
+
+
+def test_discovery_does_not_send_env_token_without_probe_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import discovery
+
+    monkeypatch.setenv("CDI_HEALTH_API_TOKEN", "bench-secret")
+    captured = _capture_probe_headers(monkeypatch)
+
+    result = discovery.discover_hosts(subnet="192.168.50.0/30", timeout_seconds=0.5)
+    assert result["found"] and result["found"][0]["cdi_api"] is True
+    assert captured, "expected one health probe"
+    for headers in captured:
+        assert "x-api-token" not in headers
+
+
+def test_discovery_sends_explicit_probe_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import discovery
+
+    monkeypatch.setenv("CDI_HEALTH_API_TOKEN", "bench-secret")
+    captured = _capture_probe_headers(monkeypatch)
+
+    discovery.discover_hosts(subnet="192.168.50.0/30", timeout_seconds=0.5, probe_token="remote-token")
+    assert [h.get("x-api-token") for h in captured] == ["remote-token"]
+
+
+def test_discover_endpoint_without_probe_token_sends_no_header(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = _capture_probe_headers(monkeypatch)
+    monkeypatch.setenv("CDI_HEALTH_API_TOKEN", "bench-secret")
+
+    response = api_client.post(
+        "/api/v1/discover",
+        json={"subnet": "192.168.50.0/30", "timeout_seconds": 0.5},
+        headers={"X-API-Token": "bench-secret"},
+    )
+    assert response.status_code == 200, response.text
+    assert captured and all("x-api-token" not in h for h in captured)
