@@ -537,3 +537,33 @@ class TestVendorPrefixDetection:
         assert len(KNOWN_BRANDS) == len(set(KNOWN_BRANDS))
         assert Device.determine_brand_by_model_number("KINGSTON SA400") == "KINGSTON"
         assert Device.determine_model_by_model_number("KINGSTON SA400") == "SA400"
+
+
+class TestDevicesScanWithoutDrives:
+    def test_scan_without_devices_key_is_zero_devices(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """smartctl --scan-open -j omits "devices" when none are visible; that is not an error."""
+        from cdi_health.classes import devices as devices_module
+
+        class FakeCommand:
+            def __init__(self, command: str, **_kwargs) -> None:
+                self.command = command
+
+            def run(self) -> None:
+                pass
+
+            def get_return_code(self) -> int:
+                return 0
+
+            def has_errors(self) -> bool:
+                return False
+
+            def get_output(self) -> str:
+                return json.dumps({"json_format_version": [1, 0], "smartctl": {"exit_status": 0}})
+
+        monkeypatch.setattr(devices_module, "Command", FakeCommand)
+        monkeypatch.setattr(devices_module.Smartctl, "get_smartctl_path", lambda self: "/usr/sbin/smartctl")
+
+        devices = Devices()
+
+        assert devices.devices == []
+        assert devices.failures == []
