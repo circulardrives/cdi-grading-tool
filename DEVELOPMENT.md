@@ -27,7 +27,7 @@ This guide provides information for developers working on CDI Health.
 
 ## Testing
 
-Continuous integration is defined in **`.github/workflows/ci.yml`** (pytest matrix on Python 3.10–3.13, pre-commit, dashboard lint/typecheck/build, wheel smoke, license headers). Install **`pip install -e '.[dev,api]'`** locally so FastAPI tests (`tests/test_api.py`) collect.
+Continuous integration is defined in **`.github/workflows/ci.yml`**: pytest on Python **3.10, 3.12, and 3.13** (the shared job lives in `.github/workflows/pytest.yml`), pre-commit + license headers, dashboard lint/typecheck/build, and a wheel install + mock-scan smoke test. The **🏁 Required** job aggregates these and is the only required status check. `.github/workflows/release.yml` additionally install-tests the `.deb` on `ubuntu:22.04` (Python 3.10) and `debian:bookworm` (Python 3.11). Install **`pip install -e '.[dev,api]'`** locally so FastAPI tests (`tests/test_api.py`) collect.
 
 For manual/hardware QA with mock data or real devices, see **[TESTING.md](TESTING.md)**.
 
@@ -232,7 +232,15 @@ python -m build
 
 ### Debian package (`.deb`)
 
-Linux release packages are built in CI (see `.github/workflows/release.yml`) using **nfpm** and `nfpm.yaml`. Artifacts install `cdi-health` / `cdi-health-api` under `/usr/local/bin` and libraries under `/opt/cdi-health/lib`. Local experiments (on a Linux host with nfpm and the packaging script prerequisites) follow the same `nfpm` invocation documented in that workflow.
+Linux release packages are built in CI (see `.github/workflows/release.yml`) using **nfpm** and `nfpm.yaml`. Artifacts install `cdi-health` / `cdi-health-api` under `/usr/local/bin`; the maintainer script builds a venv at `/opt/cdi-health/venv` from the bundled wheel and `requirements-lock.txt`. Local experiments follow the same `nfpm` invocation documented in that workflow.
+
+Every run install-tests the built `.deb` in clean containers. Reproduce locally after building `dist/cdi-health_*_all.deb`:
+
+```bash
+docker run --rm -v "$PWD:/work:ro" -w /work ubuntu:22.04 bash scripts/deb-smoke-test.sh
+```
+
+**Release gating:** on a `v*` tag, images are pushed to GHCR and the GitHub Release is created only after pytest and the `.deb` install test pass. The workflow token is read-only by default; only the publish jobs get `packages: write` / `contents: write`. Release assets ship with a `SHA256SUMS` file and GitHub build-provenance attestations (`gh attestation verify <file> --repo circulardrives/cdi-grading-tool`); images carry SBOM + provenance attestations.
 
 ### Docker images (GHCR)
 
@@ -241,7 +249,7 @@ The same release workflow builds and pushes multi-arch images on each `v*` tag:
 - `ghcr.io/circulardrives/cdi-health-api`
 - `ghcr.io/circulardrives/cdi-health-dashboard`
 
-Dockerfiles live under `deploy/docker/`. Pull requests build images in CI (amd64, no push) to catch Dockerfile regressions.
+Dockerfiles live under `deploy/docker/`. Pull requests build images in CI (amd64, no push) and smoke-run the API container's health endpoint to catch Dockerfile regressions.
 
 **Build locally:**
 

@@ -130,6 +130,8 @@ sudo apt update
 sudo apt install "./cdi-health_${VERSION}_all.deb"
 ```
 
+Each release also publishes `SHA256SUMS` (verify with `sha256sum --ignore-missing -c SHA256SUMS`) and GitHub build-provenance attestations (`gh attestation verify cdi-health_${VERSION}_all.deb --repo circulardrives/cdi-grading-tool`).
+
 `apt install ./cdi-health_*.deb` resolves package dependencies and installs:
 
 - **`python3`** and **`python3-venv`** — venv + API dependencies installed at package install time
