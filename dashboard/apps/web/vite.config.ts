@@ -1,3 +1,4 @@
+import { readFileSync } from "fs"
 import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
@@ -10,8 +11,16 @@ export default defineConfig(({ mode }) => {
   // browser. VITE_CDI_API_TOKEN is still accepted for older .env.local files.
   const apiToken = env.CDI_HEALTH_API_TOKEN || env.VITE_CDI_API_TOKEN || ""
 
+  const { version: appVersion } = JSON.parse(
+    readFileSync(path.resolve(__dirname, "package.json"), "utf8")
+  ) as { version: string }
+
   return {
     plugins: [react(), tailwindcss()],
+    // Shown in Settings › About.
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion),
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

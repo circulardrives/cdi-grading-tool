@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 # Strict NVMe controller/namespace paths only (no whitespace or extra tokens).
 NVME_DEVICE_PATTERN = re.compile(r"^/dev/nvme[0-9]+(n[0-9]+)?$")
@@ -32,6 +32,12 @@ NVME_DEVICE_PATTERN = re.compile(r"^/dev/nvme[0-9]+(n[0-9]+)?$")
 BLOCK_DEVICE_PATTERN = re.compile(r"^/dev/[a-zA-Z0-9][a-zA-Z0-9._+/-]*$")
 
 GradingProfile = Literal["binary", "abcdf"]
+MachineStatusValue = Literal["unknown", "reachable", "unreachable", "auth_failed"]
+ExecutedOn = Literal["local", "remote"]
+ReportSource = Literal["scan", "history", "fleet"]
+ReportFormat = Literal["html", "pdf", "csv"]
+# Max scan-history entries one "history" report may combine.
+REPORT_MAX_HISTORY_IDS = 50
 
 
 def _reject_path_traversal(value: str, field_name: str) -> str:
@@ -113,6 +119,15 @@ class ScanResponse(BaseModel):
     grading_profile: GradingProfile | None = None
     summary: ScanSummary
     devices: list[dict[str, Any]]
+    machine_id: str | None = None
+    executed_on: ExecutedOn = Field(
+        default="local",
+        description="Where the scan ran: this API process (local) or a registered remote host.",
+    )
+    remote_address: str | None = Field(
+        default=None,
+        description="Remote host address the scan was forwarded to (remote scans only).",
+    )
 
 
 class HistorySummary(BaseModel):
@@ -147,7 +162,19 @@ class HistoryDetail(BaseModel):
 class ReportRequest(BaseModel):
     """Report generation request payload."""
 
-    format: Literal["html", "pdf", "csv"] = "html"
+    format: ReportFormat = "html"
+    source: ReportSource = Field(
+        default="scan",
+        description=(
+            "scan: fresh scan of this API's drives (default). fleet: latest stored scan of every "
+            "host (same set as GET /api/v1/fleet/devices). history: the listed scan-history entries. "
+            "fleet/history never rescan and render the recorded grades as-is."
+        ),
+    )
+    history_ids: list[str] | None = Field(
+        default=None,
+        description=f"Scan-history ids for source=history (1-{REPORT_MAX_HISTORY_IDS}).",
+    )
     output_file: str | None = None
     ignore_ata: bool = False
     ignore_nvme: bool = False
@@ -169,16 +196,42 @@ class ReportRequest(BaseModel):
         return _validate_optional_fs_path(value, info.field_name)
 
 
+class ReportHost(BaseModel):
+    """One host whose scan contributed devices to a report."""
+
+    name: str
+    machine_id: str | None = None
+    scanned_at: str | None = None
+    device_count: int = 0
+
+
 class ReportResponse(BaseModel):
     generated_at: datetime
     output_file: str
     filename: str
-    format: Literal["html", "pdf", "csv"]
+    format: ReportFormat
     devices_count: int
+    source: ReportSource = "scan"
+    hosts: list[ReportHost] = Field(default_factory=list)
+
+
+class ReportListEntry(BaseModel):
+    """GET /api/v1/reports entry (persisted report index)."""
+
+    filename: str
+    format: ReportFormat
+    generated_at: datetime
+    source: ReportSource = "scan"
+    devices_count: int = 0
+    hosts: list[ReportHost] = Field(default_factory=list)
 
 
 class SelfTestStartRequest(BaseModel):
     """Start self-test job request payload."""
+
+    # Reject unknown fields: a misspelled "devices" must not silently fall back
+    # to running self-tests on every supported drive.
+    model_config = ConfigDict(extra="forbid")
 
     device: str | None = Field(
         default=None,
@@ -188,6 +241,10 @@ class SelfTestStartRequest(BaseModel):
     wait: bool = False
     poll_interval_seconds: int = Field(default=30, ge=5, le=600)
     timeout_seconds: int = Field(default=14_400, ge=60, le=172_800)
+    machine_id: str | None = Field(
+        default=None,
+        description="Registered host to run on. A host with an address is forwarded to its API.",
+    )
 
     @field_validator("device")
     @classmethod
@@ -196,7 +253,13 @@ class SelfTestStartRequest(BaseModel):
 
 
 class SelfTestAbortRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     device: str
+    machine_id: str | None = Field(
+        default=None,
+        description="Registered host to abort on. A host with an address is forwarded to its API.",
+    )
 
     @field_validator("device")
     @classmethod
@@ -207,9 +270,11 @@ class SelfTestAbortRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+    hostname: str | None = Field(default=None, description="The bench's own hostname (socket.gethostname()).")
     is_root: bool | None = None
     allow_non_root_mode: bool | None = None
     api_token_enabled: bool | None = None
+    auth_mode: Literal["none", "token"] | None = None
     missing_required_tools: list[str] | None = None
     weasyprint_available: bool | None = None
     message: str | None = None
@@ -226,6 +291,10 @@ class JobResponse(BaseModel):
     completed_at: datetime | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    machine_id: str | None = Field(
+        default=None,
+        description="Remote host the job runs on (forwarded self-tests only); pass it back when polling.",
+    )
 
 
 class MachineScanSummary(BaseModel):
@@ -243,10 +312,18 @@ class MachineCreate(BaseModel):
     hostname: str = Field(min_length=1, description="Host identifier, e.g. grading-01.local")
     address: str = Field(
         default="",
-        description="Optional IP or host:port for a remote CDI API agent (future).",
+        description=(
+            "Optional IP, host:port, or http://host:port of the host's cdi-health-api "
+            "(default port 8844). When set, scans for this machine run on that host."
+        ),
     )
     location: str = Field(default="", description="Optional rack or data-center location label.")
     notes: str = ""
+    api_token: str | None = Field(
+        default=None,
+        max_length=4096,
+        description="Write-only X-API-Token of the remote host's API. Never returned; see has_api_token.",
+    )
 
 
 class MachineUpdate(BaseModel):
@@ -255,7 +332,12 @@ class MachineUpdate(BaseModel):
     address: str | None = None
     location: str | None = None
     notes: str | None = None
-    status: Literal["unknown", "reachable", "unreachable"] | None = None
+    status: MachineStatusValue | None = None
+    api_token: str | None = Field(
+        default=None,
+        max_length=4096,
+        description='Write-only remote API token. Omit to keep it, "" to clear it.',
+    )
 
 
 class MachineResponse(BaseModel):
@@ -265,13 +347,50 @@ class MachineResponse(BaseModel):
     address: str
     location: str
     notes: str
-    status: Literal["unknown", "reachable", "unreachable"]
+    status: MachineStatusValue
+    has_api_token: bool = False
+    remote_version: str | None = None
+    remote_hostname: str | None = Field(
+        default=None,
+        description="Hostname the remote bench reported in its /health payload (set by /check).",
+    )
+    remote_auth: Literal["none", "token"] | None = Field(
+        default=None,
+        description="Remote host's auth mode from its /health auth_mode (set by /check).",
+    )
     last_seen_at: datetime | None = None
     last_scan_at: datetime | None = None
     last_scan_status: Literal["success", "failed"] | None = None
     last_scan_summary: MachineScanSummary | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class MachineCheckResponse(BaseModel):
+    """Result of POST /api/v1/machines/{id}/check."""
+
+    machine: MachineResponse
+    health: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class FleetHost(BaseModel):
+    machine_id: str | None = None
+    name: str
+    address: str | None = None
+    status: str
+    scanned_at: datetime | None = None
+    summary: ScanSummary | None = None
+    device_count: int = 0
+    error: str | None = None
+    executed_on: ExecutedOn
+
+
+class FleetDevicesResponse(BaseModel):
+    hosts: list[FleetHost]
+    devices: list[dict[str, Any]]
+    summary: ScanSummary
+    generated_at: datetime
 
 
 class DiscoverRequest(BaseModel):
@@ -306,6 +425,7 @@ class DiscoveredHost(BaseModel):
     ip: str
     port: int
     hostname: str | None = None
+    # Remote /health payload as returned (includes auth_mode on newer APIs).
     health: dict[str, Any] | None = None
     cdi_api: bool = False
     already_registered: bool = False

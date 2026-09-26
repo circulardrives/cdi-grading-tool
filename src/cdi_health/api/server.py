@@ -27,6 +27,7 @@ from cdi_health.api.security import (
     ALLOW_NON_ROOT_ENV,
     API_TOKEN_ENV,
     BIND_HOST_ENV,
+    NO_AUTH_ENV,
     assert_token_required_for_bind,
 )
 from cdi_health.api.services import DEFAULT_MOCK_DATA_ENV
@@ -49,7 +50,15 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-token",
         metavar="TOKEN",
-        help="Static API token (required when --host is not loopback; sent via X-API-Token)",
+        help="Static API token (required when --host is not loopback unless --no-auth; sent via X-API-Token)",
+    )
+    parser.add_argument(
+        "--no-auth",
+        action="store_true",
+        help=(
+            f"Lab mode: disable API authentication entirely (also {NO_AUTH_ENV}=1). "
+            "Anyone on the network can run scans and self-tests; overrides --api-token."
+        ),
     )
     parser.add_argument(
         "--mock-data",
@@ -73,6 +82,8 @@ def main() -> int:
         os.environ[ALLOW_NON_ROOT_ENV] = "1"
     if args.api_token:
         os.environ[API_TOKEN_ENV] = args.api_token
+    if args.no_auth:
+        os.environ[NO_AUTH_ENV] = "1"
     if args.mock_data:
         os.environ[DEFAULT_MOCK_DATA_ENV] = args.mock_data
     if args.data_dir:

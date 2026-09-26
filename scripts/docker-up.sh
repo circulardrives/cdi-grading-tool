@@ -12,6 +12,7 @@ CDI_VERSION="${CDI_VERSION:-latest}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-3000}"
 BENCH_IP="${BENCH_IP:-}"
 BUILD=0
+NO_AUTH="${NO_AUTH:-0}"
 PROFILE=local
 
 usage() {
@@ -28,6 +29,8 @@ Commands:
 Options:
   --build          Build images from this repo instead of pulling GHCR
   --bench <ip>     Proxy the UI to a remote grading bench (no local API)
+  --no-auth        Lab mode: no access token for the local API (anyone on
+                   the network can scan); remembered in deploy/docker/.env
   -h, --help       Show this help
 
 Environment:
@@ -47,7 +50,30 @@ Enable **Use mock data** on Discover for fixture demos.
 USAGE
 }
 
+set_env_var() {
+  local key="$1" value="$2" tmp
+  mkdir -p "$(dirname "$ENV_FILE")"
+  touch "$ENV_FILE"
+  if grep -qE "^${key}=" "$ENV_FILE"; then
+    tmp="$(mktemp)"
+    sed "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" >"$tmp"
+    mv "$tmp" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$value" >>"$ENV_FILE"
+  fi
+}
+
+no_auth_enabled() {
+  [[ -f "$ENV_FILE" ]] && grep -qE '^CDI_HEALTH_API_NO_AUTH=(1|true|yes|on)[[:space:]]*$' "$ENV_FILE"
+}
+
 ensure_env() {
+  if [[ "$NO_AUTH" == "1" ]]; then
+    set_env_var CDI_HEALTH_API_NO_AUTH 1
+  fi
+  if no_auth_enabled; then
+    return 0
+  fi
   if [[ -f "$ENV_FILE" ]] && grep -qE '^CDI_HEALTH_API_TOKEN=.+' "$ENV_FILE" &&
     ! grep -qE '^CDI_HEALTH_API_TOKEN=replace-with-strong-token[[:space:]]*$' "$ENV_FILE"; then
     return 0
@@ -98,6 +124,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   --build)
     BUILD=1
+    shift
+    ;;
+  --no-auth)
+    NO_AUTH=1
     shift
     ;;
   --bench)
@@ -154,6 +184,9 @@ up)
     echo "  Health:    curl -s http://127.0.0.1:${DASHBOARD_PORT}/api/cdi/api/v1/health"
   else
     echo "  Bench API: http://${BENCH_IP}:8844 (via UI proxy)"
+  fi
+  if no_auth_enabled; then
+    echo "  Auth:      lab mode (no access token). Re-enable: remove CDI_HEALTH_API_NO_AUTH from ${ENV_FILE}"
   fi
   echo "  Stop:      ./scripts/docker-up.sh down"
   ;;

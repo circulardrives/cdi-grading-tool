@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import time
 from pathlib import Path
 
@@ -72,6 +73,8 @@ def test_api_health_ok(api_client: TestClient) -> None:
     assert body["allow_non_root_mode"] is True
     assert "weasyprint_available" in body
     assert isinstance(body["weasyprint_available"], bool)
+    # The bench's own name, which dashboards show instead of its IP.
+    assert body["hostname"] == socket.gethostname().strip()
 
 
 def test_api_scan_mock_data(api_client: TestClient) -> None:
@@ -279,11 +282,19 @@ def test_api_health_minimal_when_unauthenticated_non_loopback(
     from cdi_health.api import app as app_module
 
     monkeypatch.setattr(app_module, "client_is_loopback", lambda _request: False)
+    monkeypatch.setattr(app_module.socket, "gethostname", lambda: "bench-01")
 
     response = token_client.get("/api/v1/health")
     assert response.status_code == 200
     body = response.json()
-    assert body == {"status": "ok", "version": PACKAGE_VERSION}
+    # auth_mode tells discovering clients a token is needed and the hostname
+    # (not sensitive) names the bench, without leaking anything else.
+    assert body == {
+        "status": "ok",
+        "version": PACKAGE_VERSION,
+        "auth_mode": "token",
+        "hostname": "bench-01",
+    }
 
 
 def test_api_health_full_with_valid_token_non_loopback(

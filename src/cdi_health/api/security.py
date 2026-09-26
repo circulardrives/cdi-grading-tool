@@ -21,14 +21,22 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import logging
 import os
 import socket
+from typing import Literal
 
 from fastapi import Header, HTTPException, Request, status
 
 ALLOW_NON_ROOT_ENV = "CDI_HEALTH_API_ALLOW_NON_ROOT"
 API_TOKEN_ENV = "CDI_HEALTH_API_TOKEN"
 BIND_HOST_ENV = "CDI_HEALTH_API_BIND_HOST"
+NO_AUTH_ENV = "CDI_HEALTH_API_NO_AUTH"
+NO_AUTH_WARNING = "API authentication disabled (--no-auth): anyone on the network can run scans and self-tests"
+
+AuthMode = Literal["none", "token"]
+
+logger = logging.getLogger(__name__)
 
 
 def is_root_user() -> bool:
@@ -56,15 +64,44 @@ def assert_root_access() -> None:
     )
 
 
+def no_auth_mode() -> bool:
+    """Return True when lab no-auth mode is on (``--no-auth`` / ``CDI_HEALTH_API_NO_AUTH=1``).
+
+    No-auth wins over a configured token: every route is open and binding a
+    non-loopback interface without a token is allowed.
+    """
+    return os.getenv(NO_AUTH_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def api_token_is_enabled() -> bool:
-    """Return True when an API token is configured."""
-    return bool(os.getenv(API_TOKEN_ENV))
+    """Return True when an API token is configured and enforced."""
+    return get_configured_api_token() is not None
 
 
 def get_configured_api_token() -> str | None:
-    """Return the configured API token, or None when unset."""
+    """Return the enforced API token, or None when unset or in no-auth mode."""
+    if no_auth_mode():
+        return None
     token = os.getenv(API_TOKEN_ENV)
     return token if token else None
+
+
+def auth_mode() -> AuthMode:
+    """``"token"`` when requests must present X-API-Token, else ``"none"``."""
+    return "token" if api_token_is_enabled() else "none"
+
+
+def warn_if_auth_disabled() -> None:
+    """Log a loud startup warning when no-auth mode is active."""
+    if not no_auth_mode():
+        return
+    logger.warning(NO_AUTH_WARNING)
+    if os.getenv(API_TOKEN_ENV):
+        logger.warning(
+            "%s is set but ignored because no-auth mode (%s) is enabled.",
+            API_TOKEN_ENV,
+            NO_AUTH_ENV,
+        )
 
 
 def tokens_match(presented: str | None, expected: str) -> bool:
@@ -117,11 +154,12 @@ def assert_token_required_for_bind(host: str) -> None:
     """
     if is_loopback_host(host):
         return
-    if api_token_is_enabled():
+    if no_auth_mode() or api_token_is_enabled():
         return
     raise RuntimeError(
         f"CDI Health API refuses to bind non-loopback host {host!r} without "
-        f"{API_TOKEN_ENV}. Set a strong token or bind to 127.0.0.1."
+        f"{API_TOKEN_ENV}. Set a strong token, bind to 127.0.0.1, or pass "
+        f"--no-auth ({NO_AUTH_ENV}=1) on a trusted lab network."
     )
 
 

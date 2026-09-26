@@ -1,4 +1,28 @@
-import type { DiscoveredHost, Machine, ScanSummary } from "@/lib/types"
+import {
+  benchName,
+  describeRequestError,
+  fleetHostProblem,
+  hostProblemMessage,
+} from "@/components/ui-cdi/bench"
+import { checkMachine, isNotFoundError } from "@/lib/api"
+import type {
+  AuthMode,
+  DiscoveredHost,
+  FleetDevicesResponse,
+  Machine,
+  MachineStatus,
+  ScanSummary,
+} from "@/lib/types"
+
+// Bench naming, status labels, and problem wording live in one place now.
+export {
+  benchName,
+  describeHostProblem,
+  describeRequestError,
+  fleetHostProblem,
+  hostProblemMessage,
+  machineStatusLabel,
+} from "@/components/ui-cdi/bench"
 
 export type HostFormState = {
   name: string
@@ -16,14 +40,152 @@ export const emptyHostForm: HostFormState = {
   notes: "",
 }
 
-export function machineStatusBadgeVariant(status: Machine["status"]) {
+/** Where a technician finds a host's access token on that bench. */
+export const ACCESS_TOKEN_HINT_COMMAND = "sudo cat /etc/default/cdi-health-api"
+
+export function machineStatusBadgeVariant(status: MachineStatus | string) {
   if (status === "reachable") {
     return "default" as const
   }
-  if (status === "unreachable") {
+  if (status === "unreachable" || status === "auth_failed") {
     return "destructive" as const
   }
   return "secondary" as const
+}
+
+export function hostHasAddress(host: { address?: string | null }): boolean {
+  return Boolean(host.address?.trim())
+}
+
+/** True when the host is known to run in lab mode without access tokens. */
+export function hostNeedsNoToken(
+  host: Pick<Machine, "remote_auth"> | null | undefined
+): boolean {
+  return host?.remote_auth === "none"
+}
+
+/** True when a discovered API reports lab mode (no access token). */
+export function discoveredNeedsNoToken(host: DiscoveredHost): boolean {
+  return host.health?.auth_mode === "none"
+}
+
+/**
+ * Whether to ask for an access token after adding a host: the host says it
+ * uses tokens, or the auth mode is unknown and a check was rejected.
+ */
+export function shouldPromptForToken(
+  discoveredAuth: AuthMode | null | undefined,
+  checked: Pick<Machine, "status" | "remote_auth" | "has_api_token"> | null
+): boolean {
+  if (discoveredAuth === "none" || checked?.remote_auth === "none") {
+    return false
+  }
+  if (discoveredAuth === "token" || checked?.remote_auth === "token") {
+    return !checked?.has_api_token || checked.status === "auth_failed"
+  }
+  return checked?.status === "auth_failed"
+}
+
+export type HostCheckOutcome = {
+  /** Updated host from the API, when the check reached it. */
+  machine: Machine | null
+  ok: boolean
+  /** One line for a toast or next to the host. */
+  text: string
+}
+
+/**
+ * Runs POST /machines/{id}/check and phrases the result in plain language.
+ * Resolves to null when the API is too old to support connection checks.
+ */
+export async function checkHostConnection(
+  host: Pick<Machine, "id" | "name">
+): Promise<HostCheckOutcome | null> {
+  try {
+    const result = await checkMachine(host.id)
+    const machine = result.machine
+    const name = benchName(machine)
+    const problem = hostProblemMessage(name, machine.status, result.error)
+    if (problem) {
+      return { machine, ok: false, text: problem }
+    }
+    const version = machine.remote_version
+      ? ` · v${machine.remote_version}`
+      : ""
+    return { machine, ok: true, text: `${name} is online${version}` }
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null
+    }
+    return {
+      machine: null,
+      ok: false,
+      text: describeRequestError(
+        error,
+        host.name,
+        `Couldn't check ${host.name}`
+      ),
+    }
+  }
+}
+
+/** Summary line after "Scan all benches"; `ok` is false when any bench had a problem. */
+export function fleetScanToast(
+  data: FleetDevicesResponse,
+  machines?: Machine[] | null,
+  thisBenchName?: string | null
+): {
+  ok: boolean
+  text: string
+} {
+  const problems = data.hosts
+    .map((host) => fleetHostProblem(host, machines, thisBenchName))
+    .filter((problem): problem is string => problem != null)
+  const hostCount = data.hosts.length
+  const driveCount = data.summary.total
+  const base = `Scanned ${hostCount} bench${hostCount === 1 ? "" : "es"} — ${driveCount} drive${driveCount === 1 ? "" : "s"}`
+  if (problems.length === 0) {
+    return { ok: true, text: base }
+  }
+  if (problems.length === 1) {
+    return { ok: false, text: `${base}. ${problems[0]}` }
+  }
+  return {
+    ok: false,
+    text: `${base}. ${problems.length} benches had problems — see Benches`,
+  }
+}
+
+export function formatElapsed(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, "0")}`
+}
+
+/** "Scanned just now", "Scanned 12 min ago", "Scanned 3 h ago", or a local date. */
+export function formatScannedAgo(
+  iso: string | null | undefined,
+  now = Date.now()
+): string {
+  if (!iso) {
+    return "Not scanned yet"
+  }
+  const time = new Date(iso).getTime()
+  if (Number.isNaN(time)) {
+    return "Not scanned yet"
+  }
+  const minutes = Math.round((now - time) / 60_000)
+  if (minutes < 1) {
+    return "Scanned just now"
+  }
+  if (minutes < 60) {
+    return `Scanned ${minutes} min ago`
+  }
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) {
+    return `Scanned ${hours} h ago`
+  }
+  return `Scanned ${new Date(iso).toLocaleString()}`
 }
 
 export function formatScanSummary(machine: Machine): string {
@@ -48,18 +210,75 @@ export function formatSummaryCounts(summary: ScanSummary): string {
   return parts.join(" · ")
 }
 
+export const MAX_DISCOVER_SUBNETS = 4
+
+const SUBNET_PATTERN =
+  /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/
+
+/**
+ * Parses comma/space separated IPv4 subnets for Discover. Returns the list,
+ * or a message a technician can act on. Mirrors the API limits (max 4
+ * subnets, /24 or smaller); the API still validates private ranges.
+ */
+export function parseSubnetInput(
+  raw: string
+): { subnets: string[]; error: null } | { subnets: null; error: string } {
+  const items = raw
+    .split(/[\s,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  if (items.length > MAX_DISCOVER_SUBNETS) {
+    return {
+      subnets: null,
+      error: `Up to ${MAX_DISCOVER_SUBNETS} subnets at a time — you entered ${items.length}`,
+    }
+  }
+  for (const item of items) {
+    const match = SUBNET_PATTERN.exec(item)
+    const octets = match ? match.slice(1, 5).map(Number) : []
+    if (!match || octets.some((octet) => octet > 255)) {
+      return {
+        subnets: null,
+        error: `"${item}" doesn't look like a subnet — use a form like 192.168.0.0/24`,
+      }
+    }
+    const prefix = match[5] == null ? 32 : Number(match[5])
+    if (prefix > 32) {
+      return {
+        subnets: null,
+        error: `"${item}" has an invalid size — the number after / must be between 24 and 32`,
+      }
+    }
+    if (prefix < 24) {
+      return {
+        subnets: null,
+        error: `"${item}" is too big to scan — use /24 or smaller (for example ${octets.slice(0, 3).join(".")}.0/24)`,
+      }
+    }
+  }
+  return { subnets: items, error: null }
+}
+
+/**
+ * Name for a bench found by Discover: the hostname the bench reports about
+ * itself (newer benches), else reverse DNS, else its IP.
+ */
 export function defaultDiscoveredHostName(host: DiscoveredHost): string {
-  return host.hostname?.trim() || host.ip
+  return benchName({
+    remote_hostname: host.health?.hostname,
+    name: host.hostname,
+    address: host.ip,
+  })
 }
 
 export function discoveryHealthLabel(host: DiscoveredHost): string {
   if (!host.health) {
-    return "Port open"
+    return "Not a CDI bench"
   }
   if (host.cdi_api) {
-    return host.health.is_root ? "CDI API (root)" : "CDI API"
+    return "CDI Health bench"
   }
-  return host.health.status ?? "Unknown"
+  return "Not a CDI bench"
 }
 
 export function discoveryHealthVariant(host: DiscoveredHost) {

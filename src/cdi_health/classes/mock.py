@@ -302,6 +302,9 @@ def create_mock_device(
 
     # Set tool instances
     device.smartctl = mock_smartctl
+    # Marks the device as offline data so protocol code never runs real
+    # `sudo nvme ...` lookups (sudo prompts block local dev and agents).
+    device._smartctl_provider = mock_smartctl
 
     # Initialize device using the mock data
     device.initialize()

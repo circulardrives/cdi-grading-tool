@@ -205,6 +205,16 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000
 curl -s http://127.0.0.1:8844/api/v1/health
 ```
 
+## Lab mode (no access token)
+
+For benches on a trusted lab network, the API can run without a token. Anyone who can reach port 8844 can then scan drives and start self-tests, so don't use this on a shared or production network.
+
+- **Bench (`.deb` / systemd):** add `CDI_HEALTH_API_NO_AUTH=1` to `/etc/default/cdi-health-api` (with the LAN drop-in), then `sudo systemctl restart cdi-health-api`.
+- **Command line:** `cdi-health-api --host 0.0.0.0 --no-auth`
+- **Laptop Docker stack:** `./scripts/docker-up.sh --no-auth` (remembered in `deploy/docker/.env`).
+
+The API logs a warning at startup, and `/health` reports `"auth_mode": "none"`. The dashboard uses that to skip asking for an access token for that bench. If `CDI_HEALTH_API_TOKEN` is also set, no-auth wins and the token is ignored.
+
 ## Optional Sudoers Profile (Non-Root API)
 
 Preferred model: run `cdi-health-api` as root via systemd.
@@ -224,7 +234,7 @@ The profile allows only the exact read-only and self-test commands the API issue
 ## Security Notes
 
 - Keep API bound to `127.0.0.1` unless you intentionally enable the LAN drop-in.
-- `CDI_HEALTH_API_TOKEN` is **mandatory** for any non-loopback bind (`0.0.0.0`, host network, LAN IP). The process exits at startup if the token is missing.
+- `CDI_HEALTH_API_TOKEN` is **mandatory** for any non-loopback bind (`0.0.0.0`, host network, LAN IP) unless [lab mode](#lab-mode-no-access-token) is enabled. The process exits at startup if neither is set.
 - Prefer terminating auth at nginx: inject `X-API-Token` from a server-only env var; never bake the token into the dashboard JS bundle.
 - Do not expose either service directly to untrusted networks.
 

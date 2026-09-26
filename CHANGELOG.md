@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-26
+
+### Changed
+- **Dashboard redesign** for bench technicians. Five pages: Overview · Drives · Benches · Self-tests · Reports, plus Settings.
+  - "Scan all benches" is on every page.
+  - Grades are always shown as letter + outcome ("B · Reuse"), and each non-A grade explains itself.
+  - Drives is one searchable list (barcode-friendly) with a detail panel and a full-screen drive page (Health log 02h, SMART attributes, OCP C0h with requirement IDs and thresholds, self-test/error logs, raw JSON).
+  - Powered-on time is shown as hours plus years/days.
+  - Plain-language copy throughout. Demo mode has moved to Settings, with a banner.
+  - Light/dark switch and a collapsible sidebar; works on phones and tablets.
+
+### Added
+- `GET /api/v1/fleet/devices.csv` and a Drives-page **Download CSV** button. The columns are exactly those of `cdi-health scan -o csv`, taken from saved scans; the all-benches export adds a trailing `bench` column.
+- `/health` reports the bench `hostname`; `/machines/{id}/check` stores it as `remote_hostname`.
+
 ## [0.12.0] - 2026-09-26
 
 ### Added
@@ -88,7 +103,8 @@ See git history and [v0.9.0 release notes](https://github.com/circulardrives/cdi
 ### Added
 - Initial beta release (pre-dashboard CLI line).
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.13.0
 [0.12.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.12.0
 [0.11.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.11.0
 [0.10.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.10.0

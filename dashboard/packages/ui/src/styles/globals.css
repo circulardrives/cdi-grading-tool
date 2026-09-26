@@ -9,81 +9,154 @@
 @source "../../../components/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
 
+/*
+ * CDI Health design tokens (dashboard redesign).
+ * Light values follow the approved mockups; dark values map the same
+ * semantic roles. Components use semantic names only (bg-card,
+ * text-muted-foreground, bg-grade-a-bg, text-tone-bad-fg, ...), never raw hex.
+ */
 :root {
-    /* CDI brand palette — src/cdi_health/assets/cdi_brand_palette.css */
+    /* CDI brand palette — docs/cdi_brand_palette.md */
     --cdi-simply-green: #139c7a;
     --cdi-foliage-green: #3b7351;
     --cdi-green-spruce: #5c9279;
     --cdi-lilac-gray: #9298a6;
     --cdi-real-teal: #3e6071;
 
-    /* Preset b7SQ0Be2T2: luma + stone base + green theme, with CDI accent override */
-    --background: oklch(0.972 0.012 166);
-    --foreground: oklch(0.216 0.006 56.043);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.216 0.006 56.043);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.216 0.006 56.043);
-    --primary: var(--cdi-simply-green);
+    --background: #eef2f1;
+    --foreground: #16211d;
+    --card: #ffffff;
+    --card-foreground: #16211d;
+    --popover: #ffffff;
+    --popover-foreground: #16211d;
+    /* Primary buttons: Foliage Green (white text passes AA). */
+    --primary: var(--cdi-foliage-green);
     --primary-foreground: #ffffff;
-    --secondary: oklch(0.967 0.001 106.424);
-    --secondary-foreground: oklch(0.216 0.006 56.043);
-    --muted: oklch(0.953 0.008 166);
-    --muted-foreground: oklch(0.553 0.013 58.071);
-    --accent: oklch(0.953 0.008 166);
-    --accent-foreground: oklch(0.216 0.006 56.043);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.923 0.006 166);
-    --input: oklch(0.923 0.006 166);
-    --ring: var(--cdi-green-spruce);
+    --secondary: #f4f7f6;
+    --secondary-foreground: #16211d;
+    --muted: #f4f7f6;
+    --muted-foreground: #56625d;
+    --accent: #ddeee8;
+    --accent-foreground: #0e3b2e;
+    --destructive: #b3261e;
+    --border: #dce3e0;
+    --input: #c3cec9;
+    --ring: var(--cdi-simply-green);
+    /* Links and quiet buttons */
+    --link: #2f6475;
+    --link-hover: #1e4654;
+    /* Selected table row */
+    --row-selected: #f0f7f4;
     --chart-1: var(--cdi-simply-green);
     --chart-2: var(--cdi-foliage-green);
     --chart-3: var(--cdi-green-spruce);
     --chart-4: var(--cdi-real-teal);
-    --chart-5: var(--cdi-foliage-green);
+    --chart-5: var(--cdi-lilac-gray);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0.008 166);
-    --sidebar-foreground: oklch(0.216 0.006 56.043);
-    --sidebar-primary: var(--cdi-simply-green);
+    --sidebar: #f7faf9;
+    --sidebar-foreground: #3a4641;
+    --sidebar-primary: var(--cdi-foliage-green);
     --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: oklch(0.953 0.008 166);
-    --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
-    --sidebar-border: oklch(0.923 0.006 166);
-    --sidebar-ring: var(--cdi-green-spruce);
+    --sidebar-accent: #ddeee8;
+    --sidebar-accent-foreground: #0e3b2e;
+    --sidebar-border: #dce3e0;
+    --sidebar-ring: var(--cdi-simply-green);
+
+    /* Grades: bg/fg = chip, solid/solid-fg = letter disc. */
+    --grade-a-bg: #ddf1ea;
+    --grade-a-fg: #0b5e49;
+    --grade-a-solid: #0b5e49;
+    --grade-a-solid-fg: #ffffff;
+    --grade-b-bg: #e0ecf0;
+    --grade-b-fg: #24505e;
+    --grade-b-solid: #2f6475;
+    --grade-b-solid-fg: #ffffff;
+    --grade-c-bg: #fbf0d7;
+    --grade-c-fg: #6b4a0a;
+    --grade-c-solid: #9a6400;
+    --grade-c-solid-fg: #ffffff;
+    --grade-d-bg: #fce6d6;
+    --grade-d-fg: #8a3a0b;
+    --grade-d-solid: #b84e0c;
+    --grade-d-solid-fg: #ffffff;
+    --grade-f-bg: #fbe2df;
+    --grade-f-fg: #8e1b14;
+    --grade-f-solid: #b3261e;
+    --grade-f-solid-fg: #ffffff;
+    --grade-u-bg: #eceef2;
+    --grade-u-fg: #454c5a;
+    --grade-u-solid: #6b7280;
+    --grade-u-solid-fg: #ffffff;
+
+    /* Demo-mode banner: solid amber with contrasting text. */
+    --banner-demo: var(--grade-c-solid);
+    --banner-demo-fg: #ffffff;
 }
 
 .dark {
-    --background: oklch(0.145 0.012 166);
-    --foreground: oklch(0.985 0.001 106.423);
-    --card: oklch(0.205 0.012 166);
-    --card-foreground: oklch(0.985 0.001 106.423);
-    --popover: oklch(0.205 0.012 166);
-    --popover-foreground: oklch(0.985 0.001 106.423);
-    --primary: var(--cdi-simply-green);
-    --primary-foreground: #ffffff;
-    --secondary: oklch(0.268 0.007 34.298);
-    --secondary-foreground: oklch(0.985 0.001 106.423);
-    --muted: oklch(0.268 0.007 34.298);
-    --muted-foreground: oklch(0.709 0.01 56.259);
-    --accent: oklch(0.268 0.007 34.298);
-    --accent-foreground: oklch(0.985 0.001 106.423);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: var(--cdi-green-spruce);
+    --background: #0f1614;
+    --foreground: #e8eeeb;
+    --card: #17201d;
+    --card-foreground: #e8eeeb;
+    --popover: #17201d;
+    --popover-foreground: #e8eeeb;
+    /* Lighter green so buttons read on dark; dark text keeps AA. */
+    --primary: #5fbf94;
+    --primary-foreground: #06251a;
+    --secondary: #1f2a27;
+    --secondary-foreground: #e8eeeb;
+    --muted: #1f2a27;
+    --muted-foreground: #a3b0aa;
+    --accent: #1d3a30;
+    --accent-foreground: #c8eedf;
+    --destructive: #ee867d;
+    --border: #2a3632;
+    --input: #3a4843;
+    --ring: #3cc39c;
+    --link: #8ec0d1;
+    --link-hover: #b5d8e4;
+    --row-selected: #1a2b25;
     --chart-1: var(--cdi-simply-green);
-    --chart-2: var(--cdi-foliage-green);
+    --chart-2: #5fbf94;
     --chart-3: var(--cdi-green-spruce);
-    --chart-4: var(--cdi-real-teal);
-    --chart-5: var(--cdi-foliage-green);
-    --sidebar: oklch(0.185 0.012 166);
-    --sidebar-foreground: oklch(0.985 0.001 106.423);
-    --sidebar-primary: var(--cdi-simply-green);
-    --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: oklch(0.268 0.007 34.298);
-    --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: var(--cdi-green-spruce);
+    --chart-4: #8ec0d1;
+    --chart-5: var(--cdi-lilac-gray);
+    --sidebar: #131b18;
+    --sidebar-foreground: #c9d3cf;
+    --sidebar-primary: #5fbf94;
+    --sidebar-primary-foreground: #06251a;
+    --sidebar-accent: #1d3a30;
+    --sidebar-accent-foreground: #c8eedf;
+    --sidebar-border: #2a3632;
+    --sidebar-ring: #3cc39c;
+
+    --grade-a-bg: #123a30;
+    --grade-a-fg: #9fe3cb;
+    --grade-a-solid: #7fd3b5;
+    --grade-a-solid-fg: #06261d;
+    --grade-b-bg: #16323b;
+    --grade-b-fg: #a8cfdc;
+    --grade-b-solid: #8ec0d1;
+    --grade-b-solid-fg: #0a2029;
+    --grade-c-bg: #3a2e0e;
+    --grade-c-fg: #f2d28a;
+    --grade-c-solid: #e8b64f;
+    --grade-c-solid-fg: #2a1d00;
+    --grade-d-bg: #3f2413;
+    --grade-d-fg: #f7bd95;
+    --grade-d-solid: #f09a5e;
+    --grade-d-solid-fg: #2b1203;
+    --grade-f-bg: #42191a;
+    --grade-f-fg: #f6b2ac;
+    --grade-f-solid: #ee867d;
+    --grade-f-solid-fg: #2d0707;
+    --grade-u-bg: #2a2e36;
+    --grade-u-fg: #c5cad4;
+    --grade-u-solid: #a3a9b5;
+    --grade-u-solid-fg: #15181d;
+
+    --banner-demo: var(--grade-c-solid);
+    --banner-demo-fg: var(--grade-c-solid-fg);
 }
 
 @theme inline {
@@ -105,6 +178,10 @@
     --color-border: var(--border);
     --color-input: var(--input);
     --color-ring: var(--ring);
+    --color-link: var(--link);
+    --color-link-hover: var(--link-hover);
+    --color-row-selected: var(--row-selected);
+    --color-brand: var(--cdi-simply-green);
     --color-chart-1: var(--chart-1);
     --color-chart-2: var(--chart-2);
     --color-chart-3: var(--chart-3);
@@ -125,8 +202,51 @@
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
-    --font-mono: 'JetBrains Mono Variable', monospace;
-    --font-heading: 'Source Sans 3 Variable', sans-serif;
+
+    --color-grade-a-bg: var(--grade-a-bg);
+    --color-grade-a-fg: var(--grade-a-fg);
+    --color-grade-a-solid: var(--grade-a-solid);
+    --color-grade-a-solid-fg: var(--grade-a-solid-fg);
+    --color-grade-b-bg: var(--grade-b-bg);
+    --color-grade-b-fg: var(--grade-b-fg);
+    --color-grade-b-solid: var(--grade-b-solid);
+    --color-grade-b-solid-fg: var(--grade-b-solid-fg);
+    --color-grade-c-bg: var(--grade-c-bg);
+    --color-grade-c-fg: var(--grade-c-fg);
+    --color-grade-c-solid: var(--grade-c-solid);
+    --color-grade-c-solid-fg: var(--grade-c-solid-fg);
+    --color-grade-d-bg: var(--grade-d-bg);
+    --color-grade-d-fg: var(--grade-d-fg);
+    --color-grade-d-solid: var(--grade-d-solid);
+    --color-grade-d-solid-fg: var(--grade-d-solid-fg);
+    --color-grade-f-bg: var(--grade-f-bg);
+    --color-grade-f-fg: var(--grade-f-fg);
+    --color-grade-f-solid: var(--grade-f-solid);
+    --color-grade-f-solid-fg: var(--grade-f-solid-fg);
+    --color-grade-u-bg: var(--grade-u-bg);
+    --color-grade-u-fg: var(--grade-u-fg);
+    --color-grade-u-solid: var(--grade-u-solid);
+    --color-grade-u-solid-fg: var(--grade-u-solid-fg);
+
+    /* Status tones (pills, problem lines): ok=A, bad=F, warn=C, info=ungraded. */
+    --color-tone-ok-bg: var(--grade-a-bg);
+    --color-tone-ok-fg: var(--grade-a-fg);
+    --color-tone-ok-solid: var(--grade-a-solid);
+    --color-tone-bad-bg: var(--grade-f-bg);
+    --color-tone-bad-fg: var(--grade-f-fg);
+    --color-tone-bad-solid: var(--grade-f-solid);
+    --color-tone-warn-bg: var(--grade-c-bg);
+    --color-tone-warn-fg: var(--grade-c-fg);
+    --color-tone-warn-solid: var(--grade-c-solid);
+    --color-tone-info-bg: var(--grade-u-bg);
+    --color-tone-info-fg: var(--grade-u-fg);
+    --color-tone-info-solid: var(--grade-u-solid);
+    --color-banner-demo: var(--banner-demo);
+    --color-banner-demo-fg: var(--banner-demo-fg);
+
+    --font-sans: 'Source Sans 3 Variable', 'Source Sans 3', system-ui, sans-serif;
+    --font-heading: 'Source Sans 3 Variable', 'Source Sans 3', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
 }
 
 @layer base {
@@ -136,6 +256,10 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-heading);
+    font-family: var(--font-sans);
+    /* 16px body text minimum for bench screens. */
+    font-size: 1rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
 }

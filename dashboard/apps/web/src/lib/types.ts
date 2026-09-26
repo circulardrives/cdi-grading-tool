@@ -99,12 +99,36 @@ export type DeviceRecord = {
   smart_attributes?: unknown
   nvme_smart_health_information_log?: Record<string, unknown>
   ocp_smart_log?: Record<string, unknown>
+  // Raw logs and extra readings shown on the drive details page (devices.py).
+  available_spare_threshold?: number | string | null
+  endurance_group_critical_warning_summary?: number | string | null
+  warning_temperature?: number | string | null
+  warning_temp_time?: number | string | null
+  critical_comp_time?: number | string | null
+  points_deducted?: number | null
+  nvme_self_test_log?: Record<string, unknown> | null
+  nvme_self_test_history?: unknown[] | null
+  nvme_error_information_log?: Record<string, unknown> | null
+  smart_self_tests?: unknown
+  /** smartctl --json output the readings were parsed from. */
+  smartctl_json?: Record<string, unknown> | null
+  // Host attribution, only present on GET /api/v1/fleet/devices rows.
+  machine_id?: string | null
+  machine_name?: string
+  host_address?: string | null
 }
+
+/** Where a scan actually ran: on the API serving this dashboard, or forwarded to the host. */
+export type ScanExecutedOn = "local" | "remote"
 
 export type ScanResponse = {
   scanned_at: string
   summary: ScanSummary
   devices: DeviceRecord[]
+  // Present on newer APIs that forward scans to registered hosts.
+  machine_id?: string | null
+  executed_on?: ScanExecutedOn | null
+  remote_address?: string | null
 }
 
 export type HistorySummary = {
@@ -122,6 +146,9 @@ export type HistoryDetail = HistorySummary & {
   devices: DeviceRecord[]
 }
 
+/** How a CDI Health API authenticates callers ("none" = lab no-auth mode). */
+export type AuthMode = "none" | "token"
+
 /**
  * Unauthenticated LAN callers only receive `{status, version}`; the remaining
  * fields are present for loopback or token-authenticated requests.
@@ -129,9 +156,13 @@ export type HistoryDetail = HistorySummary & {
 export type HealthResponse = {
   status: string
   version?: string
+  /** The bench's own hostname (e.g. "bench-01"). Older APIs omit it. */
+  hostname?: string | null
   is_root?: boolean
   allow_non_root_mode?: boolean
   api_token_enabled?: boolean
+  /** "none" when the API runs in lab no-auth mode. Older APIs omit it. */
+  auth_mode?: AuthMode
   missing_required_tools?: string[]
   weasyprint_available?: boolean
   message?: string | null
@@ -148,8 +179,20 @@ export type ScanRequest = {
   machine_id?: string
 }
 
+export type ReportFormat = "html" | "pdf" | "csv"
+
+/**
+ * What a report covers: "fleet" = latest saved scan of every bench (no
+ * rescan), "history" = the given saved scans, "scan" = scan this bench now.
+ */
+export type ReportSource = "scan" | "history" | "fleet"
+
 export type ReportRequest = {
-  format: "html" | "pdf" | "csv"
+  format: ReportFormat
+  /** Older APIs ignore this and always scan the API's own drives. */
+  source?: ReportSource
+  /** Saved scan ids, for source "history". */
+  history_ids?: string[]
   output_file?: string
   ignore_ata?: boolean
   ignore_nvme?: boolean
@@ -160,14 +203,36 @@ export type ReportRequest = {
   mock_file?: string
 }
 
+/** One bench whose drives went into a report. */
+export type ReportHost = {
+  name: string
+  machine_id: string | null
+  scanned_at: string | null
+  device_count: number
+}
+
 export type ReportResponse = {
   generated_at: string
   output_file: string
   filename: string
-  format: "html" | "pdf" | "csv"
+  format: ReportFormat
   devices_count: number
+  // Newer APIs only; missing means the API scanned its own drives.
+  source?: ReportSource
+  hosts?: ReportHost[]
 }
 
+/** Row of GET /api/v1/reports (newest first, kept on the API host). */
+export type ReportListEntry = {
+  filename: string
+  format: ReportFormat
+  generated_at: string
+  source?: ReportSource | null
+  devices_count: number
+  hosts?: ReportHost[] | null
+}
+
+/** Browser-only report list, used when the API has no GET /reports. */
 export type ReportHistoryEntry = ReportResponse & {
   id: string
 }
@@ -183,6 +248,12 @@ export type ManualMachine = {
 
 export type MachineScanSummary = ScanSummary
 
+export type MachineStatus =
+  | "unknown"
+  | "reachable"
+  | "unreachable"
+  | "auth_failed"
+
 export type Machine = {
   id: string
   name: string
@@ -190,7 +261,18 @@ export type Machine = {
   address: string
   location: string
   notes: string
-  status: "unknown" | "reachable" | "unreachable"
+  status: MachineStatus
+  /** True when an access token is stored for this host (the token itself is never returned). */
+  has_api_token?: boolean
+  /** CDI Health version reported by the host at the last connection check. */
+  remote_version?: string | null
+  /**
+   * Hostname the bench reported about itself at the last connection check.
+   * Use benchName() from components/ui-cdi to display a bench.
+   */
+  remote_hostname?: string | null
+  /** Whether the host needs an access token, as seen by the last connection check. */
+  remote_auth?: AuthMode | null
   last_seen_at?: string | null
   last_scan_at?: string | null
   last_scan_status?: "success" | "failed" | null
@@ -205,10 +287,43 @@ export type MachineCreateRequest = {
   address?: string
   location?: string
   notes?: string
+  /** Write-only. "" clears the stored token; omit to leave it unchanged. */
+  api_token?: string
 }
 
 export type MachineUpdateRequest = Partial<MachineCreateRequest> & {
-  status?: Machine["status"]
+  status?: MachineStatus
+}
+
+export type MachineCheckResponse = {
+  machine: Machine
+  health: HealthResponse | null
+  error: string | null
+}
+
+export type FleetHost = {
+  machine_id: string | null
+  name: string
+  address: string | null
+  status: MachineStatus | string
+  scanned_at: string | null
+  summary: ScanSummary | null
+  device_count: number
+  error: string | null
+  executed_on: ScanExecutedOn
+}
+
+export type FleetDevice = DeviceRecord & {
+  machine_id: string | null
+  machine_name: string
+  host_address: string | null
+}
+
+export type FleetDevicesResponse = {
+  hosts: FleetHost[]
+  devices: FleetDevice[]
+  summary: ScanSummary
+  generated_at: string
 }
 
 export type DriveClass =
@@ -230,6 +345,8 @@ export type DriveColumn = {
 
 export type SelfTestStartRequest = {
   device?: string
+  /** Run on this registered bench instead of the API's own drives. */
+  machine_id?: string
   test_type?: "short" | "extended"
   wait?: boolean
   poll_interval_seconds?: number
@@ -268,6 +385,8 @@ export type SelfTestDeviceStatus = {
 export type SelfTestStatusResponse = {
   devices: SelfTestDeviceStatus[]
   total: number
+  /** Echoed by newer APIs when the request named a bench. */
+  machine_id?: string | null
 }
 
 export type JobResponse = {
@@ -284,6 +403,8 @@ export type JobResponse = {
     summary?: Record<string, number>
   } | null
   error?: string | null
+  /** Bench the job runs on (newer APIs). Poll it with the same machine_id. */
+  machine_id?: string | null
 }
 
 export type DiscoverRequest = {

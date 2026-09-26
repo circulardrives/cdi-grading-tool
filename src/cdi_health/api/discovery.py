@@ -71,6 +71,23 @@ def _subnet_is_allowed(network: ipaddress.IPv4Network) -> bool:
     return any(network.subnet_of(allowed) for allowed in PRIVATE_NETWORKS)
 
 
+def is_private_ipv4(value: str) -> bool:
+    """Return True for private, link-local, or loopback IPv4 addresses.
+
+    Shared with the remote-host client so scans are only forwarded to the same
+    ranges discovery is allowed to probe (plus loopback).
+    """
+    try:
+        address = ipaddress.ip_address(value.strip())
+    except ValueError:
+        return False
+    if not isinstance(address, ipaddress.IPv4Address):
+        return False
+    if address.is_loopback:
+        return True
+    return any(address in network for network in PRIVATE_NETWORKS)
+
+
 def get_local_ipv4_addresses() -> list[str]:
     """Collect non-loopback IPv4 addresses from the host running the API."""
     addresses: set[str] = set()

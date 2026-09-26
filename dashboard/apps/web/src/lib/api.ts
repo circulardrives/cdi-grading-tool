@@ -2,13 +2,16 @@ import { appConfig } from "@/lib/config"
 import type {
   DiscoverRequest,
   DiscoverResponse,
+  FleetDevicesResponse,
   HealthResponse,
   HistoryDetail,
   HistorySummary,
   JobResponse,
   Machine,
+  MachineCheckResponse,
   MachineCreateRequest,
   MachineUpdateRequest,
+  ReportListEntry,
   ReportRequest,
   ReportResponse,
   ScanRequest,
@@ -51,7 +54,11 @@ function normalizeErrorDetail(detail: unknown): string | null {
           return item
         }
         if (item && typeof item === "object") {
-          const entry = item as { msg?: unknown; loc?: unknown; message?: unknown }
+          const entry = item as {
+            msg?: unknown
+            loc?: unknown
+            message?: unknown
+          }
           const msg =
             typeof entry.msg === "string"
               ? entry.msg
@@ -100,10 +107,7 @@ async function parseErrorMessage(response: Response): Promise<string> {
   return message
 }
 
-async function request<T>(
-  path: string,
-  init: RequestInit = {}
-): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set("Accept", "application/json")
 
@@ -160,6 +164,29 @@ export function generateReport(body: ReportRequest): Promise<ReportResponse> {
   })
 }
 
+/** Reports saved on the API host, newest first (404 on older APIs). */
+export function listReports(): Promise<ReportListEntry[]> {
+  return request<ReportListEntry[]>("/api/v1/reports")
+}
+
+/** `?machine_id=…` (plus any extra params), or "" for this bench. */
+function benchQuery(
+  machineId?: string | null,
+  extra: Record<string, string | undefined> = {}
+): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(extra)) {
+    if (value) {
+      params.set(key, value)
+    }
+  }
+  if (machineId) {
+    params.set("machine_id", machineId)
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ""
+}
+
 export function startSelfTest(
   body: SelfTestStartRequest
 ): Promise<JobResponse> {
@@ -170,30 +197,42 @@ export function startSelfTest(
 }
 
 export function getSelfTestStatus(
-  device?: string
+  device?: string,
+  machineId?: string | null
 ): Promise<SelfTestStatusResponse> {
-  const query = device ? `?device=${encodeURIComponent(device)}` : ""
-  return request<SelfTestStatusResponse>(`/api/v1/selftests/status${query}`)
-}
-
-export function abortSelfTest(
-  device: string
-): Promise<{ device: string; aborted: boolean }> {
-  return request<{ device: string; aborted: boolean }>(
-    "/api/v1/selftests/abort",
-    {
-      method: "POST",
-      body: JSON.stringify({ device }),
-    }
+  return request<SelfTestStatusResponse>(
+    `/api/v1/selftests/status${benchQuery(machineId, { device })}`
   )
 }
 
-export function getJob(jobId: string): Promise<JobResponse> {
-  return request<JobResponse>(`/api/v1/jobs/${encodeURIComponent(jobId)}`)
+export function abortSelfTest(
+  device: string,
+  machineId?: string | null
+): Promise<{ device: string; aborted: boolean; machine_id?: string | null }> {
+  return request<{
+    device: string
+    aborted: boolean
+    machine_id?: string | null
+  }>("/api/v1/selftests/abort", {
+    method: "POST",
+    body: JSON.stringify(
+      machineId ? { device, machine_id: machineId } : { device }
+    ),
+  })
 }
 
-export function listJobs(): Promise<JobResponse[]> {
-  return request<JobResponse[]>("/api/v1/jobs")
+/** Remote job ids are opaque: always poll with the bench that started the job. */
+export function getJob(
+  jobId: string,
+  machineId?: string | null
+): Promise<JobResponse> {
+  return request<JobResponse>(
+    `/api/v1/jobs/${encodeURIComponent(jobId)}${benchQuery(machineId)}`
+  )
+}
+
+export function listJobs(machineId?: string | null): Promise<JobResponse[]> {
+  return request<JobResponse[]>(`/api/v1/jobs${benchQuery(machineId)}`)
 }
 
 export function listMachines(): Promise<Machine[]> {
@@ -219,12 +258,12 @@ export function listHistory(
 }
 
 export function getHistory(scanId: string): Promise<HistoryDetail> {
-  return request<HistoryDetail>(
-    `/api/v1/history/${encodeURIComponent(scanId)}`
-  )
+  return request<HistoryDetail>(`/api/v1/history/${encodeURIComponent(scanId)}`)
 }
 
-export function deleteHistory(scanId: string): Promise<{ deleted: boolean; id: string }> {
+export function deleteHistory(
+  scanId: string
+): Promise<{ deleted: boolean; id: string }> {
   return request<{ deleted: boolean; id: string }>(
     `/api/v1/history/${encodeURIComponent(scanId)}`,
     { method: "DELETE" }
@@ -252,14 +291,40 @@ export function updateMachine(
   })
 }
 
-export function deleteMachine(machineId: string): Promise<{ deleted: boolean }> {
+export function deleteMachine(
+  machineId: string
+): Promise<{ deleted: boolean }> {
   return request<{ deleted: boolean }>(
     `/api/v1/machines/${encodeURIComponent(machineId)}`,
     { method: "DELETE" }
   )
 }
 
-export function discoverHosts(body: DiscoverRequest = {}): Promise<DiscoverResponse> {
+/** Authenticated health probe of a registered host; updates its stored status. */
+export function checkMachine(machineId: string): Promise<MachineCheckResponse> {
+  return request<MachineCheckResponse>(
+    `/api/v1/machines/${encodeURIComponent(machineId)}/check`,
+    { method: "POST" }
+  )
+}
+
+/** Latest cached drives from every registered host (no scanning). */
+export function getFleetDevices(): Promise<FleetDevicesResponse> {
+  return request<FleetDevicesResponse>("/api/v1/fleet/devices")
+}
+
+/**
+ * Scans every host, then returns the fleet view. Can take minutes; per-host
+ * failures are reported in `hosts[].error`. POST (not GET) so browsers and
+ * proxies never resend it; the API also merges overlapping requests.
+ */
+export function scanAllHosts(): Promise<FleetDevicesResponse> {
+  return request<FleetDevicesResponse>("/api/v1/fleet/scan", { method: "POST" })
+}
+
+export function discoverHosts(
+  body: DiscoverRequest = {}
+): Promise<DiscoverResponse> {
   return request<DiscoverResponse>("/api/v1/discover", {
     method: "POST",
     body: JSON.stringify(body),
@@ -307,6 +372,42 @@ export async function downloadReportFile(filename: string): Promise<void> {
   anchor.click()
   // Revoking synchronously can cancel the download in some browsers.
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+/**
+ * Download the drive list as CSV — the same columns, in the same order, as
+ * `cdi-health scan -o csv`, from the latest saved scans (no rescan). `bench`
+ * is a machine id, "local" for this bench, or omitted for every bench (which
+ * adds one trailing `bench` column).
+ */
+export async function downloadDrivesCsv(bench?: string | null): Promise<void> {
+  const query = bench ? `?machine_id=${encodeURIComponent(bench)}` : ""
+  const response = await fetch(
+    `${appConfig.apiBaseUrl}/api/v1/fleet/devices.csv${query}`,
+    { headers: { Accept: "text/csv" } }
+  )
+  if (!response.ok) {
+    throw new ApiError(await parseErrorMessage(response), response.status)
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? ""
+  const filename =
+    /filename="([^"]+)"/.exec(disposition)?.[1] ?? "cdi-drives.csv"
+  const url = URL.createObjectURL(await response.blob())
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+/** True when the API predates an endpoint (older cdi-health-api). */
+export function isNotFoundError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404
+}
+
+/** True when the API rejected the request body (often an older API). */
+export function isValidationError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 422
 }
 
 export { ApiError }
