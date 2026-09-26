@@ -61,6 +61,7 @@ import {
   useDevicesQuery,
   useHealthQuery,
   useInvalidateCdiQueries,
+  useMachinesQuery,
 } from "@/hooks/use-cdi-queries"
 import {
   downloadReportFile,
@@ -68,6 +69,7 @@ import {
   openReportFile,
   reportFilename,
 } from "@/lib/api"
+import { useSelectedHostId } from "@/lib/selected-host"
 import type { ReportHistoryEntry } from "@/lib/types"
 
 const HISTORY_KEY = "cdi-report-history"
@@ -93,7 +95,11 @@ function loadReportHistory(): ReportHistoryEntry[] {
 }
 
 function saveReportHistory(entries: ReportHistoryEntry[]): void {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(entries))
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(entries))
+  } catch {
+    /* quota exceeded or storage blocked; keep in-memory history only */
+  }
 }
 
 export function ReportsPage() {
@@ -101,6 +107,12 @@ export function ReportsPage() {
   const { invalidateDevices, invalidateHealth } = useInvalidateCdiQueries()
   const healthQuery = useHealthQuery()
   const devicesQuery = useDevicesQuery()
+  const machinesQuery = useMachinesQuery()
+  const selectedHostId = useSelectedHostId()
+  const selectedHostName = selectedHostId
+    ? (machinesQuery.data?.find((host) => host.id === selectedHostId)?.name ??
+      selectedHostId)
+    : null
   const [format, setFormat] = useState<"html" | "pdf" | "csv">("html")
   const [outputPath, setOutputPath] = useState("")
   const [device, setDevice] = useState("")
@@ -228,6 +240,9 @@ export function ReportsPage() {
             </CardTitle>
             <CardDescription>
               Configure format and filters, then execute against the local API.
+              {selectedHostName
+                ? ` Reports always scan drives attached to the API host; the selected fleet host (${selectedHostName}) is not applied.`
+                : ""}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -285,16 +300,28 @@ export function ReportsPage() {
               </Field>
 
               <Field orientation="horizontal">
-                <Switch checked={ignoreAta} onCheckedChange={setIgnoreAta} />
-                <FieldLabel>Ignore ATA/SATA</FieldLabel>
+                <Switch
+                  id="report-ignore-ata"
+                  checked={ignoreAta}
+                  onCheckedChange={setIgnoreAta}
+                />
+                <FieldLabel htmlFor="report-ignore-ata">Ignore ATA/SATA</FieldLabel>
               </Field>
               <Field orientation="horizontal">
-                <Switch checked={ignoreNvme} onCheckedChange={setIgnoreNvme} />
-                <FieldLabel>Ignore NVMe</FieldLabel>
+                <Switch
+                  id="report-ignore-nvme"
+                  checked={ignoreNvme}
+                  onCheckedChange={setIgnoreNvme}
+                />
+                <FieldLabel htmlFor="report-ignore-nvme">Ignore NVMe</FieldLabel>
               </Field>
               <Field orientation="horizontal">
-                <Switch checked={ignoreScsi} onCheckedChange={setIgnoreScsi} />
-                <FieldLabel>Ignore SCSI/SAS</FieldLabel>
+                <Switch
+                  id="report-ignore-scsi"
+                  checked={ignoreScsi}
+                  onCheckedChange={setIgnoreScsi}
+                />
+                <FieldLabel htmlFor="report-ignore-scsi">Ignore SCSI/SAS</FieldLabel>
               </Field>
             </FieldGroup>
 

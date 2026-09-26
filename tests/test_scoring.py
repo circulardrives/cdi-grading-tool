@@ -17,13 +17,23 @@
 # limitations under the License.
 #
 
-"""Tests for health scoring system."""
+"""Tests for health scoring system (binary / CDI v0.11.0 profile)."""
 
 from __future__ import annotations
 
 import pytest
 
+from cdi_health.classes.config import ThresholdConfig
 from cdi_health.classes.scoring import HealthScoreCalculator
+
+
+@pytest.fixture(autouse=True)
+def _binary_grading_profile() -> None:
+    """Keep legacy scoring tests on the binary profile (v0.11.0 BC)."""
+    ThresholdConfig.reset_instance()
+    ThresholdConfig.get_instance().set_grading_profile("binary")
+    yield
+    ThresholdConfig.reset_instance()
 
 
 class TestHealthScoreCalculator:
@@ -104,6 +114,19 @@ class TestHealthScoreCalculator:
         assert result.is_certified is False
         assert any(d.field == "state" and d.severity == "critical" for d in result.deductions)
 
+    def test_not_ready_tur_forces_grade_f(self) -> None:
+        """TUR Not Ready is F-NO-RESPONSE (#123); state is never literal 'fail' post-3537842."""
+        calculator = HealthScoreCalculator()
+        device = {
+            "transport_protocol": "SCSI",
+            "state": "Not Ready",
+            "smart_status": "PASSED",
+        }
+        result = calculator.calculate(device)
+        assert result.grade == "F"
+        assert result.score == 0
+        assert any(d.field == "state" and "not ready" in d.reason.lower() for d in result.deductions)
+
     def test_unresponsive_failed_state_forces_grade_f(self) -> None:
         """Partner 600-drive run: DOA/unresponsive drives should not become Grade D."""
         calculator = HealthScoreCalculator()
@@ -150,7 +173,7 @@ class TestHealthScoreCalculator:
                 "current_self_test_completion": 0,
                 "entries": [
                     {
-                        "result": 1,  # Failed
+                        "result": 7,  # Completed: one or more segments failed (NVMe 06h)
                         "result_string": "Failed",
                         "type": 1,  # Short test
                         "type_string": "Short",
@@ -294,8 +317,11 @@ class TestHealthScoreCalculator:
 
         result = calculator.calculate(device)
 
-        assert result.score == 100
+        # Above AVSPT, so not a fail-gate; in the spare D band (< 40%) the
+        # binary profile adds a warning deduction (#133).
+        assert result.score == 90
         assert result.grade == "A"
+        assert any(d.field == "available_spare" and d.severity == "warning" for d in result.deductions)
 
         device["available_spare"] = 9
         result = calculator.calculate(device)
@@ -329,7 +355,7 @@ class TestHealthScoreCalculator:
                 "current_self_test_operation": {"value": 0, "string": "No test in progress"},
                 "table": [
                     {
-                        "self_test_result": {"value": 1, "string": "The segment failed"},
+                        "self_test_result": {"value": 7, "string": "Completed: failed segments"},
                         "self_test_code": {"value": 2, "string": "Extended"},
                     }
                 ],
@@ -617,3 +643,44 @@ class TestHealthScoreCalculator:
         result = calculator.calculate(device)
         assert result.grade == "A"
         assert not any(d.field == "ocp_capacitor_health" for d in result.deductions)
+
+
+class TestTurStateScoring:
+    """#128: only a genuine Not Ready is a fail-gate."""
+
+    def test_unknown_state_is_not_a_fail_gate(self) -> None:
+        result = HealthScoreCalculator().calculate(
+            {"transport_protocol": "SCSI", "state": "Unknown", "smart_status": "PASSED"}
+        )
+        assert result.grade != "F"
+        assert not any(d.field == "state" for d in result.deductions)
+
+    def test_ata_not_ready_without_readable_smart_still_fails(self) -> None:
+        # No evidence the drive answered SMART -> keep the #123 fail-gate.
+        result = HealthScoreCalculator().calculate(
+            {"transport_protocol": "ATA", "state": "Not Ready", "smart_status": "PASSED"}
+        )
+        assert result.grade == "F"
+
+    def test_nvme_not_ready_with_readable_smart_is_waived(self) -> None:
+        result = HealthScoreCalculator().calculate(
+            {
+                "transport_protocol": "NVMe",
+                "state": "Not Ready",
+                "smart_status": True,
+                "smart_data_readable": True,
+                "percentage_used": 1,
+                "available_spare": 100,
+                "available_spare_threshold": 10,
+            }
+        )
+        assert not any(d.field == "state" for d in result.deductions)
+        assert result.grade != "F"
+
+
+@pytest.mark.parametrize(
+    ("code", "failed"), [(0, False), (1, False), (2, False), (5, True), (6, True), (7, True), (9, False)]
+)
+def test_nvme_selftest_result_codes_follow_spec(code: int, failed: bool) -> None:
+    """Only NVMe 06h results 5-7 are failures; 1-4/8/9 are aborts (#130)."""
+    assert HealthScoreCalculator._nvme_selftest_entry_failed({"self_test_result": {"value": code}}) is failed

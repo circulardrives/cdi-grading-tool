@@ -378,6 +378,8 @@ class SelfTestFormatter:
             return Colors.green("✓ Passed")
         if result.get("test_aborted", False):
             return Colors.yellow("⚠ Aborted")
+        if result.get("test_result_unknown", False):
+            return Colors.yellow("? Unknown")
         return "-"
 
     def _format_last_test(self, result: dict) -> str:

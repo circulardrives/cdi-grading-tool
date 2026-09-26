@@ -2,7 +2,7 @@
 
 Vite + React technician console for the CDI Health local API. Built with [shadcn/ui](https://ui.shadcn.com) (radix-luma preset) in a bun monorepo.
 
-**Release:** use Docker image `ghcr.io/circulardrives/cdi-health-dashboard:0.9.5` or build from this repo.
+**Release:** use Docker image `ghcr.io/circulardrives/cdi-health-dashboard:latest` (or pin a semver tag) or build from this repo.
 
 ## Structure
 
@@ -14,33 +14,27 @@ dashboard/
 
 ## Quick start (Docker — recommended)
 
-From the repository root. Pin **0.9.5**:
+From the repository root:
 
 ```bash
-./scripts/docker-reset.sh --clear-data
-
-# Find grading benches on the LAN
-CDI_VERSION=0.9.5 ./scripts/docker-lan-discover.sh
+./scripts/docker-up.sh
 
 # Live scans via one remote bench
-BENCH_IP=192.168.0.74 ./scripts/docker-remote-bench.sh
+./scripts/docker-up.sh --bench 192.168.0.74
+
+# Build from this clone
+./scripts/docker-up.sh --build
 ```
 
 Open http://127.0.0.1:3000
 
 - **Discover** → subnet `192.168.0.0/24` to find `cdi-health-api` on the network.
-- **Use mock data** (Discover → Demo mode) is **off by default**; enable for fixture demos only.
-
-Build from source (includes latest UI, e.g. mock toggle):
-
-```bash
-docker compose -f deploy/docker/docker-compose.yml up -d --build
-```
+- **Mock data** (toggle in the app header) is **off by default**; enable for fixture demos only.
 
 Images (multi-arch):
 
-- `ghcr.io/circulardrives/cdi-health-api:0.9.5`
-- `ghcr.io/circulardrives/cdi-health-dashboard:0.9.5`
+- `ghcr.io/circulardrives/cdi-health-api:latest`
+- `ghcr.io/circulardrives/cdi-health-dashboard:latest`
 
 See [Team testing](../docs/TEAM_TESTING.md) and [Technician deployment](../docs/TECHNICIAN_DEPLOYMENT.md).
 
@@ -61,7 +55,7 @@ Or all-in-one mock from repo root:
 ./scripts/start-local-mock.sh
 ```
 
-Live scans are the default; enable **Use mock data** on **Discover** for fixtures.
+Live scans are the default; enable **Mock data** in the app header for fixtures.
 
 ## Environment
 
@@ -71,11 +65,11 @@ Copy `apps/web/.env.example` to `apps/web/.env.local`.
 | --- | --- |
 | `VITE_CDI_API_BASE_URL` | Fetch base path (`/api/cdi` in dev) |
 | `VITE_CDI_API_PROXY_TARGET` | Vite proxy upstream (default `127.0.0.1:8844`) |
-| `VITE_CDI_API_TOKEN` | Sent as `X-API-Token` when API auth is enabled |
+| `CDI_HEALTH_API_TOKEN` | Injected as `X-API-Token` by the Vite dev/preview proxy (server-side only; not bundled). Legacy `VITE_CDI_API_TOKEN` is still accepted |
 | `VITE_CDI_MOCK_DATA_PATH` | Path sent to API when **Use mock data** is enabled |
 | `VITE_CDI_DISCOVER_SUBNET` | Default subnet placeholder on Discover |
 
-In Docker/nginx production mode, the UI uses `/api/cdi` on the same origin; nginx proxies to the API container or remote bench.
+In Docker/nginx production mode, the UI uses `/api/cdi` on the same origin; nginx proxies to the API container or remote bench and adds `X-API-Token` from `CDI_HEALTH_API_TOKEN`. The browser never holds the token.
 
 ## Adding components
 

@@ -90,7 +90,9 @@ include-package-data = true
 
 [tool.setuptools_scm]
 write_to = "src/cdi_health/_version.py"
-fallback_version = "0.9.0"
+# Used only when no VCS metadata is available; deliberately not a real
+# release number so builds without tags are obvious.
+fallback_version = "0.0.0.dev0"
 
 [tool.ruff]
 line-length = 100

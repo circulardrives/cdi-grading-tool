@@ -96,3 +96,34 @@ def test_clear_scans(tmp_path: Path) -> None:
     assert store.clear_scans() == 2
     assert store.list_scans() == []
     assert store.clear_scans() == 0
+
+
+def test_ungraded_summary_round_trip(tmp_path: Path) -> None:
+    store = ScanHistoryStore(data_dir=tmp_path)
+    scan = {
+        "scanned_at": "2026-07-19T12:00:00+00:00",
+        "grading_profile": "abcdf",
+        "summary": {"total": 2, "healthy": 1, "warning": 0, "failed": 0, "ungraded": 1},
+        "devices": [
+            {"serial_number": "AAA", "health_grade": "A", "health_score": 95},
+            {"serial_number": "LCK", "health_grade": "UNGRADED", "health_score": None, "final_grade": "UNGRADED"},
+        ],
+    }
+    saved = store.record_scan(scan)
+    assert saved["grades"] == {"A": 1, "UNGRADED": 1}
+    loaded = store.get_scan(saved["id"])
+    assert loaded is not None
+    assert loaded["summary"]["ungraded"] == 1
+    assert loaded["summary"]["failed"] == 0
+    assert loaded["grading_profile"] == "abcdf"
+    listed = store.list_scans()[0]
+    assert listed["summary"]["ungraded"] == 1
+
+
+def test_legacy_entry_without_ungraded_defaults_to_zero(tmp_path: Path) -> None:
+    store = ScanHistoryStore(data_dir=tmp_path)
+    saved = store.record_scan(_sample_scan())
+    loaded = store.get_scan(saved["id"])
+    assert loaded is not None
+    assert loaded["summary"]["ungraded"] == 0
+    assert loaded["grading_profile"] is None

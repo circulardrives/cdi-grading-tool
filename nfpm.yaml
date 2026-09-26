@@ -20,9 +20,10 @@ vendor: Circular Drive Initiative
 homepage: https://github.com/circulardrives/cdi-grading-tool
 license: Apache-2.0
 
+# Common runtime deps. Debian/Ubuntu split the venv module (ensurepip) into
+# python3-venv, so the deb override below adds it; RHEL/Fedora python3 ships venv.
 depends:
   - python3
-  - python3-venv
   - smartmontools
   - nvme-cli
 
@@ -58,11 +59,32 @@ contents:
     file_info:
       mode: 0755
 
+  # Opt-in LAN exposure: examples only, never active by default. Kept out of
+  # /usr/share/doc because minimal Ubuntu/Debian images path-exclude it.
+  - src: ./deploy/systemd/cdi-health-api.service.d/lan.conf
+    dst: /usr/share/cdi-health/examples/systemd/cdi-health-api.service.d/lan.conf
+    file_info:
+      mode: 0644
+
+  - src: ./deploy/systemd/cdi-health-api.env.example
+    dst: /usr/share/cdi-health/examples/cdi-health-api.env.example
+    file_info:
+      mode: 0644
+
+# One set of maintainer scripts for deb and rpm; each handles both argument
+# conventions (deb: configure/remove/upgrade..., rpm: numeric counts).
 scripts:
   postinstall: ./deploy/deb/postinst.sh
+  preremove: ./deploy/deb/prerm.sh
+  postremove: ./deploy/deb/postrm.sh
 
 overrides:
   deb:
+    depends:
+      - python3
+      - python3-venv
+      - smartmontools
+      - nvme-cli
     suggests:
       - sg3-utils
   rpm:

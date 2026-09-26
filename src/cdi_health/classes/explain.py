@@ -41,6 +41,7 @@ def deduction_to_dict(deduction: ScoreDeduction) -> dict[str, Any]:
         "field": deduction.field,
         "value": deduction.value,
         "threshold": deduction.threshold,
+        "attribute_grade": deduction.attribute_grade,
     }
 
 
@@ -58,15 +59,22 @@ def certification_blockers(score: HealthScore) -> list[str]:
     """
     Return stable, human-readable reasons certification was blocked.
 
-    Mirrors ``HealthScoreCalculator.calculate`` certification rules:
-    grade A/B required, no critical deductions, no failed self-test.
+    Mirrors ``HealthScoreCalculator.calculate`` certification rules.
+    abcdf (default): A/B/C certify, D is Advisory, F is not.
+    binary: A/B certify (legacy CDI).
     """
     if score.is_certified:
         return []
 
     blockers: list[str] = []
-    if score.grade not in ("A", "B"):
-        blockers.append(f"grade is {score.grade} (certification requires A or B)")
+    profile = getattr(score, "grading_profile", "abcdf")
+    if profile == "binary":
+        if score.grade not in ("A", "B"):
+            blockers.append(f"grade is {score.grade} (certification requires A or B)")
+    elif score.grade == "D" or getattr(score, "certification", None) == "Advisory":
+        blockers.append(f"grade is {score.grade} (Advisory tier; full certification requires A, B, or C)")
+    elif score.grade not in ("A", "B", "C"):
+        blockers.append(f"grade is {score.grade} (certification requires A, B, or C)")
 
     seen: set[str] = set()
     for deduction in score.deductions:
@@ -170,18 +178,31 @@ def format_device_explanation(device: dict[str, Any], score: HealthScore | None 
     if not score.deductions:
         lines.append("  Deductions: none")
     else:
-        points = sum(d.points for d in score.deductions)
-        lines.append(f"  Deductions ({len(score.deductions)}; {points} points total):")
+        # Only non-band warning/info points are subtracted from the band base (#119).
+        arithmetic_points = sum(
+            d.points for d in score.deductions if d.attribute_grade is None and d.severity in ("info", "warning")
+        )
+        band_n = sum(1 for d in score.deductions if d.attribute_grade is not None)
+        summary_bits = [f"{len(score.deductions)} items"]
+        if band_n:
+            summary_bits.append(f"{band_n} graded attributes")
+        if arithmetic_points:
+            summary_bits.append(f"{arithmetic_points} warning points")
+        lines.append(f"  Deductions ({'; '.join(summary_bits)}):")
         header = (
-            f"    {_fmt_cell('Severity', 10)} {_fmt_cell('Points', 7)} "
+            f"    {_fmt_cell('Severity', 10)} {_fmt_cell('Impact', 7)} "
             f"{_fmt_cell('Field', 24)} {_fmt_cell('Value', 10)} "
             f"{_fmt_cell('Threshold', 10)} Reason"
         )
         lines.append(Colors.dim(header))
         for deduction in score.deductions:
             sev_colored = _color_severity(deduction.severity) + (" " * max(0, 10 - len(deduction.severity)))
+            if deduction.attribute_grade is not None:
+                impact = f"grade {deduction.attribute_grade}"
+            else:
+                impact = f"-{deduction.points}"
             lines.append(
-                f"    {sev_colored} {_fmt_cell(f'-{deduction.points}', 7)} "
+                f"    {sev_colored} {_fmt_cell(impact, 7)} "
                 f"{_fmt_cell(deduction.field, 24)} {_fmt_cell(deduction.value, 10)} "
                 f"{_fmt_cell(deduction.threshold, 10)} {deduction.reason}"
             )

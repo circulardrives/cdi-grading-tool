@@ -31,7 +31,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from cdi_health.classes.explain import certification_rationale
+from cdi_health.classes.explain import attach_explanation
+from cdi_health.classes.revert import flag_duplicate_serials, is_ungraded, revert_fields
 from cdi_health.classes.scoring import HealthScoreCalculator
 
 
@@ -116,10 +117,14 @@ class ReportGenerator:
                 try:
                     val = fn(d)
                 except Exception:
-                    val = ""
+                    val = "—"
                 if val is None:
-                    val = ""
-                row[h] = str(val)
+                    val = "—"
+                # #126: collapse "not applicable" / empty / N/A to the report-wide em dash
+                text = str(val).strip()
+                if text.casefold() in {"", "-", "—", "n/a", "na", "none", "not applicable", "not reported"}:
+                    text = "—"
+                row[h] = text
             for h, fn in ReportGenerator._nvme_csv_json_column_fns(cat, cat_devices):
                 if h in row:
                     try:
@@ -149,20 +154,34 @@ class ReportGenerator:
         HTML(string=html_content).write_pdf(output_path)
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
-        """Add health scores and grading rationale to devices."""
+        """Add health scores, Revert §13/§15 fields, and grading rationale."""
         enriched = []
         for device in devices:
-            d = device.copy()
             score = self.calculator.calculate(device)
-            d["health_score"] = score.score
-            d["health_grade"] = score.grade
-            d["health_status"] = score.status
-            d["health_deductions"] = score.deductions
-            d["is_certified"] = score.is_certified
-            d["certification_rationale"] = certification_rationale(score)
+            d = attach_explanation(device, score)
+            d.update(revert_fields(d, score))
             d["report_category"] = self._device_report_category(d)
             enriched.append(d)
+        flag_duplicate_serials(enriched)
         return enriched
+
+    @staticmethod
+    def _score_bucket(device: dict) -> str:
+        """Classify a drive for the summary strip; UNGRADED never counts as graded."""
+        if is_ungraded(device) or device.get("grading_status") == "UNGRADED":
+            return "ungraded"
+        score = device.get("health_score")
+        if score is None:
+            return "ungraded"
+        try:
+            value = int(score)
+        except (TypeError, ValueError):
+            return "ungraded"
+        if value >= 75:
+            return "healthy"
+        if value >= 40:
+            return "warning"
+        return "failed"
 
     @staticmethod
     def _device_report_category(device: dict) -> str:
@@ -191,9 +210,9 @@ class ReportGenerator:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         dv = default_view if default_view in ("simple", "advanced") else "simple"
 
-        healthy = sum(1 for d in devices if d["health_score"] >= 75)
-        warning = sum(1 for d in devices if 40 <= d["health_score"] < 75)
-        failed = sum(1 for d in devices if d["health_score"] < 40)
+        healthy = sum(1 for d in devices if self._score_bucket(d) == "healthy")
+        warning = sum(1 for d in devices if self._score_bucket(d) == "warning")
+        failed = sum(1 for d in devices if self._score_bucket(d) in ("failed", "ungraded"))
 
         by_cat: dict[str, list[dict]] = {label: [] for label, _ in _REPORT_TABS}
         by_cat["Other"] = []
@@ -433,22 +452,37 @@ class ReportGenerator:
         s = str(device.get("serial_number", "") or "").strip()
         return s if s else "—"
 
+    @staticmethod
+    def _format_one_deduction(d) -> str:
+        """
+        Format a single deduction for display (#119).
+
+        Graduated attribute bands show ``[grade X]`` (worst-attribute-wins),
+        not a cosmetic ``[-N]`` that is never subtracted from the score.
+        Non-band warnings/fail-gates keep real point values.
+        """
+        if hasattr(d, "reason") and hasattr(d, "points"):
+            # ScoreDeduction.__str__ already prefers [grade X] when set.
+            return str(d)
+        if isinstance(d, dict):
+            reason = d.get("reason") or "Deduction"
+            attr_grade = d.get("attribute_grade")
+            if attr_grade is not None:
+                prefix = f"{reason}: {d['value']}" if d.get("value") is not None else reason
+                return f"{prefix} [grade {attr_grade}]"
+            if d.get("threshold") is not None:
+                return f"{reason}: {d.get('value')} (threshold: {d['threshold']}) [-{d.get('points', 0)}]"
+            points = d.get("points")
+            if points is not None:
+                return f"{reason} [-{points}]"
+            return str(reason)
+        return str(d)
+
     def _format_deductions_short(self, deductions) -> str:
         """One-line summary for table cells."""
         if not deductions:
             return "—"
-        parts = []
-        for d in deductions:
-            if hasattr(d, "reason") and hasattr(d, "points"):
-                if getattr(d, "threshold", None) is not None:
-                    parts.append(f"{d.reason}: {d.value} (threshold: {d.threshold}) [-{d.points}]")
-                else:
-                    parts.append(f"{d.reason} [-{d.points}]")
-            elif isinstance(d, dict):
-                parts.append(str(d.get("reason", d)))
-            else:
-                parts.append(str(d))
-        return " | ".join(parts)
+        return " | ".join(self._format_one_deduction(d) for d in deductions)
 
     @staticmethod
     def _iter_deduction_dicts(deductions) -> list[dict]:
@@ -466,6 +500,7 @@ class ReportGenerator:
                         "field": getattr(d, "field", None),
                         "value": getattr(d, "value", None),
                         "threshold": getattr(d, "threshold", None),
+                        "attribute_grade": getattr(d, "attribute_grade", None),
                     }
                 )
             elif isinstance(d, dict):
@@ -478,17 +513,26 @@ class ReportGenerator:
 
     def _grade_badge(self, grade: str) -> str:
         g = (grade or "F").upper()
+        if g in ("UNGRADED", "U"):
+            return self._badge_html("UNGRADED", "muted")
         variant = {"A": "ok", "B": "ok", "C": "warn", "D": "warn", "F": "bad"}.get(g, "muted")
         return self._badge_html(f"Grade {g}", variant)
 
-    def _status_badge(self, status: str, score: int) -> str:
-        if score >= 75:
+    def _status_badge(self, status: str, score: int | None = 0) -> str:
+        status_text = str(status or "Unknown")
+        if status_text.lower() == "ungraded" or score is None:
+            return self._badge_html("Ungraded", "muted")
+        try:
+            value = int(score)
+        except (TypeError, ValueError):
+            return self._badge_html(status_text, "muted")
+        if value >= 75:
             variant = "ok"
-        elif score >= 40:
+        elif value >= 40:
             variant = "warn"
         else:
             variant = "bad"
-        return self._badge_html(str(status or "Unknown"), variant)
+        return self._badge_html(status_text, variant)
 
     def _render_deduction_list(self, deductions) -> str:
         items = self._iter_deduction_dicts(deductions)
@@ -499,6 +543,7 @@ class ReportGenerator:
             sev = str(item.get("severity") or "info").lower()
             reason = html.escape(str(item.get("reason") or "Deduction"))
             points = item.get("points")
+            attr_grade = item.get("attribute_grade")
             detail_bits = []
             if item.get("field"):
                 detail_bits.append(f"field={item['field']}")
@@ -506,7 +551,13 @@ class ReportGenerator:
                 detail_bits.append(f"value={item['value']}")
             if item.get("threshold") is not None:
                 detail_bits.append(f"threshold={item['threshold']}")
-            meta = f" (−{html.escape(str(points))})" if points is not None else ""
+            # Graduated bands: show band grade, not a misleading point delta (#119).
+            if attr_grade is not None:
+                meta = f" (grade {html.escape(str(attr_grade))})"
+            elif points is not None:
+                meta = f" (−{html.escape(str(points))})"
+            else:
+                meta = ""
             detail = (
                 f'<span class="deduction-meta">{html.escape(" · ".join(detail_bits))}</span>' if detail_bits else ""
             )
@@ -520,15 +571,35 @@ class ReportGenerator:
 
     def _evidence_card_html(self, device: dict) -> str:
         """Per-drive evidence card for simple view (certification rationale + deductions)."""
-        score = device.get("health_score", 0)
-        grade = device.get("health_grade", "F")
+        score = device.get("health_score")
+        grade = device.get("final_grade") or device.get("health_grade", "F")
         status = device.get("health_status", "Unknown")
         serial = self._serial_label(device)
         model = str(device.get("model_number") or "—")
         firmware = str(device.get("firmware_revision") or "—")
         certified = bool(device.get("is_certified"))
         rationale = str(device.get("certification_rationale") or "—")
-        cert_badge = self._badge_html("Certified", "ok") if certified else self._badge_html("Not certified", "bad")
+        score_display = "—" if score is None else score
+        score_for_badge = score if isinstance(score, int) else None
+        ungraded = is_ungraded(device) or str(grade).upper() in ("UNGRADED", "U")
+        if ungraded:
+            cert_badge = self._badge_html("Not graded", "muted")
+        else:
+            cert_badge = self._badge_html("Certified", "ok") if certified else self._badge_html("Not certified", "bad")
+        flags = device.get("warning_flags") or []
+        reasons = device.get("ungraded_reasons") or []
+        extra_bits = []
+        if reasons:
+            extra_bits.append(
+                '<div class="evidence-rationale"><h4>Ungraded reasons</h4>'
+                f"<p>{html.escape(' | '.join(str(r) for r in reasons))}</p></div>"
+            )
+        if flags:
+            extra_bits.append(
+                '<div class="evidence-rationale"><h4>Warning flags</h4>'
+                f"<p>{html.escape(' | '.join(str(f) for f in flags))}</p></div>"
+            )
+        extra_html = "".join(extra_bits)
         return f"""
             <article class="evidence-card">
               <header class="evidence-card__head">
@@ -538,12 +609,12 @@ class ReportGenerator:
                 </div>
                 <div class="evidence-card__badges">
                   {self._grade_badge(str(grade))}
-                  {self._status_badge(str(status), int(score) if isinstance(score, int) else 0)}
+                  {self._status_badge(str(status), score_for_badge)}
                   {cert_badge}
                 </div>
               </header>
               <dl class="evidence-metrics">
-                <div><dt>Score</dt><dd class="mono">{html.escape(str(score))}</dd></div>
+                <div><dt>Score</dt><dd class="mono">{html.escape(str(score_display))}</dd></div>
                 <div><dt>Protocol</dt><dd>{html.escape(str(device.get("transport_protocol") or "—"))}</dd></div>
                 <div><dt>Capacity</dt><dd>{html.escape(self._format_capacity(device.get("bytes") or device.get("capacity")))}</dd></div>
                 <div><dt>POH</dt><dd class="mono">{html.escape(str(device.get("power_on_hours") if device.get("power_on_hours") is not None else "—"))}</dd></div>
@@ -552,6 +623,7 @@ class ReportGenerator:
                 <h4>Certification rationale</h4>
                 <p>{html.escape(rationale)}</p>
               </div>
+              {extra_html}
               <div class="evidence-deductions">
                 <h4>Grading deductions</h4>
                 {self._render_deduction_list(device.get("health_deductions"))}
@@ -590,7 +662,11 @@ class ReportGenerator:
                 return json.dumps(val, ensure_ascii=False, default=str)
             except TypeError:
                 return str(val)
-        return str(val)
+        text = str(val).strip()
+        # #126: SCSI verify-log "not applicable" and empty cells use the report em dash
+        if text.casefold() in {"", "-", "—", "n/a", "na", "none", "not applicable", "not reported"}:
+            return "—"
+        return text
 
     def _nvme_extended_column_specs(self) -> list[tuple[str, object]]:
         """Per-field columns from ``nvme_smart_health_information_log`` (+ self-test status)."""
@@ -1017,10 +1093,32 @@ class ReportGenerator:
         return any(d.get("transport_protocol") == "ATA" and d.get("media_type") == "SSD" for d in devices)
 
     def _grading_tail_specs(self) -> list[tuple[str, object]]:
+        def _join_list(key: str):
+            def _fn(d: dict):
+                values = d.get(key) or []
+                if not values:
+                    return "—"
+                return " | ".join(str(v) for v in values)
+
+            return _fn
+
         return [
             ("Health score", lambda d: d.get("health_score", "—")),
-            ("Grade", lambda d: d.get("health_grade", "—")),
+            ("Grade", lambda d: d.get("final_grade") or d.get("health_grade", "—")),
             ("Health status", lambda d: d.get("health_status", "—")),
+            ("Grading status", lambda d: d.get("grading_status", "—")),
+            ("Ungraded reasons", _join_list("ungraded_reasons")),
+            ("Warning flags", _join_list("warning_flags")),
+            ("Fail reason codes", _join_list("fail_reason_codes")),
+            ("Age-cap grade", lambda d: d.get("age_cap_grade", "—")),
+            ("Defect grade", lambda d: d.get("defect_grade", "—")),
+            ("Multi-factor applied", lambda d: d.get("multi_factor_applied", "—")),
+            ("Revert eligible", lambda d: d.get("revert_eligible", "—")),
+            ("Revert certified", lambda d: d.get("revert_certified", "—")),
+            ("Recommended use", lambda d: d.get("recommended_use", "—")),
+            ("Drive class", lambda d: d.get("drive_class", "—")),
+            ("Scan timestamp", lambda d: d.get("scan_timestamp", "—")),
+            ("Revert standard version", lambda d: d.get("revert_standard_version", "—")),
             ("CDI certified", lambda d: "Yes" if d.get("is_certified") else "No"),
             ("Certification rationale", lambda d: d.get("certification_rationale", "—")),
             ("Deductions", lambda d: self._format_deductions_short(d.get("health_deductions"))),
@@ -1164,17 +1262,19 @@ class ReportGenerator:
 
     def _generate_row_simple(self, device: dict) -> str:
         """Grading-focused row (serial + score + grade badge)."""
-        score = device.get("health_score", 0)
-        grade = device.get("health_grade", "F")
+        score = device.get("health_score")
+        grade = device.get("final_grade") or device.get("health_grade", "F")
         status = device.get("health_status", "Unknown")
         model = str(device.get("model_number") or "—")
+        score_display = "—" if score is None else score
+        score_for_badge = score if isinstance(score, int) else None
         return (
             "<tr>"
             f'<td class="col-serial">{html.escape(self._serial_label(device))}</td>'
             f"<td>{html.escape(model)}</td>"
-            f'<td class="score mono">{score}</td>'
+            f'<td class="score mono">{html.escape(str(score_display))}</td>'
             f"<td>{self._grade_badge(str(grade))}</td>"
-            f"<td>{self._status_badge(str(status), int(score) if isinstance(score, int) else 0)}</td>"
+            f"<td>{self._status_badge(str(status), score_for_badge)}</td>"
             "</tr>"
         )
 
@@ -1275,7 +1375,16 @@ class ReportGenerator:
             return ("Yes" if raw else "No"), "is-bool"
 
         text = ReportGenerator._format_scalar_for_display(raw)
-        if text in {"", "-", "—", "None", "Not Reported", "NOT REPORTED"}:
+        if text.casefold() in {
+            "",
+            "-",
+            "—",
+            "none",
+            "n/a",
+            "na",
+            "not reported",
+            "not applicable",
+        }:
             return "—", "is-missing"
         return text, ""
 

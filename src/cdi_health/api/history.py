@@ -45,6 +45,16 @@ def _safe_history_id(scan_id: str) -> str | None:
     return scan_id
 
 
+def _summary_counts(summary: dict[str, Any], devices: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "total": int(summary.get("total", len(devices))),
+        "healthy": int(summary.get("healthy", 0)),
+        "warning": int(summary.get("warning", 0)),
+        "failed": int(summary.get("failed", 0)),
+        "ungraded": int(summary.get("ungraded", 0)),
+    }
+
+
 def _grade_counts(devices: list[dict[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for device in devices:
@@ -100,12 +110,8 @@ class ScanHistoryStore:
             "machine_id": machine_id,
             "mock": bool(mock),
             "device_count": len(devices),
-            "summary": {
-                "total": int(summary.get("total", len(devices))),
-                "healthy": int(summary.get("healthy", 0)),
-                "warning": int(summary.get("warning", 0)),
-                "failed": int(summary.get("failed", 0)),
-            },
+            "grading_profile": scan_result.get("grading_profile"),
+            "summary": _summary_counts(summary, devices),
             "grades": _grade_counts(devices),
             "devices": devices,
         }
@@ -166,16 +172,12 @@ class ScanHistoryStore:
         if not isinstance(devices, list):
             payload["devices"] = []
         summary = payload.get("summary") or {}
-        payload["summary"] = {
-            "total": int(summary.get("total", len(payload["devices"]))),
-            "healthy": int(summary.get("healthy", 0)),
-            "warning": int(summary.get("warning", 0)),
-            "failed": int(summary.get("failed", 0)),
-        }
+        payload["summary"] = _summary_counts(summary, payload["devices"])
         payload.setdefault("device_count", len(payload["devices"]))
         payload.setdefault("grades", _grade_counts(payload["devices"]))
         payload.setdefault("mock", False)
         payload.setdefault("machine_id", None)
+        payload.setdefault("grading_profile", None)
         payload.setdefault("created_at", payload.get("scanned_at"))
         return payload
 
@@ -227,11 +229,7 @@ class ScanHistoryStore:
             "machine_id": payload.get("machine_id"),
             "mock": bool(payload.get("mock", False)),
             "device_count": int(payload.get("device_count", len(devices))),
-            "summary": {
-                "total": int(summary.get("total", len(devices))),
-                "healthy": int(summary.get("healthy", 0)),
-                "warning": int(summary.get("warning", 0)),
-                "failed": int(summary.get("failed", 0)),
-            },
+            "grading_profile": payload.get("grading_profile"),
+            "summary": _summary_counts(summary, devices),
             "grades": {str(k): int(v) for k, v in grades.items()},
         }

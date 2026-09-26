@@ -27,6 +27,7 @@ import { Badge } from "@workspace/ui/components/badge"
 
 import { CdiLogo, CdiLogoMark } from "@/components/cdi-logo"
 import { useMockDataSettings } from "@/components/mock-data-provider"
+import { useHealthQuery } from "@/hooks/use-cdi-queries"
 import { appConfig } from "@/lib/config"
 
 function formatApiHostLabel(apiHost: string): string {
@@ -101,6 +102,7 @@ const navItems = [
 export function AppSidebar() {
   const location = useLocation()
   const { useMockData } = useMockDataSettings()
+  const apiVersion = useHealthQuery().data?.version
   const apiHostLabel = formatApiHostLabel(appConfig.apiHost)
   const localApi = isLocalApiHost(appConfig.apiHost)
 
@@ -166,6 +168,11 @@ export function AppSidebar() {
               {apiHostLabel}
             </span>
           </div>
+          {apiVersion ? (
+            <span className="text-muted-foreground px-0.5 font-mono text-xs group-data-[collapsible=icon]:hidden">
+              API v{apiVersion}
+            </span>
+          ) : null}
           {useMockData ? (
             <Badge variant="secondary" className="w-fit">
               Mock scan data

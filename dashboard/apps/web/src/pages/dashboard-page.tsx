@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   AlertCircleIcon,
   HardDriveIcon,
@@ -47,8 +47,13 @@ import {
   useInvalidateCdiQueries,
 } from "@/hooks/use-cdi-queries"
 import { scanDevices } from "@/lib/api"
-import { healthBadgeVariant } from "@/lib/health-badges"
-import { getSelectedHostId } from "@/lib/selected-host"
+import {
+  deviceBadgeVariant,
+  formatHealthLabel,
+  formatHealthScore,
+} from "@/lib/health-badges"
+import { deviceRowKeys } from "@/lib/drive-labels"
+import { useSelectedHostId } from "@/lib/selected-host"
 
 const AUTO_REFRESH_MS = 30_000
 
@@ -60,10 +65,12 @@ export function DashboardPage() {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
 
   const healthQuery = useHealthQuery()
-  const devicesQuery = useDevicesQuery(getSelectedHostId())
+  const selectedHostId = useSelectedHostId()
+  const devicesQuery = useDevicesQuery(selectedHostId)
 
   const health = healthQuery.data ?? null
   const scan = devicesQuery.data ?? null
+  const rowKeys = useMemo(() => deviceRowKeys(scan?.devices ?? []), [scan])
   const loading = healthQuery.isLoading || devicesQuery.isLoading
   const error =
     healthQuery.error instanceof Error
@@ -111,7 +118,7 @@ export function DashboardPage() {
   const runScan = async () => {
     setScanning(true)
     try {
-      const machineId = getSelectedHostId()
+      const machineId = selectedHostId
       const result = await scanDevices({
         ignore_ata: false,
         ignore_nvme: false,
@@ -202,7 +209,12 @@ export function DashboardPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-muted-foreground text-sm">
-                {health?.is_root ? "Running as root" : "Non-root dev mode"}
+                {health?.version ? `v${health.version} · ` : ""}
+                {health?.is_root == null
+                  ? "Limited status (not authenticated)"
+                  : health.is_root
+                    ? "Running as root"
+                    : "Non-root dev mode"}
                 {health?.api_token_enabled ? " · Token auth on" : ""}
                 {health?.weasyprint_available === false
                   ? " · PDF export unavailable"
@@ -244,6 +256,9 @@ export function DashboardPage() {
               <CardContent className="text-muted-foreground text-sm">
                 {scan?.summary.warning ?? 0} warning · {scan?.summary.failed ?? 0}{" "}
                 failed
+                {scan?.summary.ungraded
+                  ? ` · ${scan.summary.ungraded} ungraded`
+                  : ""}
               </CardContent>
             </Card>
           </>
@@ -277,24 +292,19 @@ export function DashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {scan.devices.slice(0, 8).map((device) => (
-                  <TableRow key={String(device.dut ?? device.serial_number)}>
+                {scan.devices.slice(0, 8).map((device, index) => (
+                  <TableRow key={rowKeys.get(device) ?? `row-${index}`}>
                     <TableCell className="font-mono text-xs">
                       {device.dut ?? "—"}
                     </TableCell>
                     <TableCell>{device.model_number ?? "—"}</TableCell>
                     <TableCell>{device.transport_protocol ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant={healthBadgeVariant(
-                          device.health_status,
-                          device.health_grade
-                        )}
-                      >
-                        {device.health_grade ?? device.health_status ?? "—"}
+                      <Badge variant={deviceBadgeVariant(device)}>
+                        {formatHealthLabel(device)}
                       </Badge>
                     </TableCell>
-                    <TableCell>{device.health_score ?? "—"}</TableCell>
+                    <TableCell>{formatHealthScore(device)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -107,24 +107,30 @@ def check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) 
     return missing
 
 
-def load_threshold_config(config_path: str | None) -> None:
+def load_threshold_config(config_path: str | None, grading_profile: str | None = None) -> None:
     """
     Load threshold configuration.
 
     Uses the explicit --config path when given, otherwise falls back to the
     packaged thresholds.yaml so the shipped defaults are actually applied.
+
+    Optional ``grading_profile`` (from ``--grading-profile``) overrides
+    ``grading.profile`` after the YAML is loaded (#115 / #125).
     """
-    from cdi_health.classes.config import configure_thresholds, get_default_config_path
+    from cdi_health.classes.config import configure_thresholds, get_config, get_default_config_path
 
     if config_path:
         configure_thresholds(config_path)
         logger.info("Loaded configuration from: %s", config_path)
-        return
+    else:
+        default_path = get_default_config_path()
+        if default_path:
+            configure_thresholds(default_path)
+            logger.debug("Loaded default configuration from: %s", default_path)
 
-    default_path = get_default_config_path()
-    if default_path:
-        configure_thresholds(default_path)
-        logger.debug("Loaded default configuration from: %s", default_path)
+    if grading_profile:
+        applied = get_config().set_grading_profile(grading_profile)
+        logger.info("Grading profile: %s", applied)
 
 
 def scan_devices_real(ignore_ata=False, ignore_nvme=False, ignore_scsi=False) -> list[dict]:
@@ -228,7 +234,7 @@ def cmd_scan(args: Namespace) -> int:
             return 1
 
     # Load configuration (custom via --config, or packaged defaults)
-    load_threshold_config(args.config)
+    load_threshold_config(args.config, grading_profile=getattr(args, "grading_profile", None))
 
     # Scan devices
     try:
@@ -322,7 +328,7 @@ def cmd_validate(args: Namespace) -> int:
             logger.info("Please install them before scanning real devices.")
             return 1
 
-    load_threshold_config(args.config)
+    load_threshold_config(args.config, grading_profile=getattr(args, "grading_profile", None))
 
     try:
         if args.mock_file:
@@ -399,7 +405,7 @@ def cmd_report(args: Namespace) -> int:
             return 1
 
     # Load configuration (custom via --config, or packaged defaults)
-    load_threshold_config(args.config)
+    load_threshold_config(args.config, grading_profile=getattr(args, "grading_profile", None))
 
     # Scan devices
     try:
@@ -472,8 +478,38 @@ def cmd_selftest(args: Namespace) -> int:
 
     from cdi_health.classes.devices import Device
     from cdi_health.classes.exceptions import CommandException
-    from cdi_health.classes.nvme_selftest import NVMeSelfTest
+    from cdi_health.classes.nvme_selftest import (
+        CODE_EXTENDED,
+        CODE_SHORT,
+        NVMeSelfTest,
+        classify_result,
+        find_new_entry,
+    )
     from cdi_health.classes.selftest_formatter import format_selftest_summary
+
+    def _apply_entry_outcome(result: dict, entry: dict) -> None:
+        """Set test_passed / test_failed / test_aborted from a decoded log entry."""
+        outcome = classify_result(entry.get("result"))
+        result["test_passed"] = outcome == "passed"
+        result["test_failed"] = outcome == "failed"
+        result["test_aborted"] = outcome == "aborted"
+        if outcome == "unknown":
+            result["test_result_unknown"] = True
+            result["test_error"] = f"Unrecognised self-test result: {entry.get('result_string', 'Unknown')}"
+
+    def _wait_for_new_entry(handler, baseline, expected_code, attempts: int = 3) -> dict | None:
+        """Poll Log Page 06h briefly for the entry of the test that just finished."""
+        for attempt in range(attempts):
+            time.sleep(1 + attempt)  # log page may lag the operation field
+            try:
+                entries = handler.get_results().get("entries", [])
+            except Exception as exc:
+                logger.debug("Could not read self-test log: %s", exc)
+                continue
+            entry = find_new_entry(baseline, entries, expected_code)
+            if entry is not None:
+                return entry
+        return None
 
     # If device specified, handle single device operations
     if args.device:
@@ -508,10 +544,16 @@ def cmd_selftest(args: Namespace) -> int:
                 else:
                     print("  No self-tests logged.")
 
-                last_test = selftest.get_last_test_date()
-                if last_test:
-                    days = selftest.days_since_last_test()
-                    print(f"\nLast Test: {last_test.strftime('%Y-%m-%d %H:%M:%S')} ({days} days ago)")
+                if entries:
+                    last_poh = entries[0].get("power_on_hours")
+                    hours_since = selftest.hours_since_last_test()
+                    if hours_since is not None:
+                        print(
+                            f"\nLast Test: at {last_poh} power-on hours "
+                            f"({hours_since} power-on hours / ~{hours_since // 24} days ago)"
+                        )
+                    elif last_poh is not None:
+                        print(f"\nLast Test: at {last_poh} power-on hours")
                 else:
                     print("\nNo previous self-tests found.")
 
@@ -538,6 +580,15 @@ def cmd_selftest(args: Namespace) -> int:
             logger.info("Starting %s self-test on %s", test_type, device_path)
             logger.info("Note: Extended tests may take several hours to complete")
 
+            # Snapshot the log so the finished test's entry can be identified later
+            baseline = None
+            if args.wait:
+                try:
+                    baseline = selftest.get_results().get("entries", [])
+                except Exception as exc:
+                    logger.debug("Could not read self-test log baseline: %s", exc)
+
+            expected_code = CODE_SHORT if test_type == "short" else CODE_EXTENDED
             if test_type == "short":
                 cmd = selftest.execute_short()
             else:
@@ -553,17 +604,26 @@ def cmd_selftest(args: Namespace) -> int:
                         time.sleep(30)  # Check every 30 seconds
                         status = selftest.get_current_status()
                         if not status["in_progress"]:
-                            logger.info("Self-test completed")
-                            # Check results
-                            results = selftest.get_results()
-                            entries = results.get("entries", [])
-                            if entries:
-                                latest = entries[0]
-                                if latest.get("result", 0) == 0:
-                                    logger.info("Self-test passed")
-                                else:
-                                    logger.error("Self-test failed: %s", latest.get("result_string", "Unknown"))
-                            break
+                            logger.info("Self-test no longer running")
+                            entry = _wait_for_new_entry(selftest, baseline, expected_code)
+                            if entry is None:
+                                logger.error("Self-test result unknown: no new entry for this test in Log Page 06h")
+                                return 1
+                            outcome = classify_result(entry.get("result"))
+                            label = entry.get("result_string", "Unknown")
+                            if outcome == "passed":
+                                logger.info("Self-test passed")
+                                return 0
+                            if outcome == "aborted":
+                                logger.warning("Self-test aborted: %s", label)
+                                return 1
+                            if outcome == "unknown":
+                                logger.error("Self-test result unrecognised: %s", label)
+                                return 1
+                            if entry.get("segment"):
+                                label = f"{label} (segment {entry['segment']})"
+                            logger.error("Self-test failed: %s", label)
+                            return 1
                 else:
                     logger.info("Use 'cdi-health selftest --device %s --status' to check progress", device_path)
                 return 0
@@ -611,6 +671,10 @@ def cmd_selftest(args: Namespace) -> int:
         # First, check all devices for existing test status/results
         devices_with_tests = []
         devices_without_tests = []
+        # Log Page 06h entries captured before any test we wait on, per device,
+        # plus the Self-test Code expected for that test (None = unknown).
+        baselines: dict[str, list | None] = {}
+        expected_codes: dict[str, int | None] = {}
 
         for dev_info in testable_devices:
             device_path = dev_info["device"]
@@ -673,11 +737,15 @@ def cmd_selftest(args: Namespace) -> int:
                 # Check for recent test results
                 test_results = handler.get_results()
                 entries = test_results.get("entries", [])
+                baselines[device_path] = entries
 
                 # If test is in progress, we have an existing test
                 if result["test_in_progress"]:
                     has_existing_test = True
                     result["test_started"] = True
+                    # get_current_status() may guess the operation type, so don't
+                    # require a specific Self-test Code for a test we didn't start.
+                    expected_codes[device_path] = None
                     # Try to determine test type from status or entries
                     if entries:
                         latest = entries[0]
@@ -700,22 +768,13 @@ def cmd_selftest(args: Namespace) -> int:
                     result["test_completed"] = True
                     has_existing_test = True
 
-                    # Check result - filter to valid entries first
-                    valid_entries = [e for e in entries if e.get("result") in (0, 1, 2) and e.get("type") in (1, 2)]
-                    if valid_entries:
-                        latest = valid_entries[0]
-                        result_value = latest.get("result", -1)
-                        if result_value == 0:
-                            result["test_passed"] = True
-                        elif result_value == 1:
-                            result["test_failed"] = True
-                        elif result_value == 2:
-                            result["test_aborted"] = True
+                    # Entries are decoded per spec (unused slots already dropped)
+                    _apply_entry_outcome(result, latest)
 
-                    # Get last test date
-                    last_test = handler.get_last_test_date()
-                    if last_test:
-                        result["last_test_date"] = last_test.strftime("%Y-%m-%d %H:%M")
+                    # Log entries record power-on hours, not wall-clock time
+                    last_poh = latest.get("power_on_hours")
+                    if last_poh is not None:
+                        result["last_test_date"] = f"POH {last_poh}"
 
             except Exception as e:
                 logger.debug("Could not check status for %s: %s", device_path, e)
@@ -748,6 +807,12 @@ def cmd_selftest(args: Namespace) -> int:
                 device_path = result["device"]
                 handler = dev_info["handler"]
 
+                # Refresh the log baseline immediately before starting the test
+                try:
+                    baselines[device_path] = handler.get_results().get("entries", [])
+                except Exception as e:
+                    logger.debug("Could not read self-test log baseline for %s: %s", device_path, e)
+
                 # Execute self-test
                 try:
                     if test_type == "short":
@@ -758,6 +823,7 @@ def cmd_selftest(args: Namespace) -> int:
                     if cmd.return_code == 0:
                         result["test_started"] = True
                         result["test_in_progress"] = True
+                        expected_codes[device_path] = CODE_SHORT if test_type == "short" else CODE_EXTENDED
                         logger.debug("Test started on %s", device_path)
                     else:
                         error_msg = cmd.errors.decode("utf-8") if cmd.errors else "Unknown error"
@@ -765,6 +831,7 @@ def cmd_selftest(args: Namespace) -> int:
                         if "in progress" in error_msg.lower() or "0x411d" in error_msg:
                             result["test_started"] = True
                             result["test_in_progress"] = True
+                            expected_codes[device_path] = None  # some other test is running
                             logger.debug("Test already in progress on %s", device_path)
                         else:
                             result["test_error"] = error_msg
@@ -849,6 +916,7 @@ def cmd_selftest(args: Namespace) -> int:
                     "test_passed": r.get("test_passed", False),
                     "test_failed": r.get("test_failed", False),
                     "test_aborted": r.get("test_aborted", False),
+                    "test_result_unknown": r.get("test_result_unknown", False),
                     "test_in_progress": r.get("test_in_progress", False),
                     "test_type": r.get("test_type"),
                     "test_error": r.get("test_error"),
@@ -896,6 +964,8 @@ def cmd_selftest(args: Namespace) -> int:
                     test_result = "Failed"
                 elif r.get("test_aborted"):
                     test_result = "Aborted"
+                elif r.get("test_result_unknown"):
+                    test_result = "Unknown"
                 else:
                     test_result = "-"
 
@@ -943,34 +1013,25 @@ def cmd_selftest(args: Namespace) -> int:
                                 result["test_completed"] = True
                                 result["test_in_progress"] = False
 
-                                # Check result - try multiple times as log may take time to update
-                                import time
-
-                                time.sleep(1)  # Give log page time to update
-
-                                test_results = handler.get_results()
-                                entries = test_results.get("entries", [])
-
-                                # If no entries yet, try once more after a short delay
-                                if not entries:
-                                    time.sleep(2)
-                                    test_results = handler.get_results()
-                                    entries = test_results.get("entries", [])
-
-                                if entries:
-                                    latest = entries[0]
-                                    result_value = latest.get("result", -1)
-                                    if result_value == 0:
-                                        result["test_passed"] = True
-                                    elif result_value == 1:
-                                        result["test_failed"] = True
-                                    elif result_value == 2:
-                                        result["test_aborted"] = True
+                                # Only trust an entry that was added after our baseline
+                                # snapshot; an empty or unchanged log is NOT a pass.
+                                entry = _wait_for_new_entry(
+                                    handler,
+                                    baselines.get(result["device"]),
+                                    expected_codes.get(result["device"]),
+                                )
+                                if entry is not None:
+                                    _apply_entry_outcome(result, entry)
+                                    poh = entry.get("power_on_hours")
+                                    if poh is not None:
+                                        result["last_test_date"] = f"POH {poh}"
                                 else:
-                                    # No entries found - assume passed if test completed without error
-                                    # (Some drives may not populate log immediately)
-                                    logger.debug("No log entries found for %s, assuming passed", result["device"])
-                                    result["test_passed"] = True  # Optimistic assumption
+                                    logger.warning(
+                                        "No new Log Page 06h entry for %s; self-test result unknown",
+                                        result["device"],
+                                    )
+                                    result["test_result_unknown"] = True
+                                    result["test_error"] = "Self-test finished but no new log entry was found"
                             else:
                                 all_complete = False
                                 in_progress_count += 1
@@ -1015,6 +1076,7 @@ def cmd_selftest(args: Namespace) -> int:
                         "test_passed": r.get("test_passed", False),
                         "test_failed": r.get("test_failed", False),
                         "test_aborted": r.get("test_aborted", False),
+                        "test_result_unknown": r.get("test_result_unknown", False),
                         "test_in_progress": r.get("test_in_progress", False),
                         "test_type": r.get("test_type"),
                         "test_error": r.get("test_error"),
@@ -1060,6 +1122,8 @@ def cmd_selftest(args: Namespace) -> int:
                         test_result = "Failed"
                     elif r.get("test_aborted"):
                         test_result = "Aborted"
+                    elif r.get("test_result_unknown"):
+                        test_result = "Unknown"
                     else:
                         test_result = "-"
 
@@ -1119,7 +1183,7 @@ def cmd_export_mock(args: Namespace) -> int:
         logger.info("Install smartctl/nvme-cli (and sg utils for SCSI) before exporting.")
         return 1
 
-    load_threshold_config(args.config)
+    load_threshold_config(args.config, grading_profile=getattr(args, "grading_profile", None))
 
     try:
         devices = scan_devices_real(
@@ -1174,6 +1238,16 @@ def add_common_arguments(parser: argparse.ArgumentParser, *, include_mock: bool 
         "--config",
         metavar="FILE",
         help="Path to YAML config file for custom thresholds",
+    )
+    parser.add_argument(
+        "--grading-profile",
+        metavar="PROFILE",
+        choices=["binary", "abcdf", "passfail", "revert", "graduated", "cdi"],
+        help=(
+            "Grading profile: binary (CDI v0.11.0 fail-gate/numeric; aliases: "
+            "passfail, cdi) or abcdf (Revert Standard v2.0 graduated; aliases: "
+            "revert, graduated). Overrides grading.profile from --config / defaults."
+        ),
     )
 
     # Mock mode options
@@ -1407,6 +1481,19 @@ def main() -> int:
     if not hasattr(args, "ignore_scsi"):
         args.ignore_scsi = False
 
+    # An explicit --config that cannot be loaded / validated is a hard error
+    # rather than a silent fallback to default thresholds (#137).
+    from cdi_health.classes.config import ConfigError
+
+    try:
+        return _dispatch_command(parser, args)
+    except ConfigError as exc:
+        logger.error("Configuration error: %s", exc)
+        return 2
+
+
+def _dispatch_command(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    """Run the selected sub-command."""
     # Execute command
     if args.command == "scan" or args.command is None:
         # Default output format for scan

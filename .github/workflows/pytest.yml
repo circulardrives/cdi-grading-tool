@@ -1,0 +1,67 @@
+# Reusable pytest job, shared by ci.yml (full matrix, required check) and
+# release.yml (gates tagged releases). Keep the pytest invocation here only.
+name: pytest
+
+on:
+  workflow_call:
+    inputs:
+      python-versions:
+        description: JSON list of Python versions to test
+        type: string
+        default: '["3.12"]'
+      coverage-python:
+        description: Matrix leg that uploads coverage to Codecov ("" = none)
+        type: string
+        default: ""
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  pytest:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install OS tools (tests expect nvme/smartctl/sg in PATH)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes nvme-cli smartmontools sg3-utils
+
+      - name: Install package (dev + API for HTTP tests)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,api]'
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v \
+            --override-ini="addopts=--strict-markers --strict-config --cov=cdi_health --cov-report=xml --cov-report=term-missing --cov-fail-under=56"
+
+      - name: Upload coverage
+        if: inputs.coverage-python == matrix.python-version
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

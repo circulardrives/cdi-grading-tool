@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import hmac
 import ipaddress
 import os
 import socket
@@ -64,6 +65,13 @@ def get_configured_api_token() -> str | None:
     """Return the configured API token, or None when unset."""
     token = os.getenv(API_TOKEN_ENV)
     return token if token else None
+
+
+def tokens_match(presented: str | None, expected: str) -> bool:
+    """Constant-time comparison of a presented API token against the configured one."""
+    if presented is None:
+        return False
+    return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
 
 
 def is_loopback_host(host: str) -> bool:
@@ -127,7 +135,7 @@ def verify_api_token(x_api_token: str | None = Header(default=None, alias="X-API
     if not expected:
         return
 
-    if x_api_token != expected:
+    if not tokens_match(x_api_token, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API token",
@@ -146,7 +154,7 @@ def optional_api_token(
     expected = get_configured_api_token()
     if not expected:
         return True
-    return x_api_token == expected
+    return tokens_match(x_api_token, expected)
 
 
 def client_is_loopback(request: Request) -> bool:

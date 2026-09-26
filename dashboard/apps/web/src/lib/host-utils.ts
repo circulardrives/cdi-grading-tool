@@ -1,4 +1,4 @@
-import type { DiscoveredHost, Machine } from "@/lib/types"
+import type { DiscoveredHost, Machine, ScanSummary } from "@/lib/types"
 
 export type HostFormState = {
   name: string
@@ -31,7 +31,21 @@ export function formatScanSummary(machine: Machine): string {
   if (!summary) {
     return "No scan yet"
   }
-  return `${summary.total} drives · ${summary.healthy} healthy · ${summary.warning} warn · ${summary.failed} fail`
+  return formatSummaryCounts(summary)
+}
+
+/** One-line scan summary; the ungraded count only appears when the API sends it. */
+export function formatSummaryCounts(summary: ScanSummary): string {
+  const parts = [
+    `${summary.total} drives`,
+    `${summary.healthy} healthy`,
+    `${summary.warning} warn`,
+    `${summary.failed} fail`,
+  ]
+  if (summary.ungraded) {
+    parts.push(`${summary.ungraded} ungraded`)
+  }
+  return parts.join(" · ")
 }
 
 export function defaultDiscoveredHostName(host: DiscoveredHost): string {

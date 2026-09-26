@@ -1,0 +1,99 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      4
+    ],
+    "svn_revision": "5530",
+    "platform_info": "x86_64-linux-6.6.0",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--xall",
+      "--json=ov",
+      "/dev/sdcg"
+    ],
+    "exit_status": 0
+  },
+  "local_time": {
+    "time_t": 1754450000,
+    "asctime": "Wed Aug  5 00:00:00 2026 UTC"
+  },
+  "device": {
+    "name": "/dev/sdcg",
+    "info_name": "/dev/sdcg",
+    "type": "scsi",
+    "protocol": "SCSI"
+  },
+  "vendor": "REVERT",
+  "product": "ST1200MM0009",
+  "model_name": "REVERT ST1200MM0009",
+  "revision": "RS20",
+  "scsi_version": "SPC-4",
+  "user_capacity": {
+    "blocks": 2344225968,
+    "bytes": 1200243695616
+  },
+  "logical_block_size": 512,
+  "physical_block_size": 512,
+  "rotation_rate": 10000,
+  "form_factor": {
+    "scsi_value": 3,
+    "name": "2.5 inches"
+  },
+  "serial_number": "RVSCSIGDC1",
+  "device_type": {
+    "scsi_value": 0,
+    "name": "disk"
+  },
+  "transport_protocol": {
+    "name": "SAS",
+    "value": 6
+  },
+  "smart_support": {
+    "available": true,
+    "enabled": true
+  },
+  "smart_status": {
+    "passed": true
+  },
+  "temperature": {
+    "current": 34,
+    "drive_trip": 65
+  },
+  "scsi_grown_defect_list": 30,
+  "scsi_error_counter_log": {
+    "read": {
+      "errors_corrected_by_eccfast": 0,
+      "errors_corrected_by_eccdelayed": 0,
+      "errors_corrected_by_rereads_rewrites": 0,
+      "total_errors_corrected": 0,
+      "correction_algorithm_invocations": 0,
+      "gigabytes_processed": "10000.000",
+      "total_uncorrected_errors": 0
+    },
+    "write": {
+      "errors_corrected_by_eccfast": 0,
+      "errors_corrected_by_eccdelayed": 0,
+      "errors_corrected_by_rereads_rewrites": 0,
+      "total_errors_corrected": 0,
+      "correction_algorithm_invocations": 0,
+      "gigabytes_processed": "8000.000",
+      "total_uncorrected_errors": 0
+    }
+  },
+  "power_on_time": {
+    "hours": 3000,
+    "minutes": 30
+  },
+  "scsi_start_stop_cycle_counter": {
+    "specified_cycle_count_over_device_lifetime": 10000,
+    "accumulated_start_stop_cycles": 120,
+    "specified_load_unload_count_over_device_lifetime": 600000,
+    "accumulated_load_unload_cycles": 900
+  }
+}

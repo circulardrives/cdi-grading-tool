@@ -31,6 +31,8 @@ NVME_DEVICE_PATTERN = re.compile(r"^/dev/nvme[0-9]+(n[0-9]+)?$")
 # Block-device style paths for scan/report filters (no shell metacharacters).
 BLOCK_DEVICE_PATTERN = re.compile(r"^/dev/[a-zA-Z0-9][a-zA-Z0-9._+/-]*$")
 
+GradingProfile = Literal["binary", "abcdf"]
+
 
 def _reject_path_traversal(value: str, field_name: str) -> str:
     if not value or "\x00" in value:
@@ -78,6 +80,10 @@ class ScanRequest(BaseModel):
     config: str | None = None
     mock_data: str | None = None
     mock_file: str | None = None
+    grading_profile: GradingProfile | None = Field(
+        default=None,
+        description="Grading profile override (like --grading-profile); defaults to the config's grading.profile.",
+    )
     machine_id: str | None = Field(
         default=None,
         description="Optional host registry ID to associate this scan with.",
@@ -99,10 +105,12 @@ class ScanSummary(BaseModel):
     healthy: int
     warning: int
     failed: int
+    ungraded: int = 0
 
 
 class ScanResponse(BaseModel):
     scanned_at: datetime
+    grading_profile: GradingProfile | None = None
     summary: ScanSummary
     devices: list[dict[str, Any]]
 
@@ -116,6 +124,7 @@ class HistorySummary(BaseModel):
     machine_id: str | None = None
     mock: bool = False
     device_count: int
+    grading_profile: GradingProfile | None = None
     summary: ScanSummary
     grades: dict[str, int] = Field(default_factory=dict)
 
@@ -129,6 +138,7 @@ class HistoryDetail(BaseModel):
     machine_id: str | None = None
     mock: bool = False
     device_count: int
+    grading_profile: GradingProfile | None = None
     summary: ScanSummary
     grades: dict[str, int] = Field(default_factory=dict)
     devices: list[dict[str, Any]]
@@ -146,6 +156,7 @@ class ReportRequest(BaseModel):
     config: str | None = None
     mock_data: str | None = None
     mock_file: str | None = None
+    grading_profile: GradingProfile | None = None
 
     @field_validator("device")
     @classmethod
@@ -195,7 +206,7 @@ class SelfTestAbortRequest(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
-    version: str = "1.0.0"
+    version: str
     is_root: bool | None = None
     allow_non_root_mode: bool | None = None
     api_token_enabled: bool | None = None
@@ -222,6 +233,7 @@ class MachineScanSummary(BaseModel):
     healthy: int
     warning: int
     failed: int
+    ungraded: int = 0
 
 
 class MachineCreate(BaseModel):
@@ -282,7 +294,10 @@ class DiscoverRequest(BaseModel):
     )
     probe_token: str | None = Field(
         default=None,
-        description="Optional X-API-Token sent when probing remote CDI APIs.",
+        description=(
+            "Optional X-API-Token sent (over plain HTTP) when probing remote CDI APIs. "
+            "Omitted by default; this bench's own token is never sent."
+        ),
     )
 
 

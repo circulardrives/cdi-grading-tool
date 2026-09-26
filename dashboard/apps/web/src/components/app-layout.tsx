@@ -14,6 +14,7 @@ import {
 import { TooltipProvider } from "@workspace/ui/components/tooltip"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { MockDataToggle } from "@/components/mock-data-toggle"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 type AppLayoutProps = {
@@ -36,6 +37,8 @@ export function AppLayout({ title }: AppLayoutProps) {
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
+            <MockDataToggle id="header-use-mock-data" compact />
+            <Separator orientation="vertical" className="mx-1 h-4" />
             <ThemeToggle />
           </header>
           <main className="flex flex-1 flex-col gap-6 p-6">

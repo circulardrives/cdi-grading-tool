@@ -33,6 +33,9 @@ from concurrent.futures import ThreadPoolExecutor
 # Data Classes
 from dataclasses import dataclass
 
+# Timestamps
+from datetime import datetime, timezone
+
 # Exceptions
 from cdi_health.classes.exceptions import CommandException, DevicesException
 
@@ -125,6 +128,125 @@ def parse_nvme_composite_temp_thresholds(smartctl: dict) -> tuple[int | None, in
     return warning_c, critical_c
 
 
+# Brand tokens searched for in model strings (single list; #135).
+KNOWN_BRANDS: tuple[str, ...] = (
+    "SAMSUNG",
+    "SEAGATE",
+    "WESTERN",
+    "TOSHIBA",
+    "HITACHI",
+    "HGST",
+    "INTEL",
+    "MICRON",
+    "CRUCIAL",
+    "KINGSTON",
+    "SANDISK",
+    "WD",
+    "WDC",
+)
+
+# ATA SSD wear-attribute semantics (#135).
+#
+# Vendors disagree on what attributes 202 / 230 / 231 mean. Resolution order:
+#   1. smartctl drivedb attribute ``name`` (most reliable signal),
+#   2. per-vendor rule matched on vendor / model string,
+#   3. otherwise the attribute is ignored (unknown semantics are not guessed).
+#
+# ``semantics``: "used" (value is percent of rated life consumed) or
+# "remaining" (value is percent of rated life left; used = 100 - value).
+# ``source``: "normalized" (the 0-100 ``value`` field) or "raw" (``raw.value``).
+WEAR_USED = "used"
+WEAR_REMAINING = "remaining"
+
+
+@dataclass(frozen=True)
+class WearAttributeRule:
+    """One per-vendor ATA SSD wear-attribute interpretation."""
+
+    vendor: str  # human label for docs/tests
+    model_pattern: str  # regex matched (case-insensitive) against vendor + model
+    attribute_id: int
+    semantics: str
+    source: str
+
+
+ATA_SSD_WEAR_VENDOR_RULES: tuple[WearAttributeRule, ...] = (
+    # Crucial / Micron: 202 Percent_Lifetime_Remain (normalized = life remaining)
+    WearAttributeRule("Micron/Crucial", r"CRUCIAL|MICRON|(^|[\s_])(CT\d{3,}|MTFD)", 202, WEAR_REMAINING, "normalized"),
+    # Kingston / SandForce-family: 231 SSD_Life_Left (normalized = life remaining)
+    WearAttributeRule(
+        "Kingston/SandForce",
+        r"KINGSTON|(^|[\s_])(SV300|SKC|SUV|SA400|SEDC|SHFS|SNS|SH10)|SANDFORCE|OCZ|CORSAIR",
+        231,
+        WEAR_REMAINING,
+        "normalized",
+    ),
+)
+
+
+def wear_semantics_from_name(name: str | None) -> tuple[str, str] | None:
+    """
+    Wear semantics from a smartctl attribute name, or None when the name
+    carries no reliable meaning (e.g. ``Unknown_SSD_Attribute``).
+    """
+    text = str(name or "").strip().lower()
+    if not text or text.startswith("unknown"):
+        return None
+    if "remain" in text or "life_left" in text or "wearout" in text:
+        return WEAR_REMAINING, "normalized"
+    if "used" in text and "unused" not in text:
+        return WEAR_USED, "raw"
+    return None
+
+
+def resolve_wear_semantics(attribute: dict, model: str | None, vendor: str | None = None) -> tuple[str, str] | None:
+    """Resolve (semantics, source) for an ATA SSD wear attribute (#135)."""
+    by_name = wear_semantics_from_name(attribute.get("name"))
+    if by_name is not None:
+        return by_name
+    haystack = f"{vendor or ''} {model or ''}".strip()
+    for rule in ATA_SSD_WEAR_VENDOR_RULES:
+        if rule.attribute_id == attribute.get("id") and re.search(rule.model_pattern, haystack, re.IGNORECASE):
+            return rule.semantics, rule.source
+    return None
+
+
+def ata_wear_percent_used(attribute: dict, model: str | None, vendor: str | None = None) -> int | None:
+    """
+    Percent of rated life used from an ATA SSD wear attribute, or None when
+    the attribute's semantics are unknown or its value is out of range.
+    """
+    semantics = resolve_wear_semantics(attribute, model, vendor)
+    if semantics is None:
+        return None
+    meaning, source = semantics
+    if source == "raw":
+        raw = attribute.get("raw")
+        value = int_or_none(raw.get("value")) if isinstance(raw, dict) else None
+    else:
+        value = int_or_none(attribute.get("value"))
+    if value is None or value < 0:
+        return None
+    if meaning == WEAR_REMAINING:
+        return max(0, 100 - value) if value <= 100 else None
+    return value if value <= 255 else None
+
+
+def power_on_hours_from_smartctl(smartctl: dict) -> int | str:
+    """
+    Power-on hours from smartctl JSON, or "Not Reported" when absent (#129).
+
+    Unknown POH must never be reported as 0: a fake 0 defeats the §5 age cap
+    and trips the §15.1 SMART-reset heuristic.
+    """
+    power_on_time = smartctl.get("power_on_time") if isinstance(smartctl, dict) else None
+    if isinstance(power_on_time, dict):
+        hours = int_or_none(power_on_time.get("hours"))
+        if hours is not None and hours >= 0:
+            return hours
+    return "Not Reported"
+
+
 class Device:
     """
     Device Class
@@ -158,7 +280,7 @@ class Device:
         if sg3utils_provider:
             sg_mapped = sg3utils_provider.sg_map26()
             self.dut_sg: str = sg_mapped if sg_mapped else self.dut
-            self.state: str = sg3utils_provider.test_unit_ready() or "Not Ready"
+            self.state: str = sg3utils_provider.test_unit_ready() or "Unknown"
         else:
             sg3 = SG3Utils(self.dut)
             sg_mapped = sg3.sg_map26()
@@ -170,7 +292,7 @@ class Device:
             self.dut_sg: str = sg_mapped if sg_mapped else self.dut
             if self.dut_sg != self.dut:
                 sg3 = SG3Utils(self.dut_sg)
-            self.state: str = sg3.test_unit_ready() or "Not Ready"
+            self.state: str = sg3.test_unit_ready() or "Unknown"
 
         # Store providers for later use
         self._smartctl_provider = smartctl_provider
@@ -338,6 +460,16 @@ class Device:
         :return: None
         """
 
+        # Per-drive scan timestamp (Revert Standard §13) + §15 edge-case state.
+        # Set here (not only in __init__) so mock devices that bypass
+        # __init__ still carry the fields.
+        self.scan_timestamp: str = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.grading_status: str = "GRADED"
+        self.ungraded_reasons: list[str] = []
+        self.warning_flags: list[str] = []
+        self.security_locked: bool = False
+        self.smart_data_readable: bool = True
+
         # Collect Smartctl Information as JSON
         self.smartctl_json = self.smartctl.get_all_as_json()
 
@@ -362,9 +494,73 @@ class Device:
             # Collect SCSI Information
             SCSIProtocol(device=self, smartctl=self.smartctl_json)
 
-        # Grade the Device - protocols we cannot collect metrics for stay "U"
-        if self.is_ata or self.is_nvme or self.is_scsi:
+        # Revert Standard §15: detect states that must block grading so a
+        # security-locked or unreadable drive never silently receives a grade.
+        self.detect_ungradeable_states()
+
+        # Grade the Device - UNGRADED drives and protocols we cannot collect
+        # metrics for stay "U"
+        if self.grading_status != "UNGRADED" and (self.is_ata or self.is_nvme or self.is_scsi):
             self.apply_health_grade()
+
+    def detect_ungradeable_states(self) -> None:
+        """
+        Revert Standard §15 edge cases: security-locked drives (§4.1) and
+        drives whose SMART data could not be read must be UNGRADED, not
+        graded from missing/defaulted data.
+        """
+
+        self.security_locked = self._detect_security_locked()
+        self.smart_data_readable = self._detect_smart_data_readable()
+
+        if self.security_locked:
+            self._mark_ungraded("SECURITY_LOCKED")
+
+        if not self.smart_data_readable and (self.is_ata or self.is_nvme or self.is_scsi):
+            self._mark_ungraded("SMART_UNREADABLE")
+
+        if not (self.is_ata or self.is_nvme or self.is_scsi):
+            self._mark_ungraded("UNSUPPORTED_PROTOCOL")
+
+    def _mark_ungraded(self, reason: str) -> None:
+        """Record an UNGRADED state (grade stays "U", never a letter grade)."""
+        self.grading_status = "UNGRADED"
+        if reason not in self.ungraded_reasons:
+            self.ungraded_reasons.append(reason)
+        self.cdi_grade = "U"
+        self.cdi_certified = False
+        self.cdi_eligible = False
+
+    def _detect_security_locked(self) -> bool:
+        """True when the drive reports an active ATA security lock."""
+        security = self.smartctl_json.get("ata_security") if isinstance(self.smartctl_json, dict) else None
+        if not isinstance(security, dict):
+            return False
+        if security.get("locked") is True:
+            return True
+        # Older smartctl builds only carry the summary string, e.g.
+        # "ENABLED, PW level HIGH, **LOCKED** [SEC4]".
+        return "**locked**" in str(security.get("string") or "").lower()
+
+    def _detect_smart_data_readable(self) -> bool:
+        """
+        True when smartctl returned usable SMART/health data. Without this,
+        the scoring engine would see a defaulted smart_status=False and fail
+        the drive instead of marking it UNGRADED.
+        """
+        data = self.smartctl_json if isinstance(self.smartctl_json, dict) else {}
+        if isinstance(data.get("smart_status"), dict):
+            return True
+
+        ata_attributes = data.get("ata_smart_attributes")
+        if isinstance(ata_attributes, dict) and ata_attributes.get("table"):
+            return True
+
+        if isinstance(data.get("scsi_error_counter_log"), dict):
+            return True
+
+        nvme_health = data.get("nvme_smart_health_information_log")
+        return isinstance(nvme_health, dict) and bool(nvme_health)
 
     def apply_health_grade(self) -> None:
         """
@@ -373,6 +569,13 @@ class Device:
         The protocol handlers only collect metrics; this is the single
         grading source of truth.
         """
+
+        # Revert Standard §15: UNGRADED drives never receive a letter grade.
+        if self.grading_status == "UNGRADED":
+            self.cdi_grade = "U"
+            self.cdi_certified = False
+            self.cdi_eligible = False
+            return
 
         # Local import: scoring is a leaf module, but importing lazily keeps
         # module import order flexible for future refactors
@@ -397,22 +600,7 @@ class Device:
         """
 
         # Loop Brands
-        known_brands_list = [
-            "SAMSUNG",
-            "SEAGATE",
-            "WESTERN",
-            "TOSHIBA",
-            "HITACHI",
-            "HGST",
-            "INTEL",
-            "MICRON",
-            "CRUCIAL",
-            "KINGSTON",
-            "SANDISK",
-            "WD",
-            "WDC",
-        ]
-        for brand in known_brands_list:
+        for brand in KNOWN_BRANDS:
             # If Brand equals Model
             if brand in model:
                 # Return Brand
@@ -458,7 +646,7 @@ class Device:
         ]
 
         for prefix in hgst_devices:
-            if model.startswith(prefix) and len(model) >= 5 and model[2:5].isdigit():
+            if model.startswith(prefix):
                 return "HGST"
 
         """
@@ -516,7 +704,7 @@ class Device:
         ]
 
         for prefix in toshiba_devices:
-            if model.startswith(prefix) and len(model) >= 5 and model[2:5].isdigit():
+            if model.startswith(prefix):
                 return "Toshiba"
 
         """
@@ -529,7 +717,7 @@ class Device:
         ]
 
         for prefix in wdc_devices:
-            if model.startswith(prefix) and len(model) >= 5 and model[2:5].isdigit():
+            if model.startswith(prefix):
                 return "Western Digital"
 
         # No match, return None
@@ -544,22 +732,7 @@ class Device:
         """
 
         # Loop Brands
-        known_brands_list = [
-            "SAMSUNG",
-            "SEAGATE",
-            "WESTERN",
-            "TOSHIBA",
-            "HITACHI",
-            "HGST",
-            "INTEL",
-            "MICRON",
-            "CRUCIAL",
-            "KINGSTON",
-            "SANDISK",
-            "WD",
-            "WDC",
-        ]
-        for brand in known_brands_list:
+        for brand in KNOWN_BRANDS:
             # If Brand in Model Number
             if brand in model:
                 # Return Model Number with the Brand removed
@@ -824,9 +997,12 @@ class Devices:
                 # Continue
                 continue
 
-            # If MegaRAID Bus
+            # If MegaRAID Bus — cannot be graded through the controller;
+            # record it so it surfaces as UNGRADED instead of vanishing (§15.6)
             if device["name"].startswith("/dev/bus"):
-                # Continue
+                failure = dict(device)
+                failure["error"] = "RAID controller passthrough not supported"
+                self.failures.append(failure)
                 continue
 
             # Get Type
@@ -886,8 +1062,64 @@ class Devices:
             # Filter out False values (failed device analyses)
             self.devices = [device for device in devices_list if device is not False]
 
+        # Revert Standard §15.5/§15.6: drives that could not be opened or
+        # analysed (USB/RAID passthrough failures, open errors) must appear
+        # in the output as UNGRADED records, never silently disappear.
+        self.devices.extend(self._ungraded_placeholder(failure) for failure in self.failures)
+
         # Return
         return True
+
+    @staticmethod
+    def _ungraded_placeholder(failure: dict) -> dict:
+        """Minimal UNGRADED device record for a drive that could not be analysed."""
+        name = failure.get("name", "unknown")
+        device_type = str(failure.get("type") or "").lower()
+        error = str(failure.get("error") or failure.get("open_error") or "Device could not be opened")
+        error_l = error.lower()
+
+        if "usb" in device_type or "usb" in error_l:
+            reason = "USB_PASSTHROUGH_FAILURE"
+        elif "megaraid" in device_type or "raid" in device_type or str(name).startswith("/dev/bus"):
+            reason = "RAID_PASSTHROUGH_FAILURE"
+        elif "timed out" in error_l or "timeout" in error_l:
+            reason = "DEVICE_TIMEOUT"
+        else:
+            reason = "DEVICE_OPEN_FAILURE"
+
+        # Preserve identity when smartctl/open_error payloads carry it (#122).
+        serial = failure.get("serial_number") or failure.get("serial")
+        if serial is None and isinstance(failure.get("device"), dict):
+            serial = failure["device"].get("serial_number") or failure["device"].get("serial")
+        serial = str(serial).strip() if serial else ""
+        if not serial or serial.lower() in ("not reported", "unknown", "-", "—"):
+            serial = "Not Reported"
+
+        model = failure.get("model_number") or failure.get("model_name") or "Not Reported"
+        vendor = failure.get("vendor") or "Not Reported"
+
+        return {
+            "dut": name,
+            "state": "Not Ready",
+            "vendor": vendor,
+            "model_number": model,
+            "serial_number": serial,
+            "firmware_revision": "Not Reported",
+            "transport_protocol": failure.get("protocol", "Unknown"),
+            "media_type": "Not Reported",
+            "smart_status": None,
+            "power_on_hours": None,
+            "grading_status": "UNGRADED",
+            "ungraded_reasons": [reason],
+            "ungraded_detail": error,
+            "warning_flags": [],
+            "security_locked": False,
+            "smart_data_readable": False,
+            "cdi_grade": "U",
+            "cdi_certified": False,
+            "cdi_eligible": False,
+            "scan_timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
 
     def analyse_device(self, device_id: str):
         """
@@ -981,9 +1213,8 @@ class ATAProtocol:
         device.transport_version: str = smartctl.get("sata_version", dict()).get("string", "Not Reported")
         device.rotation_rate: str = smartctl.get("rotation_rate", "Not Reported")
         device.form_factor: str = smartctl.get("form_factor", dict()).get("name", "Not Reported")
-        device.power_on_hours: str = (
-            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0"
-        )
+        # Always read POH from SMART; never fake 0 when TUR is not Ready (#129)
+        device.power_on_hours = power_on_hours_from_smartctl(smartctl)
 
         device.interface_link = "SATA"
 
@@ -1077,13 +1308,18 @@ class ATAProtocol:
         # S.M.A.R.T Self Tests
         device.smart_self_tests = self_tests
 
+        # Defect counters stay None when the attribute is absent: missing data
+        # must never read as a healthy 0 (#134).
         # Get Reallocated Sectors
-        device.reallocated_sectors = self.get_smart_attribute_by_id(attribute_id=5, attributes=device.smart_attributes)
+        device.reallocated_sectors = self.get_smart_attribute_by_id(
+            attribute_id=5, attributes=device.smart_attributes, default=None
+        )
 
         # Get Pending Sectors (canonical name; keep legacy alias for consumers)
         device.pending_sectors = self.get_smart_attribute_by_id(
             attribute_id=197,
             attributes=device.smart_attributes,
+            default=None,
         )
         device.pending_reallocated_sectors = device.pending_sectors
 
@@ -1091,6 +1327,7 @@ class ATAProtocol:
         device.uncorrectable_errors = self.get_smart_attribute_by_id(
             attribute_id=198,
             attributes=device.smart_attributes,
+            default=None,
         )
         device.offline_uncorrectable_sectors = device.uncorrectable_errors
 
@@ -1134,34 +1371,13 @@ class ATAProtocol:
                             device.ssd_media_wearout_indicator = normalized_value
                             device.ssd_percentage_used_endurance = 100 - normalized_value
 
-            # Priority 3: Attribute 230 - Some vendors use this for percentage used
-            # Check if normalized value is in reasonable range (0-100)
-            if device.ssd_percentage_used_endurance is None:
-                attr_230 = self.get_smart_attribute_by_id(attribute_id=230, attributes=device.smart_attributes)
-                if attr_230 is not None:
-                    attr_230_obj = next((a for a in device.smart_attributes if a.get("id") == 230), None)
-                    if attr_230_obj:
-                        normalized_value = attr_230_obj.get("value")
-                        # Some vendors report percentage used directly in normalized value
-                        if normalized_value is not None and 0 <= normalized_value <= 100:
-                            device.ssd_percentage_used_endurance = normalized_value
-
-            # Priority 4: Attribute 231 - Wear Leveling Count (some vendors)
-            if device.ssd_percentage_used_endurance is None:
-                wear_leveling = self.get_smart_attribute_by_id(
-                    attribute_id=231, attributes=device.smart_attributes, default=0
-                )
-                if wear_leveling and wear_leveling != 0:
-                    # Some vendors use raw value as percentage used directly
-                    attr_231_obj = next((a for a in device.smart_attributes if a.get("id") == 231), None)
-                    if attr_231_obj:
-                        raw_value = attr_231_obj.get("raw", {}).get("value")
-                        normalized_value = attr_231_obj.get("value")
-                        # Try normalized first (if in 0-100 range), then raw
-                        if normalized_value is not None and 0 <= normalized_value <= 100:
-                            device.ssd_percentage_used_endurance = normalized_value
-                        elif raw_value is not None and 0 <= raw_value <= 100:
-                            device.ssd_percentage_used_endurance = raw_value
+            # Priority 3/4: Attributes 230 / 231 — per-vendor semantics (#135)
+            for wear_id in (230, 231):
+                if device.ssd_percentage_used_endurance is not None:
+                    break
+                wear_attr = next((a for a in device.smart_attributes if a.get("id") == wear_id), None)
+                if wear_attr:
+                    device.ssd_percentage_used_endurance = ata_wear_percent_used(wear_attr, model_name, device.vendor)
 
             # Priority 5: Attribute 177 - Wear Leveling Count (Samsung) - value is remaining life
             if device.ssd_percentage_used_endurance is None:
@@ -1188,21 +1404,14 @@ class ATAProtocol:
                         if normalized_value is not None and 0 <= normalized_value <= 100:
                             device.ssd_percentage_used_endurance = 100 - normalized_value
 
-            # Priority 7: Attribute 202 - Percentage Used (some vendors)
+            # Priority 7: Attribute 202 — per-vendor semantics (#135); e.g.
+            # Micron/Crucial Percent_Lifetime_Remain is life *remaining*
             if device.ssd_percentage_used_endurance is None:
-                pct_used = self.get_smart_attribute_by_id(
-                    attribute_id=202, attributes=device.smart_attributes, default=0
-                )
-                if pct_used and pct_used != 0:
-                    attr_202_obj = next((a for a in device.smart_attributes if a.get("id") == 202), None)
-                    if attr_202_obj:
-                        normalized_value = attr_202_obj.get("value")
-                        raw_value = attr_202_obj.get("raw", {}).get("value")
-                        # Try normalized first, then raw
-                        if normalized_value is not None and 0 <= normalized_value <= 100:
-                            device.ssd_percentage_used_endurance = normalized_value
-                        elif raw_value is not None and 0 <= raw_value <= 100:
-                            device.ssd_percentage_used_endurance = raw_value
+                attr_202_obj = next((a for a in device.smart_attributes if a.get("id") == 202), None)
+                if attr_202_obj:
+                    device.ssd_percentage_used_endurance = ata_wear_percent_used(
+                        attr_202_obj, model_name, device.vendor
+                    )
 
             # Priority 8: Attribute 232 - Available Reserved Space (Intel) - can indicate wear
             # Lower normalized value indicates more wear (100 = 100% reserved = 0% used)
@@ -1217,6 +1426,17 @@ class ATAProtocol:
                         if normalized_value is not None and 0 <= normalized_value <= 100:
                             # Reserved space remaining, so used = 100 - reserved
                             device.ssd_percentage_used_endurance = 100 - normalized_value
+
+        # Available reserved space (SSD attribute 232 Available_Reservd_Space),
+        # graded with the NVMe spare bands (#133). Only trusted when smartctl
+        # names it as reserved space; 232 means other things on some drives.
+        device.available_reserved_space = None
+        device.available_reserved_space_threshold = None
+        if device.is_ssd:
+            attr_232 = next((a for a in device.smart_attributes if a.get("id") == 232), None)
+            if attr_232 and "reserv" in str(attr_232.get("name", "")).lower():
+                device.available_reserved_space = int_or_none(attr_232.get("value"))
+                device.available_reserved_space_threshold = int_or_none(attr_232.get("thresh"))
 
         # Get ATA Device Statistics Pages
         device_statistics_pages = smartctl.get("ata_device_statistics", {}).get("pages", [])
@@ -1371,9 +1591,8 @@ class NVMeProtocol:
         device.form_factor = smartctl.get("form_factor", dict()).get("name", "Not Reported")
 
         # Power On Hours
-        device.power_on_hours = (
-            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0"
-        )
+        # Always read POH from SMART; never fake 0 when TUR is not Ready (#129)
+        device.power_on_hours = power_on_hours_from_smartctl(smartctl)
 
         # Get Capacity Information
         capacity_info = smartctl.get("user_capacity")
@@ -1680,7 +1899,12 @@ class SCSIProtocol:
             device.interface_link = "Not Reported"
         device.form_factor: str = smartctl.get("form_factor", {}).get("name", "Not Reported")
         device.rotation_rate: str = smartctl.get("rotation_rate", "Not Reported")
-        device.power_on_hours: str = smartctl.get("power_on_time", {}).get("hours", 0)
+        # SAS SSD endurance indicator (percentage used), scored with the SSD
+        # wear tiers (#133)
+        if device.media_type != "HDD":
+            device.ssd_percentage_used_endurance = int_or_none(smartctl.get("scsi_percentage_used_endurance_indicator"))
+        # Unknown POH stays "Not Reported" rather than 0 (#129)
+        device.power_on_hours = power_on_hours_from_smartctl(smartctl)
 
         # Get Capacities
         capacity_info = smartctl.get("user_capacity", {})
@@ -1734,11 +1958,14 @@ class SCSIProtocol:
         # Set Self Tests
         device.smart_self_tests: list = self_tests
 
-        # Get Grown Defects
-        grown_defects: int = smartctl.get("scsi_grown_defect_list", -1)
+        # Get Grown Defects - None (not -1) when unreported so it is never
+        # silently skipped and graded A (#134)
+        grown_defects = int_or_none(smartctl.get("scsi_grown_defect_list"))
+        if grown_defects is not None and grown_defects < 0:
+            grown_defects = None
 
         # Set Grown Defects
-        device.reallocated_sectors: int = grown_defects
+        device.reallocated_sectors = grown_defects
         device.non_medium_errors = smartctl.get("non_medium_error_count")
 
         # Check for Error Counter Log
@@ -1785,11 +2012,11 @@ class SCSIProtocol:
 
         # Else
         else:
-            # Set Uncorrectable Errors
-            uncorrectable_errors: int = -1
+            # Not reported (#134): None, never a -1 sentinel
+            uncorrectable_errors = None
 
         # Convert Uncorrectable Errors (canonical + legacy alias for scoring)
-        device.uncorrectable_errors: int = int(uncorrectable_errors)
+        device.uncorrectable_errors = int(uncorrectable_errors) if uncorrectable_errors is not None else None
         device.offline_uncorrectable_sectors: int = device.uncorrectable_errors
 
         # Grading is applied centrally via Device.apply_health_grade() so the

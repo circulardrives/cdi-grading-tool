@@ -37,7 +37,15 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@workspace/ui/components/empty"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
 import { Skeleton } from "@workspace/ui/components/skeleton"
+import { Spinner } from "@workspace/ui/components/spinner"
 import {
   Table,
   TableBody,
@@ -51,13 +59,14 @@ import { DriveHealthTable } from "@/components/drive-health-table"
 import { PageHeader } from "@/components/page-header"
 import {
   useHistoryDetailQuery,
-  useHistoryQuery,
+  useHistoryPagesQuery,
   useInvalidateCdiQueries,
   useMachinesQuery,
 } from "@/hooks/use-cdi-queries"
 import { clearHistory, deleteHistory } from "@/lib/api"
 import { getSimpleColumns } from "@/lib/drive-columns"
-import type { HistorySummary, ScanSummary } from "@/lib/types"
+import { formatSummaryCounts } from "@/lib/host-utils"
+import type { HistorySummary } from "@/lib/types"
 
 function formatTimestamp(value?: string | null): string {
   if (!value) {
@@ -70,10 +79,6 @@ function formatTimestamp(value?: string | null): string {
   return date.toLocaleString()
 }
 
-function formatSummaryCounts(summary: ScanSummary): string {
-  return `${summary.total} drives · ${summary.healthy} healthy · ${summary.warning} warn · ${summary.failed} fail`
-}
-
 function formatGrades(grades: Record<string, number> | undefined): string {
   if (!grades || Object.keys(grades).length === 0) {
     return "—"
@@ -83,24 +88,32 @@ function formatGrades(grades: Record<string, number> | undefined): string {
     .join(" · ")
 }
 
+const ALL_HOSTS = "all"
+
 function HistoryList() {
-  const historyQuery = useHistoryQuery()
+  const [hostFilter, setHostFilter] = useState<string>(ALL_HOSTS)
+  const machineId = hostFilter === ALL_HOSTS ? null : hostFilter
+  const historyQuery = useHistoryPagesQuery(machineId)
   const machinesQuery = useMachinesQuery()
   const { invalidateHistory } = useInvalidateCdiQueries()
   const [deleteTarget, setDeleteTarget] = useState<HistorySummary | null>(null)
   const [clearOpen, setClearOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const entries = useMemo(
-    () => historyQuery.data ?? [],
+    () => historyQuery.data?.pages.flat() ?? [],
     [historyQuery.data]
   )
+  const hosts = useMemo(() => machinesQuery.data ?? [], [machinesQuery.data])
+  // The clear endpoint deletes everything, so only quote a count when the
+  // list is unfiltered and fully loaded.
+  const exactTotalKnown = !machineId && !historyQuery.hasNextPage
   const hostsById = useMemo(() => {
     const map = new Map<string, string>()
-    for (const host of machinesQuery.data ?? []) {
+    for (const host of hosts) {
       map.set(host.id, host.name)
     }
     return map
-  }, [machinesQuery.data])
+  }, [hosts])
 
   const loading = historyQuery.isLoading
   const error =
@@ -163,7 +176,7 @@ function HistoryList() {
             </Button>
             <Button
               variant="destructive"
-              disabled={busy || entries.length === 0}
+              disabled={busy || (exactTotalKnown && entries.length === 0)}
               onClick={() => setClearOpen(true)}
             >
               <Trash2Icon />
@@ -181,11 +194,29 @@ function HistoryList() {
       ) : null}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Past scans</CardTitle>
-          <CardDescription>
-            Newest first. Open a scan to review the drive health snapshot.
-          </CardDescription>
+        <CardHeader className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-col gap-1.5">
+            <CardTitle>Past scans</CardTitle>
+            <CardDescription>
+              Newest first. Open a scan to review the drive health snapshot.
+            </CardDescription>
+          </div>
+          <Select value={hostFilter} onValueChange={setHostFilter}>
+            <SelectTrigger
+              className="w-full max-w-56"
+              aria-label="Filter scans by host"
+            >
+              <SelectValue placeholder="All hosts" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_HOSTS}>All hosts</SelectItem>
+              {hosts.map((host) => (
+                <SelectItem key={host.id} value={host.id}>
+                  {host.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -194,6 +225,10 @@ function HistoryList() {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
+          ) : entries.length === 0 && machineId ? (
+            <p className="text-muted-foreground text-sm">
+              No scans recorded for this host yet.
+            </p>
           ) : entries.length === 0 ? (
             <Empty>
               <EmptyHeader>
@@ -273,6 +308,28 @@ function HistoryList() {
               </TableBody>
             </Table>
           )}
+          {!loading && entries.length > 0 ? (
+            <div className="text-muted-foreground mt-4 flex flex-wrap items-center gap-3 text-sm">
+              <span>
+                Showing {entries.length} scan{entries.length === 1 ? "" : "s"}
+                {historyQuery.hasNextPage ? " (more available)" : ""}
+              </span>
+              {historyQuery.hasNextPage ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={historyQuery.isFetchingNextPage}
+                  aria-busy={historyQuery.isFetchingNextPage}
+                  onClick={() => void historyQuery.fetchNextPage()}
+                >
+                  {historyQuery.isFetchingNextPage ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : null}
+                  Load more
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -311,8 +368,9 @@ function HistoryList() {
           <AlertDialogHeader>
             <AlertDialogTitle>Clear all scan history?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes all {entries.length} persisted scan
-              snapshot{entries.length === 1 ? "" : "s"} on this API host.
+              {exactTotalKnown
+                ? `This permanently deletes all ${entries.length} persisted scan snapshot${entries.length === 1 ? "" : "s"} on this API host.`
+                : "This permanently deletes every persisted scan snapshot on this API host, for all hosts — including scans not shown in the current list."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -401,11 +459,31 @@ function HistoryDetailView({ scanId }: { scanId: string }) {
         </Alert>
       ) : null}
 
-      {loading || !entry ? (
+      {loading ? (
         <div className="flex flex-col gap-2">
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-64 w-full" />
         </div>
+      ) : !entry ? (
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <HistoryIcon />
+            </EmptyMedia>
+            <EmptyTitle>Scan unavailable</EmptyTitle>
+            <EmptyDescription>
+              This snapshot could not be loaded. It may have been deleted.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button variant="outline" asChild>
+              <Link to="/history">
+                <ArrowLeftIcon />
+                Back to history
+              </Link>
+            </Button>
+          </EmptyContent>
+        </Empty>
       ) : (
         <>
           <div className="flex flex-wrap gap-2">

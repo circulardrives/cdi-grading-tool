@@ -21,7 +21,7 @@
 ## HTTP Endpoints
 
 - `GET /api/v1/health` — always returns `{status, version}`; full diagnostics when auth is disabled, or with a valid token / loopback client when auth is enabled
-- `POST /api/v1/scan` — optional `machine_id` associates the scan with a registered host; successful scans are appended to scan history
+- `POST /api/v1/scan` — optional `machine_id` associates the scan with a registered host; optional `grading_profile` (`binary` | `abcdf`, like `--grading-profile`); successful scans are appended to scan history
 - `GET /api/v1/devices` — optional `machine_id` returns cached scan for that host; `refresh=true` rescans (and appends history)
 - `GET /api/v1/history` — list persisted scans (`limit`/`offset`; optional `machine_id` filter); newest first
 - `GET /api/v1/history/{id}` — full scan snapshot (devices + summary)
@@ -37,6 +37,14 @@
 - `POST /api/v1/selftests`
 - `GET /api/v1/selftests/status`
 - `POST /api/v1/selftests/abort`
+
+**Hardware lock.** Only one drive-touching operation runs at a time: `POST /api/v1/scan`, `GET /api/v1/devices` when it rescans (`refresh=true` or empty cache), `POST /api/v1/reports`, and the start phase of `POST /api/v1/selftests`. A request that arrives while another holds the lock gets **HTTP 409** (`{"detail": "Drive hardware is busy ..."}`) instead of queueing; retry after the running operation completes. Self-test `wait` polling, status, and abort do not take the lock.
+
+**Scan payload.** Scan responses (and `GET /api/v1/devices`) include `grading_profile` (profile actually applied) and `summary: {total, healthy, warning, failed, ungraded}`. Devices carry the same Revert §13/§15 fields as CLI JSON and reports (`grading_status`, `final_grade`, `fail_reason_codes`, `warning_flags`, `ungraded_reasons`, `recommended_use`, ...). UNGRADED drives (e.g. security-locked, unreadable SMART) have `grading_status: "UNGRADED"`, `final_grade`/`health_grade: "UNGRADED"`, `health_score: null`, and are counted in `summary.ungraded`, **not** `failed`. `POST /api/v1/reports` also accepts `grading_profile`.
+
+**Path allowlist.** Request `mock_data`, `mock_file`, and `config` paths must resolve (after symlinks) inside the packaged `mock_data/` or `config/` directories, the API data directory, `/etc/cdi-health`, the server's `--mock-data` default, or an extra root listed in `CDI_HEALTH_API_ALLOWED_DATA_PATHS` (`:`-separated). Anything else returns **400** `Path is outside the allowed data directories`.
+
+**Per-request thresholds.** A scan/report `config` path is applied only to that request (the process-global thresholds are never replaced). Without `config`, the packaged `thresholds.yaml` defaults apply, matching the CLI.
 
 ### Self-test status payload
 
@@ -84,7 +92,7 @@ Each machine (host) record includes:
 | `last_seen_at` | Last time the host was observed (updated on successful scan) |
 | `last_scan_at` | Timestamp of the latest associated scan |
 | `last_scan_status` | `success` or `failed` |
-| `last_scan_summary` | `{ total, healthy, warning, failed }` device counts |
+| `last_scan_summary` | `{ total, healthy, warning, failed, ungraded }` device counts |
 
 **v1 behavior:** scans always execute on the local API process. The `address` field and reachability status prepare for remote agents; associating a scan with `machine_id` stores per-host snapshots for dashboard context.
 
@@ -92,7 +100,7 @@ Persistence file: `{data_dir}/machines.json` with `machines` and `latest_scans` 
 
 ## Scan History
 
-Successful scans (via `POST /api/v1/scan` or a refreshing `GET /api/v1/devices`) are also written under `{data_dir}/scan-history/` as one JSON file per scan (`YYYYMMDD-HHMMSS-<8hex>.json`). Each file stores the full device snapshot plus summary counts and grade tallies. The dashboard **History** page lists these entries and opens a read-only drive table for any past scan.
+Successful scans (via `POST /api/v1/scan` or a refreshing `GET /api/v1/devices`) are also written under `{data_dir}/scan-history/` as one JSON file per scan (`YYYYMMDD-HHMMSS-<8hex>.json`). Each file stores the full device snapshot plus `grading_profile`, summary counts (including `ungraded`), and grade tallies (UNGRADED drives tally under `"UNGRADED"`, never `"F"`). Entries written before this field existed read back with `ungraded: 0`. The dashboard **History** page lists these entries and opens a read-only drive table for any past scan.
 
 Per-drive longitudinal timelines (metric deltas across scans for one serial) are deferred to a follow-up.
 
@@ -106,7 +114,7 @@ at that API; the **Hosts & Scans** page triggers discovery through the backend.
 
 1. Derive subnet(s) from local IPv4 interfaces when `subnet` is omitted (defaults to /24 per interface).
 2. TCP-probe each address on port **8844** (configurable) with parallel workers (~1–2s timeout per host).
-3. For open ports, `GET http://{ip}:{port}/api/v1/health` (optional `X-API-Token` via `probe_token` or `CDI_HEALTH_API_TOKEN`).
+3. For open ports, `GET http://{ip}:{port}/api/v1/health` (`X-API-Token` is sent **only** when the request supplies an explicit `probe_token`; the bench's own `CDI_HEALTH_API_TOKEN` is never sent, since probes are plain HTTP to every open host. The unauthenticated `{status, version}` payload is enough to identify a CDI bench).
 4. Return discovered hosts with health payload and `already_registered` when the address matches the fleet registry.
 
 **Security / limits**
@@ -169,19 +177,11 @@ cdi-health-api --allow-non-root --mock-data src/cdi_health/mock_data
 
 ## Optional systemd Unit
 
-```ini
-[Unit]
-Description=CDI Health Local API
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/var/lib/cdi-health
-ExecStart=/usr/local/bin/cdi-health-api --host 127.0.0.1 --port 8844 --data-dir /var/lib/cdi-health
-Restart=on-failure
-Environment=CDI_HEALTH_API_TOKEN=replace-me
-
-[Install]
-WantedBy=multi-user.target
-```
+Use the shipped unit `deploy/systemd/cdi-health-api.service` (installed by the
+`.deb` as `/usr/lib/systemd/system/cdi-health-api.service`). It runs as root
+(raw device ioctls) but is sandboxed: `ProtectSystem=strict` with
+`ReadWritePaths=/var/lib/cdi-health /var/cache/cdi-health`, `ProtectHome=true`,
+`PrivateTmp=true`, `NoNewPrivileges=true`, and no `PrivateDevices=` so `/dev`
+stays reachable. Put the token in `/etc/default/cdi-health-api`
+(`deploy/systemd/cdi-health-api.env.example`), not in the unit. If you change
+`--data-dir`, add the new path to `ReadWritePaths=` with a drop-in.

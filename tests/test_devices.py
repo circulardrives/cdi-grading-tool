@@ -31,6 +31,16 @@ import pytest
 from cdi_health.classes.devices import ATAProtocol, Device, Devices
 from cdi_health.classes.exceptions import CommandException
 from cdi_health.classes.mock import MockSG3Utils, MockSmartctl, create_mock_device
+from cdi_health.classes.revert import (
+    FLAG_MISSING_DEFECT_DATA,
+    FLAG_POH_NOT_REPORTED,
+    FLAG_SMART_RESET_SUSPECTED,
+    FLAG_TUR_NOT_READY,
+    FLAG_TUR_UNAVAILABLE,
+    fail_reason_codes,
+    missing_defect_data,
+    warning_flags,
+)
 from cdi_health.classes.scoring import HealthScoreCalculator
 
 
@@ -199,23 +209,30 @@ class TestCreateMockDeviceHelper:
 
 class TestATASelfTestScoring:
     def test_failed_ata_selftest_is_grade_f(self) -> None:
-        calculator = HealthScoreCalculator()
-        device = {
-            "transport_protocol": "ATA",
-            "media_type": "HDD",
-            "smart_status": True,
-            "smart_self_tests": [
-                {
-                    "type": {"value": 1, "string": "Short offline"},
-                    "status": {"value": 7, "string": "Completed: read failure", "passed": False},
-                    "lifetime_hours": 100,
-                }
-            ],
-        }
-        result = calculator.calculate(device)
-        assert result.grade == "F"
-        assert result.score == 0
-        assert any("self-test" in d.reason.lower() for d in result.deductions)
+        from cdi_health.classes.config import ThresholdConfig
+
+        ThresholdConfig.reset_instance()
+        ThresholdConfig.get_instance().set_grading_profile("binary")
+        try:
+            calculator = HealthScoreCalculator()
+            device = {
+                "transport_protocol": "ATA",
+                "media_type": "HDD",
+                "smart_status": True,
+                "smart_self_tests": [
+                    {
+                        "type": {"value": 1, "string": "Short offline"},
+                        "status": {"value": 7, "string": "Completed: read failure", "passed": False},
+                        "lifetime_hours": 100,
+                    }
+                ],
+            }
+            result = calculator.calculate(device)
+            assert result.grade == "F"
+            assert result.score == 0
+            assert any("self-test" in d.reason.lower() for d in result.deductions)
+        finally:
+            ThresholdConfig.reset_instance()
 
     def test_passed_ata_selftest_no_deduction(self) -> None:
         calculator = HealthScoreCalculator()
@@ -232,3 +249,291 @@ class TestATASelfTestScoring:
         result = calculator.calculate(device)
         assert result.grade == "A"
         assert not any("self-test" in d.reason.lower() for d in result.deductions)
+
+
+class _StaticTurSG(MockSG3Utils):
+    """MockSG3Utils returning a fixed TUR state."""
+
+    tur_state = "Ready"
+
+    def test_unit_ready(self) -> str:
+        return self.tur_state
+
+
+def _sg_with_state(device_id: str, state: str | None) -> MockSG3Utils:
+    sg = _StaticTurSG(device_id=device_id)
+    sg.tur_state = state
+    return sg
+
+
+class TestTurStateGrading:
+    """TUR Unknown / ATA-NVMe Not Ready must not auto-fail drives (#128)."""
+
+    @pytest.mark.parametrize(
+        "rel",
+        [("ata", "healthy_hdd.json"), ("nvme", "SSDPE2KE032T8_healthy.json"), ("scsi", "healthy_sas.json")],
+    )
+    def test_unknown_tur_does_not_fail(self, mock_data_dir: Path, rel: tuple[str, str]) -> None:
+        data = _load_mock(mock_data_dir, *rel)
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Unknown"))
+        assert device.state == "Unknown"
+        assert device.cdi_grade != "F"
+        d = device.to_dict(pop=True)
+        result = HealthScoreCalculator().calculate(d)
+        assert not any(x.field == "state" for x in result.deductions)
+        assert FLAG_TUR_UNAVAILABLE in warning_flags(d)
+
+    def test_provider_returning_none_is_unknown(self, mock_data_dir: Path) -> None:
+        data = _load_mock(mock_data_dir, "ata", "healthy_hdd.json")
+        device = _device_from_mock(data, sg3=_sg_with_state(data["device"]["name"], None))
+        assert device.state == "Unknown"
+
+    @pytest.mark.parametrize("rel", [("ata", "healthy_hdd.json"), ("nvme", "SSDPE2KE032T8_healthy.json")])
+    def test_ata_nvme_not_ready_with_valid_smart_is_waived(self, mock_data_dir: Path, rel: tuple[str, str]) -> None:
+        data = _load_mock(mock_data_dir, *rel)
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Not Ready"))
+        assert device.state == "Not Ready"
+        assert device.cdi_grade != "F"
+        d = device.to_dict(pop=True)
+        result = HealthScoreCalculator().calculate(d)
+        assert "F-NO-RESPONSE" not in fail_reason_codes(result.deductions)
+        assert FLAG_TUR_NOT_READY in warning_flags(d)
+
+    def test_scsi_genuine_not_ready_still_fails(self, mock_data_dir: Path) -> None:
+        data = _load_mock(mock_data_dir, "scsi", "healthy_sas.json")
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Not Ready"))
+        assert device.cdi_grade == "F"
+        result = HealthScoreCalculator().calculate(device.to_dict(pop=True))
+        assert "F-NO-RESPONSE" in fail_reason_codes(result.deductions)
+
+
+class TestPowerOnHoursUnknown:
+    """POH is never faked to 0 (#129)."""
+
+    @pytest.mark.parametrize("rel", [("ata", "healthy_hdd.json"), ("nvme", "SSDPE2KE032T8_healthy.json")])
+    def test_not_ready_keeps_real_poh(self, mock_data_dir: Path, rel: tuple[str, str]) -> None:
+        data = _load_mock(mock_data_dir, *rel)
+        expected = data["power_on_time"]["hours"]
+        assert expected > 0
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Not Ready"))
+        assert device.power_on_hours == expected
+
+    @pytest.mark.parametrize(
+        "rel",
+        [("ata", "healthy_hdd.json"), ("nvme", "SSDPE2KE032T8_healthy.json"), ("scsi", "healthy_sas.json")],
+    )
+    @pytest.mark.parametrize("state", ["Ready", "Not Ready", "Unknown"])
+    def test_missing_poh_is_not_reported_not_zero(self, mock_data_dir: Path, rel: tuple[str, str], state: str) -> None:
+        data = copy.deepcopy(_load_mock(mock_data_dir, *rel))
+        data.pop("power_on_time", None)
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, state))
+        assert device.power_on_hours == "Not Reported"
+        d = device.to_dict(pop=True)
+        flags = warning_flags(d)
+        assert FLAG_POH_NOT_REPORTED in flags
+        assert FLAG_SMART_RESET_SUSPECTED not in flags
+
+    def test_unknown_poh_with_many_power_cycles_is_not_smart_reset(self) -> None:
+        # Previously POH forced to "0" + power cycles >= 100 tripped §15.1.
+        device = {"transport_protocol": "ATA", "power_on_hours": "Not Reported", "power_cycle_count": 5000}
+        flags = warning_flags(device)
+        assert FLAG_SMART_RESET_SUSPECTED not in flags
+        assert FLAG_POH_NOT_REPORTED in flags
+
+    def test_not_ready_ata_high_poh_still_age_capped(self, mock_data_dir: Path) -> None:
+        # A fake 0 used to defeat the §5 age cap; the real POH must drive it.
+        data = copy.deepcopy(_load_mock(mock_data_dir, "ata", "healthy_hdd.json"))
+        data["power_on_time"] = {"hours": 65000}
+        device_id = data["device"]["name"]
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Not Ready"))
+        result = HealthScoreCalculator().calculate(device.to_dict(pop=True))
+        assert device.power_on_hours == 65000
+        assert result.age_cap_grade == "D"
+
+    def test_ungraded_failure_record_not_flagged(self) -> None:
+        record = Devices._ungraded_placeholder({"name": "/dev/sdz", "error": "open failed"})
+        assert FLAG_POH_NOT_REPORTED not in warning_flags(record)
+
+
+def _drop_ata_attrs(data: dict, *ids: int) -> dict:
+    data = copy.deepcopy(data)
+    table = data["ata_smart_attributes"]["table"]
+    data["ata_smart_attributes"]["table"] = [a for a in table if a.get("id") not in ids]
+    return data
+
+
+class TestMissingDefectData:
+    """Missing critical defect data must not grade as a clean A (#134)."""
+
+    @pytest.mark.parametrize("profile", ["abcdf", "binary"])
+    def test_scsi_missing_grown_defects(self, mock_data_dir: Path, profile: str) -> None:
+        from cdi_health.classes.config import get_config
+
+        get_config().set_grading_profile(profile)
+        data = copy.deepcopy(_load_mock(mock_data_dir, "scsi", "healthy_sas.json"))
+        data.pop("scsi_grown_defect_list", None)
+        device = _device_from_mock(data)
+        assert device.reallocated_sectors is None  # not a -1 sentinel
+        d = device.to_dict(pop=True)
+        assert FLAG_MISSING_DEFECT_DATA in warning_flags(d)
+        assert device.cdi_grade != "A"
+        result = HealthScoreCalculator().calculate(d)
+        assert result.grade == "B"
+        assert any(x.field == "missing_defect_data" for x in result.deductions)
+
+    def test_scsi_legacy_minus_one_sentinel_is_missing(self) -> None:
+        device = {
+            "transport_protocol": "SCSI",
+            "smart_status": True,
+            "reallocated_sectors": -1,
+            "uncorrectable_errors": 0,
+        }
+        assert missing_defect_data(device) == ["grown_defects"]
+        assert HealthScoreCalculator().calculate(device).grade == "B"
+
+    @pytest.mark.parametrize("attr_ids", [(5,), (197,), (5, 197)])
+    def test_ata_hdd_missing_realloc_or_pending(self, mock_data_dir: Path, attr_ids: tuple[int, ...]) -> None:
+        data = _drop_ata_attrs(_load_mock(mock_data_dir, "ata", "healthy_hdd.json"), *attr_ids)
+        device = _device_from_mock(data)
+        d = device.to_dict(pop=True)
+        assert FLAG_MISSING_DEFECT_DATA in warning_flags(d)
+        assert device.cdi_grade == "B"
+        if 5 in attr_ids:
+            assert device.reallocated_sectors is None
+            assert "reallocated_sectors" not in HealthScoreCalculator().calculate(d).attribute_grades
+
+    def test_ata_hdd_missing_optional_198_not_flagged(self, mock_data_dir: Path) -> None:
+        data = _drop_ata_attrs(_load_mock(mock_data_dir, "ata", "healthy_hdd.json"), 198)
+        device = _device_from_mock(data)
+        assert device.uncorrectable_errors is None
+        assert FLAG_MISSING_DEFECT_DATA not in warning_flags(device.to_dict(pop=True))
+        assert device.cdi_grade == "A"
+
+    def test_ata_ssd_without_197_not_flagged(self, mock_data_dir: Path) -> None:
+        # Many SSDs (Samsung, Intel) legitimately omit 197; only 5 is critical.
+        data = _drop_ata_attrs(_load_mock(mock_data_dir, "ata", "MK000960GWSSD_healthy.json"), 197, 198)
+        device = _device_from_mock(data)
+        assert device.media_type == "SSD"
+        assert FLAG_MISSING_DEFECT_DATA not in warning_flags(device.to_dict(pop=True))
+        assert device.cdi_grade == "A"
+
+    def test_nvme_missing_available_spare(self, mock_data_dir: Path) -> None:
+        data = copy.deepcopy(_load_mock(mock_data_dir, "nvme", "SSDPE2KE032T8_healthy.json"))
+        data["nvme_smart_health_information_log"].pop("available_spare", None)
+        device = _device_from_mock(data)
+        assert device.available_spare is None
+        d = device.to_dict(pop=True)
+        assert FLAG_MISSING_DEFECT_DATA in warning_flags(d)
+        assert device.cdi_grade == "B"
+        result = HealthScoreCalculator().calculate(d)
+        # Unknown spare is not assumed 100 and not a fail-gate either
+        assert not any(x.field == "available_spare" for x in result.deductions)
+
+    def test_grade_cap_is_configurable(self, mock_data_dir: Path) -> None:
+        from cdi_health.classes.config import get_config
+
+        get_config().load_from_dict({"grading": {"missing_defect_data_grade_cap": "C"}})
+        data = copy.deepcopy(_load_mock(mock_data_dir, "scsi", "healthy_sas.json"))
+        data.pop("scsi_grown_defect_list", None)
+        assert _device_from_mock(data).cdi_grade == "C"
+
+    def test_ungraded_record_not_flagged(self) -> None:
+        record = Devices._ungraded_placeholder({"name": "/dev/sdz", "error": "open failed", "protocol": "ATA"})
+        assert missing_defect_data(record) == []
+
+
+def _ata_ssd_with_wear(mock_data_dir: Path, model: str, attributes: list[dict]) -> dict:
+    """ATA SSD smartctl JSON with the given wear attributes and no Device Statistics wear."""
+    data = copy.deepcopy(_load_mock(mock_data_dir, "ata", "MK000960GWSSD_healthy.json"))
+    data["model_name"] = model
+    data["rotation_rate"] = 0
+    data.pop("ata_device_statistics", None)
+    base = [a for a in data["ata_smart_attributes"]["table"] if a["id"] in (5, 9, 12)]
+    data["ata_smart_attributes"]["table"] = base + attributes
+    return data
+
+
+def _attr(attr_id: int, name: str, value: int, raw: int = 0) -> dict:
+    return {"id": attr_id, "name": name, "value": value, "worst": value, "thresh": 0, "raw": {"value": raw}}
+
+
+class TestATASSDWearSemantics:
+    """Per-vendor ATA SSD wear attribute semantics (#135)."""
+
+    def test_micron_202_percent_lifetime_remain_is_remaining(self, mock_data_dir: Path) -> None:
+        # New Micron drive: normalized 100 = 100% life remaining -> 0% used (was 100% used).
+        data = _ata_ssd_with_wear(
+            mock_data_dir, "Micron_5300_MTFDDAK960TDS", [_attr(202, "Percent_Lifetime_Remain", 100, 0)]
+        )
+        device = _device_from_mock(data)
+        assert device.ssd_percentage_used_endurance == 0
+        assert device.cdi_grade == "A"
+
+    def test_crucial_202_by_vendor_when_name_unknown(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "Crucial_CT500MX200SSD1", [_attr(202, "Unknown_SSD_Attribute", 93)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 7
+
+    def test_kingston_231_ssd_life_left_is_remaining(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "KINGSTON SA400S37240G", [_attr(231, "SSD_Life_Left", 97)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 3
+
+    def test_kingston_231_by_vendor_when_name_unknown(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "KINGSTON SV300S37A120G", [_attr(231, "Unknown_Attribute", 90)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 10
+
+    def test_samsung_177_wear_leveling_count(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(
+            mock_data_dir, "Samsung SSD 860 EVO 500GB", [_attr(177, "Wear_Leveling_Count", 88, 150)]
+        )
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 12
+
+    def test_intel_233_media_wearout_indicator(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "INTEL SSDSC2KB480G8", [_attr(233, "Media_Wearout_Indicator", 98)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 2
+
+    def test_used_named_attribute_reads_raw(self, mock_data_dir: Path) -> None:
+        data = _ata_ssd_with_wear(mock_data_dir, "Generic SSD", [_attr(202, "Perc_Rated_Life_Used", 100, 42)])
+        assert _device_from_mock(data).ssd_percentage_used_endurance == 42
+
+    def test_unknown_semantics_are_not_guessed(self, mock_data_dir: Path) -> None:
+        # Unknown vendor + generic name: normalized 100 used to read as 100% used (F-ENDURANCE).
+        data = _ata_ssd_with_wear(mock_data_dir, "Generic SSD", [_attr(202, "Unknown_SSD_Attribute", 100)])
+        device = _device_from_mock(data)
+        assert device.ssd_percentage_used_endurance is None
+        assert device.cdi_grade != "F"
+
+    def test_resolve_prefers_name_over_vendor_rule(self) -> None:
+        from cdi_health.classes.devices import WEAR_USED, resolve_wear_semantics
+
+        attr = _attr(202, "Percent_Lifetime_Used", 10, 90)
+        assert resolve_wear_semantics(attr, "Crucial_CT500MX200SSD1")[0] == WEAR_USED
+
+
+class TestVendorPrefixDetection:
+    """HGST / Toshiba / WDC prefixes were dead behind a digit guard (#135)."""
+
+    @pytest.mark.parametrize(
+        ("model", "brand"),
+        [
+            ("HUS726T4TALA6L4", "HGST"),
+            ("HUSMM1640ASS204", "HGST"),
+            ("THNSNJ256GCSU", "Toshiba"),
+            ("WDC-WD40EFRX", "Western Digital"),
+            ("MB4000GCWDC", "HPE"),
+            ("SSDSC2KB480G8", "Intel"),
+        ],
+    )
+    def test_prefix_detection(self, model: str, brand: str) -> None:
+        assert Device.determine_brand_by_model_number_starts_with(model) == brand
+
+    def test_brand_list_shared(self) -> None:
+        from cdi_health.classes.devices import KNOWN_BRANDS
+
+        assert len(KNOWN_BRANDS) == len(set(KNOWN_BRANDS))
+        assert Device.determine_brand_by_model_number("KINGSTON SA400") == "KINGSTON"
+        assert Device.determine_model_by_model_number("KINGSTON SA400") == "SA400"

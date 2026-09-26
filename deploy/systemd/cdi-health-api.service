@@ -6,17 +6,37 @@ After=network.target
 Type=simple
 User=root
 Group=root
+# /var/lib/cdi-health: host registry, scan history, reports/ (writable).
 StateDirectory=cdi-health
+# /var/cache/cdi-health: fontconfig/WeasyPrint cache (HOME is hidden below).
+CacheDirectory=cdi-health
+Environment=XDG_CACHE_HOME=/var/cache/cdi-health
 WorkingDirectory=/var/lib/cdi-health
 EnvironmentFile=-/etc/default/cdi-health-api
 ExecStart=/usr/local/bin/cdi-health-api --host 127.0.0.1 --port 8844 --data-dir /var/lib/cdi-health
 Restart=on-failure
 RestartSec=5
+
+# Sandboxing. The service runs as root because smartctl/nvme/sg3-utils need
+# raw block-device ioctls, so /dev must stay fully accessible: do NOT add
+# PrivateDevices=, DevicePolicy=/DeviceAllow=, or options that imply a device
+# allow-list (e.g. ProtectClock=).
+# Everything else is read-only except the data/cache directories; /etc
+# (including /etc/cdi-health and /etc/default/cdi-health-api) is read-only.
+# If you pass a different --data-dir, add it to ReadWritePaths= via a drop-in.
 NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cdi-health /var/cache/cdi-health
+ProtectHome=true
 PrivateTmp=true
 ProtectControlGroups=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]

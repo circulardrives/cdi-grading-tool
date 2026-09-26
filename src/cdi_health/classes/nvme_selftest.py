@@ -29,8 +29,6 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import struct
-import subprocess
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -46,6 +44,338 @@ def validate_nvme_device_path(device_path: str) -> str:
     if not device_path or not _NVME_DEVICE_RE.fullmatch(device_path):
         raise ValueError(f"Invalid NVMe device path; expected /dev/nvmeN or /dev/nvmeNnN (got {device_path!r})")
     return device_path
+
+
+# ---------------------------------------------------------------------------
+# Device Self-test log (Log Page 06h) decoding — NVMe Base Specification
+# ---------------------------------------------------------------------------
+#
+# Layout: 4-byte header followed by 20 Self-test Result Data Structures of
+# 28 bytes each (newest first).
+#
+# Header:  byte 0 bits 3:0 = Current Device Self-test Operation
+#          byte 1 bits 6:0 = Current Device Self-test Completion (%)
+# Entry:   byte 0 bits 3:0 = Self-test Result, bits 7:4 = Self-test Code
+#          byte 1 = Segment Number, byte 2 = Valid Diagnostic Information
+#          bytes 4-11 = Power On Hours (LE u64), 12-15 = NSID,
+#          16-23 = Failing LBA, 24 = Status Code Type, 25 = Status Code,
+#          26-27 = Vendor Specific
+
+LOG_06H_HEADER_LEN = 4
+LOG_06H_ENTRY_LEN = 28
+LOG_06H_MAX_ENTRIES = 20
+LOG_06H_LEN = LOG_06H_HEADER_LEN + LOG_06H_ENTRY_LEN * LOG_06H_MAX_ENTRIES  # 564
+
+# Self-test Result (entry byte 0, bits 3:0)
+RESULT_NO_ERROR = 0x0
+RESULT_ABORTED_DST_COMMAND = 0x1
+RESULT_ABORTED_CONTROLLER_RESET = 0x2
+RESULT_ABORTED_NAMESPACE_REMOVED = 0x3
+RESULT_ABORTED_FORMAT_NVM = 0x4
+RESULT_FATAL_ERROR = 0x5
+RESULT_UNKNOWN_SEGMENT_FAILED = 0x6
+RESULT_SEGMENT_FAILED = 0x7
+RESULT_ABORTED_UNKNOWN = 0x8
+RESULT_ABORTED_SANITIZE = 0x9
+RESULT_UNUSED = 0xF
+
+FAILED_RESULT_CODES = frozenset({RESULT_FATAL_ERROR, RESULT_UNKNOWN_SEGMENT_FAILED, RESULT_SEGMENT_FAILED})
+ABORTED_RESULT_CODES = frozenset(
+    {
+        RESULT_ABORTED_DST_COMMAND,
+        RESULT_ABORTED_CONTROLLER_RESET,
+        RESULT_ABORTED_NAMESPACE_REMOVED,
+        RESULT_ABORTED_FORMAT_NVM,
+        RESULT_ABORTED_UNKNOWN,
+        RESULT_ABORTED_SANITIZE,
+    }
+)
+
+RESULT_STRINGS = {
+    RESULT_NO_ERROR: "Success",
+    RESULT_ABORTED_DST_COMMAND: "Aborted: Device Self-test command",
+    RESULT_ABORTED_CONTROLLER_RESET: "Aborted: Controller Level Reset",
+    RESULT_ABORTED_NAMESPACE_REMOVED: "Aborted: namespace removed",
+    RESULT_ABORTED_FORMAT_NVM: "Aborted: Format NVM command",
+    RESULT_FATAL_ERROR: "Failed: fatal or unknown test error",
+    RESULT_UNKNOWN_SEGMENT_FAILED: "Failed: unknown segment failed",
+    RESULT_SEGMENT_FAILED: "Failed: one or more segments failed",
+    RESULT_ABORTED_UNKNOWN: "Aborted: unknown reason",
+    RESULT_ABORTED_SANITIZE: "Aborted: sanitize operation",
+    RESULT_UNUSED: "Entry not used",
+}
+
+# Self-test Code (entry byte 0 bits 7:4, and current operation)
+CODE_SHORT = 0x1
+CODE_EXTENDED = 0x2
+CODE_VENDOR = 0xE
+SELF_TEST_CODE_STRINGS = {CODE_SHORT: "Short", CODE_EXTENDED: "Extended", CODE_VENDOR: "Vendor specific"}
+IN_PROGRESS_OPERATIONS = frozenset({CODE_SHORT, CODE_EXTENDED, CODE_VENDOR})
+
+# Valid Diagnostic Information flags (entry byte 2)
+VDI_NSID = 0x1
+VDI_FLBA = 0x2
+VDI_SCT = 0x4
+VDI_SC = 0x8
+
+
+def classify_result(result: int | None) -> str:
+    """Map a Self-test Result nibble to passed / failed / aborted / unused / unknown."""
+    if result is None:
+        return "unknown"
+    if result == RESULT_NO_ERROR:
+        return "passed"
+    if result in FAILED_RESULT_CODES:
+        return "failed"
+    if result in ABORTED_RESULT_CODES:
+        return "aborted"
+    if result == RESULT_UNUSED:
+        return "unused"
+    return "unknown"  # reserved codes Ah-Eh
+
+
+def decode_dsts(value: int) -> tuple[int, int]:
+    """Split entry byte 0 into (Self-test Result, Self-test Code)."""
+    return value & 0x0F, (value >> 4) & 0x0F
+
+
+def _op_string(op_value: int) -> str:
+    if op_value == 0:
+        return "No self-test in progress"
+    if op_value == CODE_SHORT:
+        return "Short self-test in progress"
+    if op_value == CODE_EXTENDED:
+        return "Extended self-test in progress"
+    if op_value == CODE_VENDOR:
+        return "Vendor specific self-test in progress"
+    return f"Unknown operation ({op_value})"
+
+
+def _make_entry(
+    result: int,
+    code: int | None,
+    *,
+    segment: int | None = None,
+    vdi: int = 0,
+    power_on_hours: int | None = None,
+    nsid: int | None = None,
+    failing_lba: int | None = None,
+    sct: int | None = None,
+    sc: int | None = None,
+) -> dict[str, Any]:
+    return {
+        "result": result,
+        "result_string": RESULT_STRINGS.get(result, f"Reserved ({result})"),
+        "status": classify_result(result),
+        "type": code,
+        "type_string": SELF_TEST_CODE_STRINGS.get(code, f"Unknown ({code})") if code is not None else "Unknown",
+        "segment": segment,
+        "valid_diagnostic_info": vdi,
+        "power_on_hours": power_on_hours,
+        # Legacy alias kept for API consumers: this is power-on hours, NOT a timestamp.
+        "completion_time": power_on_hours if power_on_hours is not None else 0,
+        "nsid": nsid,
+        "failing_lba": failing_lba,
+        "status_code_type": sct,
+        "status_code": sc,
+    }
+
+
+def _log_result(op_value: int, completion: int, entries: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "current_self_test_operation": {"value": op_value, "string": _op_string(op_value)},
+        "current_self_test_completion": completion,
+        "in_progress": op_value in IN_PROGRESS_OPERATIONS,
+        "entries": entries,
+    }
+
+
+def parse_self_test_log_bytes(data: bytes) -> dict[str, Any]:
+    """
+    Decode a raw Device Self-test log (Log Page 06h).
+
+    Unused entries (result Fh) are skipped; entry order (newest first) is preserved.
+    """
+    if len(data) < LOG_06H_HEADER_LEN:
+        return _log_result(0, 0, [])
+
+    op_value = data[0] & 0x0F
+    completion = data[1] & 0x7F
+    entries: list[dict[str, Any]] = []
+
+    for idx in range(LOG_06H_MAX_ENTRIES):
+        off = LOG_06H_HEADER_LEN + idx * LOG_06H_ENTRY_LEN
+        raw = data[off : off + LOG_06H_ENTRY_LEN]
+        if len(raw) < LOG_06H_ENTRY_LEN:
+            break
+        result, code = decode_dsts(raw[0])
+        if result == RESULT_UNUSED:
+            continue
+        vdi = raw[2]
+        entries.append(
+            _make_entry(
+                result,
+                code,
+                segment=raw[1],
+                vdi=vdi,
+                power_on_hours=int.from_bytes(raw[4:12], "little"),
+                nsid=int.from_bytes(raw[12:16], "little") if vdi & VDI_NSID else None,
+                failing_lba=int.from_bytes(raw[16:24], "little") if vdi & VDI_FLBA else None,
+                sct=raw[24] if vdi & VDI_SCT else None,
+                sc=raw[25] if vdi & VDI_SC else None,
+            )
+        )
+
+    return _log_result(op_value, completion, entries)
+
+
+_HEX_LINE_RE = re.compile(r"^[0-9a-fA-F]+:")
+_HEX_BYTE_RE = re.compile(r"^[0-9a-fA-F]{2}$")
+
+
+def parse_hex_dump(text: str) -> bytes:
+    """Extract bytes from an nvme-cli hex dump ("0000: 00 01 ... \"....\"")."""
+    out = bytearray()
+    for line in text.splitlines():
+        line = line.strip()
+        if not _HEX_LINE_RE.match(line):
+            continue
+        hex_part = line.split(":", 1)[1].split('"')[0]
+        out.extend(int(tok, 16) for tok in hex_part.split() if _HEX_BYTE_RE.match(tok))
+    return bytes(out)
+
+
+def _parse_int(value: str) -> int | None:
+    """Parse the first token of an nvme-cli value ("0x7", "12", "45%", "0x1 (Short)")."""
+    tokens = value.strip().split()
+    if not tokens:
+        return None
+    tok = tokens[0].rstrip("%,;")
+    try:
+        if tok.lower().startswith("0x"):
+            return int(tok, 16)
+        return int(tok, 10)
+    except ValueError:
+        return None
+
+
+_TEXT_ENTRY_SPLIT_RE = re.compile(r"^\s*Self Test Result\s*\[\s*\d+\s*\]\s*:", re.MULTILINE)
+
+
+def parse_self_test_log_text(text: str) -> dict[str, Any] | None:
+    """
+    Parse ``nvme self-test-log`` text output.
+
+    nvme-cli prints header values and entry fields with ``%#x`` (e.g. ``0x1``),
+    and "Operation Result"/"Self Test Code" are the already-split nibbles of
+    entry byte 0. If a value larger than 0xF appears (raw byte), it is split
+    per spec. Returns None when the output is not recognisable.
+    """
+    op_match = re.search(r"Current operation\s*:\s*(\S+)", text, re.IGNORECASE)
+    if not op_match:
+        return None
+    op_raw = _parse_int(op_match.group(1)) or 0
+    op_value = op_raw & 0x0F
+    comp_match = re.search(r"Current Completion\s*:\s*(\S+)", text, re.IGNORECASE)
+    completion = (_parse_int(comp_match.group(1)) or 0) & 0x7F if comp_match else 0
+
+    entries: list[dict[str, Any]] = []
+    for block in _TEXT_ENTRY_SPLIT_RE.split(text)[1:]:
+        fields: dict[str, int | None] = {}
+        for line in block.splitlines():
+            if ":" not in line:
+                continue
+            key, _, value = line.partition(":")
+            fields[key.strip().lower()] = _parse_int(value)
+
+        result = fields.get("operation result")
+        if result is None:
+            continue
+        code = fields.get("self test code")
+        if result > 0x0F:  # raw DSTS byte
+            result, embedded_code = decode_dsts(result)
+            if code is None:
+                code = embedded_code
+        if code is not None and code > 0x0F:
+            code = decode_dsts(code)[1]
+        if result == RESULT_UNUSED:
+            continue
+
+        poh = next((v for k, v in fields.items() if k.startswith("power on hours")), None)
+        entries.append(
+            _make_entry(
+                result,
+                code,
+                segment=fields.get("failing segment", fields.get("segment number")),
+                vdi=fields.get("valid diagnostic information") or 0,
+                power_on_hours=poh,
+                nsid=fields.get("namespace identifier"),
+                failing_lba=fields.get("failing lba"),
+                sct=fields.get("status code type"),
+                sc=fields.get("status code"),
+            )
+        )
+
+    return _log_result(op_value, completion, entries)
+
+
+def _entry_key(entry: dict[str, Any]) -> tuple:
+    return tuple(
+        entry.get(k)
+        for k in (
+            "result",
+            "type",
+            "segment",
+            "power_on_hours",
+            "nsid",
+            "failing_lba",
+            "status_code_type",
+            "status_code",
+        )
+    )
+
+
+def find_new_entry(
+    before: list[dict[str, Any]] | None,
+    after: list[dict[str, Any]],
+    expected_code: int | None = None,
+) -> dict[str, Any] | None:
+    """
+    Return the newest log entry if it was added after ``before`` was captured.
+
+    A new entry is detected when the number of used entries grew, or (log full
+    at 20 entries) the entry list shifted. The newest entry must not predate the
+    baseline's newest entry (POH) and, if ``expected_code`` is given, must have
+    that Self-test Code. Returns None when no new entry can be confirmed.
+    """
+    if before is None or not after:
+        return None
+    newest = after[0]
+    if expected_code is not None and newest.get("type") != expected_code:
+        return None
+    if before:
+        prev_poh = before[0].get("power_on_hours")
+        new_poh = newest.get("power_on_hours")
+        if prev_poh is not None and new_poh is not None and new_poh < prev_poh:
+            return None
+    before_keys = [_entry_key(e) for e in before]
+    after_keys = [_entry_key(e) for e in after]
+    if len(after_keys) > len(before_keys) or after_keys != before_keys:
+        return newest
+    return None
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    try:
+        return int(str(value).replace(",", "").strip(), 0)
+    except ValueError:
+        return None
 
 
 class NVMeSelfTest:
@@ -289,157 +619,45 @@ class NVMeSelfTest:
 
     def get_results(self) -> dict:
         """
-        Get device self-test results from Log Page 0x06.
+        Get device self-test results from Log Page 06h.
 
-        Uses 'nvme self-test-log' command (preferred) or 'nvme get-log' as fallback.
+        Uses 'nvme self-test-log' text output (preferred) or a raw 'nvme get-log'
+        hex dump as fallback. Both are decoded per the NVMe Base Specification;
+        unused entries (result Fh) are omitted and entries are newest first.
 
-        :return: Dictionary with self-test log data
+        :return: Dictionary with current operation, completion, and entries
         """
-        # Try self-test-log command first (more reliable, better formatted)
-        cmd_str = f"sudo {self.nvme_path} self-test-log {self.device_path}"
-        cmd = Command(cmd_str)
+        cmd = Command(f"sudo {self.nvme_path} self-test-log {self.device_path}")
         cmd.run()
 
         if cmd.return_code == 0 and cmd.output:
             output_str = cmd.output.decode("utf-8") if isinstance(cmd.output, bytes) else cmd.output
-            # Parse text output from self-test-log command
-            parsed = self._parse_self_test_log_text(output_str)
-            # Return parsed results (has current operation and entries)
-            return parsed
+            parsed = parse_self_test_log_text(output_str)
+            if parsed is not None:
+                return parsed
 
-        # Fallback to get-log command (hex dump format)
-        cmd_str = f"sudo {self.nvme_path} get-log {self.device_path} --log-id=0x06 --log-len=512"
-        cmd = Command(cmd_str)
+        # Fallback: raw log page as a hex dump
+        cmd = Command(f"sudo {self.nvme_path} get-log {self.device_path} --log-id=0x06 --log-len={LOG_06H_LEN}")
         cmd.run()
 
         if cmd.return_code != 0:
             error_msg = cmd.errors.decode("utf-8") if cmd.errors else "Unknown error"
             # Some devices may not support self-test log - return empty structure
             if "Invalid" in error_msg or "not supported" in error_msg.lower() or "not found" in error_msg.lower():
-                return {
-                    "current_self_test_operation": {
-                        "value": 0,
-                        "string": "Self-test not supported",
-                    },
-                    "current_self_test_completion": 0,
-                    "entries": [],
-                }
+                result = _log_result(0, 0, [])
+                result["current_self_test_operation"]["string"] = "Self-test not supported"
+                return result
             raise CommandException(f"Failed to get self-test log: {error_msg}")
 
-        if not cmd.output:
-            return {
-                "current_self_test_operation": {
-                    "value": 0,
-                    "string": "No self-test data available",
-                },
-                "current_self_test_completion": 0,
-                "entries": [],
-            }
-
-        # Parse hex dump format
-        output_str = cmd.output.decode("utf-8") if isinstance(cmd.output, bytes) else cmd.output
-
-        # nvme-cli hex dump format:
-        # 0000: 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f "................"
-        # Extract only hex bytes (skip ASCII representation in quotes)
-        import re
-
-        all_bytes = []
-        for line in output_str.split("\n"):
-            line = line.strip()
-            # Look for hex dump lines (format: "offset: hex hex hex ...")
-            if ":" in line and re.match(r"^[0-9a-fA-F]+:", line):
-                parts = line.split(":", 1)
-                if len(parts) > 1:
-                    # Extract hex bytes before the quote (ASCII representation)
-                    # Format: "00 01 02 ..." or "00 01 02 ... " (with trailing space before quote)
-                    hex_part = parts[1].split('"')[0].strip()
-                    # Extract only valid hex bytes (exactly 2 hex digits, separated by spaces)
-                    # Split by space and filter valid 2-digit hex
-                    hex_bytes = [
-                        b for b in hex_part.split() if len(b) == 2 and all(c in "0123456789abcdefABCDEF" for c in b)
-                    ]
-                    all_bytes.extend(hex_bytes)
-
-        if len(all_bytes) < 4:
-            return {
-                "current_self_test_operation": {
-                    "value": 0,
-                    "string": "No self-test data available",
-                },
-                "current_self_test_completion": 0,
-                "entries": [],
-            }
-
-        try:
-            # Byte 0: Current self-test operation (0=none, 1=short, 2=extended, 0xF=abort)
-            op_value = int(all_bytes[0], 16) if len(all_bytes) > 0 else 0
-            # Byte 1: Current self-test completion percentage (0-100)
-            completion = int(all_bytes[1], 16) if len(all_bytes) > 1 else 0
-
-            # Parse entries (each entry is 16 bytes, starting at offset 4)
-            # Per NVMe spec 2.3, Log Page 0x06 structure:
-            # Bytes 0-1: Current operation and completion
-            # Bytes 2-3: Reserved
-            # Bytes 4-19: Entry 1 (16 bytes)
-            # Bytes 20-35: Entry 2 (16 bytes)
-            # ... up to 20 entries
-            entries = []
-            entry_offset = 4  # Start after header (4 bytes)
-
-            while entry_offset + 16 <= len(all_bytes):
-                entry_bytes = all_bytes[entry_offset : entry_offset + 16]
-                if len(entry_bytes) >= 2:
-                    # Byte 0: Result (0=success, 1=fail, 2=aborted)
-                    result_val = int(entry_bytes[0], 16)
-                    # Byte 1: Test type (1=short, 2=extended)
-                    type_val = int(entry_bytes[1], 16)
-
-                    # Only parse valid entries:
-                    # - Result must be 0, 1, or 2
-                    # - Type must be 1 or 2
-                    # - Both cannot be zero (empty slot)
-                    if result_val in (0, 1, 2) and type_val in (1, 2) and (result_val != 0 or type_val != 0):
-                        # Bytes 8-15: Completion timestamp (little-endian, seconds since power-on)
-                        timestamp = 0
-                        if len(entry_bytes) >= 16:
-                            try:
-                                # Convert 8 bytes (bytes 8-15) from little-endian hex
-                                timestamp_hex = "".join(reversed(entry_bytes[8:16]))
-                                timestamp = int(timestamp_hex, 16) if timestamp_hex else 0
-                            except (ValueError, IndexError):
-                                pass
-
-                        entries.append(
-                            {
-                                "result": result_val,
-                                "result_string": self._result_to_string(result_val),
-                                "type": type_val,
-                                "type_string": self._type_to_string(type_val),
-                                "completion_time": timestamp,
-                            }
-                        )
-
-                entry_offset += 16
-
-            return {
-                "current_self_test_operation": {
-                    "value": op_value,
-                    "string": self._op_value_to_string(op_value),
-                },
-                "current_self_test_completion": completion,
-                "entries": entries,
-            }
-        except (ValueError, IndexError) as e:
-            # Return empty structure on parse error
-            return {
-                "current_self_test_operation": {
-                    "value": 0,
-                    "string": f"Parse error: {e}",
-                },
-                "current_self_test_completion": 0,
-                "entries": [],
-            }
+        output_str = ""
+        if cmd.output:
+            output_str = cmd.output.decode("utf-8") if isinstance(cmd.output, bytes) else cmd.output
+        data = parse_hex_dump(output_str)
+        if len(data) < LOG_06H_HEADER_LEN:
+            result = _log_result(0, 0, [])
+            result["current_self_test_operation"]["string"] = "No self-test data available"
+            return result
+        return parse_self_test_log_bytes(data)
 
     def get_current_status(self) -> dict:
         """
@@ -486,9 +704,8 @@ class NVMeSelfTest:
             status = current_op.get("string", "Unknown")
             value = current_op.get("value", 0)
 
-            # Check if test is in progress
-            # Value 0 = no test, 1 = short test, 2 = extended test, 0xF = abort
-            in_progress = value in (1, 2)  # Only 1 (short) or 2 (extended) means in progress
+            # Current operation: 0 = none, 1 = short, 2 = extended, Eh = vendor specific
+            in_progress = value in IN_PROGRESS_OPERATIONS
 
             return {
                 "status": status,
@@ -507,220 +724,92 @@ class NVMeSelfTest:
             "entries": [],
         }
 
-    def _parse_self_test_log(self, log_data: dict) -> dict:
-        """
-        Parse self-test log page data.
-
-        Per NVMe spec 2.3, Log Page 0x06 structure:
-        - Byte 0: Current self-test operation
-        - Byte 1: Current self-test completion
-        - Bytes 2-3: Reserved
-        - Bytes 4-19: Self-test result data structure (entry 1)
-        - ... (up to 20 entries)
-
-        :param log_data: Raw log page data from nvme-cli
-        :return: Parsed self-test log dictionary
-        """
-        # nvme-cli returns the log in a specific format
-        # The structure may vary, so we handle both raw bytes and parsed JSON
-
-        result = {
-            "current_self_test_operation": {
-                "value": 0,
-                "string": "No self-test in progress",
-            },
-            "current_self_test_completion": 0,
-            "entries": [],
-        }
-
-        # If log_data is already parsed by nvme-cli
-        if isinstance(log_data, dict):
-            # Check for common nvme-cli output formats
-            if "dst" in log_data:
-                dst = log_data["dst"]
-                result["current_self_test_operation"]["value"] = dst.get("dstc", 0)
-                result["current_self_test_completion"] = dst.get("dstc", 0)
-
-                # Parse entries if available
-                if "entries" in dst:
-                    result["entries"] = self._parse_entries(dst["entries"])
-            elif "SelfTestLog" in log_data:
-                # Alternative format
-                stl = log_data["SelfTestLog"]
-                result["current_self_test_operation"]["value"] = stl.get("CurrentOperation", 0)
-                result["current_self_test_completion"] = stl.get("CurrentCompletion", 0)
-
-                # Parse entries if available
-                if "entries" in stl:
-                    result["entries"] = self._parse_entries(stl["entries"])
-            elif "current_operation" in log_data or "entries" in log_data:
-                # Direct format from self-test-log command
-                result["current_self_test_operation"]["value"] = log_data.get("current_operation", 0)
-                result["current_self_test_completion"] = log_data.get("current_completion", 0)
-
-                # Parse entries if available
-                if "entries" in log_data:
-                    result["entries"] = self._parse_entries(log_data["entries"])
-
-        # Map operation values to strings
-        op_value = result["current_self_test_operation"]["value"]
-        result["current_self_test_operation"]["string"] = self._op_value_to_string(op_value)
-
-        return result
-
-    def _parse_self_test_log_text(self, text: str) -> dict:
-        """
-        Parse text output from 'nvme self-test-log' command.
-
-        Format:
-        Device Self Test Log for NVME device:nvme0
-        Current operation  : 0
-        Current Completion : 0%
-        Self Test Result[0]:
-          Operation Result             : 0
-          Self Test Code               : 1
-          ...
-
-        :param text: Text output from self-test-log command
-        :return: Parsed dictionary
-        """
-        result = {
-            "current_self_test_operation": {
-                "value": 0,
-                "string": "No self-test in progress",
-            },
-            "current_self_test_completion": 0,
-            "entries": [],
-        }
-
-        import re
-
-        # Parse current operation
-        op_match = re.search(r"Current operation\s*:\s*(\d+)", text)
-        if op_match:
-            op_value = int(op_match.group(1))
-            result["current_self_test_operation"]["value"] = op_value
-            result["current_self_test_operation"]["string"] = self._op_value_to_string(op_value)
-
-        # Parse completion percentage
-        comp_match = re.search(r"Current Completion\s*:\s*(\d+)%", text)
-        if comp_match:
-            result["current_self_test_completion"] = int(comp_match.group(1))
-
-        # Parse entries (Self Test Result[N]: blocks)
-        # Format:
-        # Self Test Result[0]:
-        #   Operation Result             : 0
-        #   Self Test Code               : 1
-        #   ...
-        # Self Test Result[1]:
-        #   ...
-
-        # Find all entry blocks - use MULTILINE and DOTALL for flexible matching
-        # Pattern matches: "Self Test Result[N]:" followed by "Operation Result : X" and "Self Test Code : Y"
-        entry_pattern = (
-            r"Self Test Result\[(\d+)\]:\s*\n\s*Operation Result\s*:\s*(\d+)\s*\n\s*Self Test Code\s*:\s*(\d+)"
-        )
-
-        for match in re.finditer(entry_pattern, text, re.MULTILINE | re.DOTALL):
-            entry_idx = int(match.group(1))
-            result_val = int(match.group(2))
-            type_val = int(match.group(3))
-
-            # Only add valid entries (result 0-2, type 1-2)
-            if result_val in (0, 1, 2) and type_val in (1, 2):
-                result["entries"].append(
-                    {
-                        "result": result_val,
-                        "result_string": self._result_to_string(result_val),
-                        "type": type_val,
-                        "type_string": self._type_to_string(type_val),
-                        "completion_time": 0,  # Would need to parse POH if available
-                    }
-                )
-
-        return result
-
     @staticmethod
     def _op_value_to_string(op_value: int) -> str:
-        """Convert operation value to string."""
-        if op_value == 0:
-            return "No self-test in progress"
-        elif op_value == 1:
-            return "Short self-test in progress"
-        elif op_value == 2:
-            return "Extended self-test in progress"
-        elif op_value == 0xF:
-            return "Abort self-test"
-        else:
-            return f"Unknown operation ({op_value})"
-
-    def _parse_entries(self, entries: list) -> list[dict]:
-        """
-        Parse self-test result entries.
-
-        Each entry (16 bytes) contains:
-        - Byte 0: Self-test result (0=success, 1=fail, 2=aborted)
-        - Byte 1: Self-test type (1=short, 2=extended)
-        - Bytes 2-7: Reserved
-        - Bytes 8-15: Self-test completion timestamp
-
-        :param entries: List of entry data
-        :return: List of parsed entry dictionaries
-        """
-        parsed = []
-
-        for entry in entries:
-            if isinstance(entry, dict):
-                parsed_entry = {
-                    "result": entry.get("result", 0),
-                    "result_string": self._result_to_string(entry.get("result", 0)),
-                    "type": entry.get("type", 0),
-                    "type_string": self._type_to_string(entry.get("type", 0)),
-                    "completion_time": entry.get("completion_time", 0),
-                }
-                parsed.append(parsed_entry)
-
-        return parsed
+        """Convert current-operation value to string."""
+        return _op_string(op_value)
 
     @staticmethod
     def _result_to_string(result: int) -> str:
-        """Convert result code to string."""
-        result_map = {
-            0: "Success",
-            1: "Failed",
-            2: "Aborted",
-        }
-        return result_map.get(result, f"Unknown ({result})")
+        """Convert a Self-test Result code to string."""
+        return RESULT_STRINGS.get(result, f"Reserved ({result})")
 
     @staticmethod
     def _type_to_string(test_type: int) -> str:
-        """Convert test type code to string."""
-        type_map = {
-            1: "Short",
-            2: "Extended",
-        }
-        return type_map.get(test_type, f"Unknown ({test_type})")
+        """Convert a Self-test Code to string."""
+        return SELF_TEST_CODE_STRINGS.get(test_type, f"Unknown ({test_type})")
+
+    def get_power_on_hours(self) -> int | None:
+        """
+        Current controller Power On Hours from the SMART / Health log (02h).
+
+        :return: Power-on hours, or None if unavailable
+        """
+        try:
+            cmd = Command(f"sudo {self.nvme_path} smart-log {self.device_path} -o json")
+            cmd.run()
+            if cmd.return_code != 0 or not cmd.output:
+                return None
+            output_str = cmd.output.decode("utf-8") if isinstance(cmd.output, bytes) else cmd.output
+            data = json.loads(output_str)
+        except Exception:
+            return None
+        if not isinstance(data, dict):
+            return None
+        return _coerce_int(data.get("power_on_hours"))
+
+    def get_last_test_power_on_hours(self) -> int | None:
+        """
+        Power On Hours recorded in the newest self-test log entry.
+
+        :return: POH of the most recent self-test, or None if no entries
+        """
+        entries = self.get_results().get("entries", [])
+        if not entries:
+            return None
+        return _coerce_int(entries[0].get("power_on_hours"))
+
+    def hours_since_last_test(self) -> int | None:
+        """
+        Power-on hours elapsed since the newest self-test (current POH - entry POH).
+
+        :return: Hours, or None if unknown
+        """
+        test_poh = self.get_last_test_power_on_hours()
+        if test_poh is None:
+            return None
+        current_poh = self.get_power_on_hours()
+        if current_poh is None or current_poh < test_poh:
+            return None
+        return current_poh - test_poh
 
     def get_failed_tests(self, days: int = 90) -> list[dict]:
         """
-        Get failed self-tests within specified days.
+        Get failed self-tests (results 5, 6, 7) within the look-back window.
+
+        The log only records Power On Hours, so the window is ``days * 24``
+        power-on hours before the controller's current POH. This is a superset
+        of the wall-clock window (the drive may have been powered off). If the
+        current POH cannot be read, all failed entries are returned.
 
         :param days: Number of days to look back (default: 90)
         :return: List of failed test entries
         """
-        results = self.get_results()
-        entries = results.get("entries", [])
+        entries = self.get_results().get("entries", [])
+        failed = [e for e in entries if classify_result(e.get("result")) == "failed"]
+        if not failed:
+            return []
 
-        failed = []
-        cutoff_date = datetime.now() - timedelta(days=days)
+        current_poh = self.get_power_on_hours()
+        if current_poh is None:
+            return failed
 
-        for entry in entries:
-            if entry.get("result", 0) == 1:  # Failed
-                # Check if within time window (if timestamp available)
-                failed.append(entry)
-
-        return failed
+        cutoff_poh = current_poh - days * 24
+        return [
+            e
+            for e in failed
+            if _coerce_int(e.get("power_on_hours")) is None or _coerce_int(e.get("power_on_hours")) >= cutoff_poh
+        ]
 
     def has_recent_failures(self, days: int = 90) -> bool:
         """
@@ -733,39 +822,26 @@ class NVMeSelfTest:
 
     def get_last_test_date(self) -> datetime | None:
         """
-        Get date of last self-test.
+        Estimate the date of the last self-test.
 
-        :return: Datetime of last test or None
+        Self-test entries carry Power On Hours, not a timestamp, so the date is
+        estimated as ``now - (current POH - entry POH)``. Because POH does not
+        advance while the drive is powered off, the true date may be earlier.
+
+        :return: Estimated datetime of last test, or None if unknown
         """
-        results = self.get_results()
-        entries = results.get("entries", [])
-
-        if not entries:
+        hours = self.hours_since_last_test()
+        if hours is None:
             return None
-
-        # Get most recent entry (first in list typically)
-        last_entry = entries[0]
-        completion_time = last_entry.get("completion_time", 0)
-
-        if completion_time:
-            # Convert timestamp to datetime
-            # NVMe timestamps are typically in seconds since epoch
-            try:
-                return datetime.fromtimestamp(completion_time)
-            except (ValueError, OSError):
-                return None
-
-        return None
+        return datetime.now() - timedelta(hours=hours)
 
     def days_since_last_test(self) -> int | None:
         """
-        Get number of days since last self-test.
+        Power-on days since the last self-test (lower bound on wall-clock days).
 
-        :return: Days since last test or None if never tested
+        :return: Days since last test or None if unknown
         """
-        last_test = self.get_last_test_date()
-        if last_test is None:
+        hours = self.hours_since_last_test()
+        if hours is None:
             return None
-
-        delta = datetime.now() - last_test
-        return delta.days
+        return hours // 24
