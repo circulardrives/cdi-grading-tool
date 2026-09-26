@@ -173,7 +173,7 @@ class TestHealthScoreCalculator:
                 "current_self_test_completion": 0,
                 "entries": [
                     {
-                        "result": 1,  # Failed
+                        "result": 7,  # Completed: one or more segments failed (NVMe 06h)
                         "result_string": "Failed",
                         "type": 1,  # Short test
                         "type_string": "Short",
@@ -355,7 +355,7 @@ class TestHealthScoreCalculator:
                 "current_self_test_operation": {"value": 0, "string": "No test in progress"},
                 "table": [
                     {
-                        "self_test_result": {"value": 1, "string": "The segment failed"},
+                        "self_test_result": {"value": 7, "string": "Completed: failed segments"},
                         "self_test_code": {"value": 2, "string": "Extended"},
                     }
                 ],
@@ -676,3 +676,11 @@ class TestTurStateScoring:
         )
         assert not any(d.field == "state" for d in result.deductions)
         assert result.grade != "F"
+
+
+@pytest.mark.parametrize(
+    ("code", "failed"), [(0, False), (1, False), (2, False), (5, True), (6, True), (7, True), (9, False)]
+)
+def test_nvme_selftest_result_codes_follow_spec(code: int, failed: bool) -> None:
+    """Only NVMe 06h results 5-7 are failures; 1-4/8/9 are aborts (#130)."""
+    assert HealthScoreCalculator._nvme_selftest_entry_failed({"self_test_result": {"value": code}}) is failed

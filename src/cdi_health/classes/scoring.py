@@ -55,6 +55,7 @@ from cdi_health.classes.config import (
     GRADING_PROFILE_BINARY,
     get_config,
 )
+from cdi_health.classes.nvme_selftest import classify_result
 from cdi_health.classes.revert import missing_defect_data, tur_not_ready_waived
 
 # Grade ordering, best to worst
@@ -1401,8 +1402,9 @@ class HealthScoreCalculator:
 
     @staticmethod
     def _nvme_selftest_result_code_failed(value: object) -> bool:
+        """NVMe Log Page 06h result nibble: 5-7 are failures, 1-4/8/9 are aborts (#130)."""
         try:
-            return int(value or 0) == 1
+            return classify_result(int(value or 0)) == "failed"
         except (TypeError, ValueError):
             return "fail" in str(value).lower()
 

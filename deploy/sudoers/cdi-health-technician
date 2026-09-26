@@ -58,12 +58,15 @@ Cmnd_Alias CDI_NVME = \
     /usr/sbin/nvme ^device-self-test /dev/nvme[0-9n]+ --self-test-code\=0 -o json$, \
     /usr/bin/nvme ^device-self-test /dev/nvme[0-9n]+ --self-test-code\=0 -o json$
 
-# sg3-utils: SCSI generic mapping and TEST UNIT READY (read-only).
+# sg3-utils: SCSI generic mapping, TEST UNIT READY, and START UNIT (spin-up
+# retry before declaring a drive Not Ready, #128).
 Cmnd_Alias CDI_SG = \
     /usr/bin/sg_map26 ^/dev/[A-Za-z0-9_/-]+$, \
     /usr/sbin/sg_map26 ^/dev/[A-Za-z0-9_/-]+$, \
     /usr/bin/sg_turs ^-vvvv /dev/[A-Za-z0-9_/-]+$, \
-    /usr/sbin/sg_turs ^-vvvv /dev/[A-Za-z0-9_/-]+$
+    /usr/sbin/sg_turs ^-vvvv /dev/[A-Za-z0-9_/-]+$, \
+    /usr/bin/sg_start ^--start /dev/[A-Za-z0-9_/-]+$, \
+    /usr/sbin/sg_start ^--start /dev/[A-Za-z0-9_/-]+$
 
 Defaults:CDI_API_USER !requiretty
 CDI_API_USER ALL=(root) NOPASSWD: CDI_SMARTCTL, CDI_NVME, CDI_SG

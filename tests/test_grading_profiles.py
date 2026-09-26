@@ -340,7 +340,7 @@ class TestWearAndSparePolicy:
         ThresholdConfig.get_instance().set_grading_profile("abcdf")
         device = _nvme(spare=45)  # C
         device["nvme_self_test_log"] = {
-            "entries": [{"self_test_result": {"value": 1}, "power_on_hours": 0} for _ in range(1)]
+            "entries": [{"self_test_result": {"value": 7}, "power_on_hours": 0} for _ in range(1)]
         }
         device["power_on_hours"] = 5000  # one old failure -> C
         result = calculate_health_score(device)
