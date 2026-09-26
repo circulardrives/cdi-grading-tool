@@ -59,15 +59,13 @@ import {
   DRIVE_CLASS_ORDER,
   getReportCategory,
 } from "@/lib/drive-labels"
-import { getSelectedHostId, setSelectedHostId } from "@/lib/selected-host"
+import { setSelectedHostId, useSelectedHostId } from "@/lib/selected-host"
 import type { DriveClass, DriveViewMode } from "@/lib/types"
 
 export function DriveHealthPage() {
   const { useMockData, mockDataPath } = useMockDataSettings()
   const { invalidateAfterScan } = useInvalidateCdiQueries()
-  const [selectedHostId, setSelectedHostIdState] = useState<string | null>(
-    () => getSelectedHostId()
-  )
+  const selectedHostId = useSelectedHostId()
   const [scanning, setScanning] = useState(false)
   const [viewMode, setViewMode] = useState<DriveViewMode>("simple")
   const [activeClass, setActiveClass] = useState<DriveClass | "all">("all")
@@ -104,7 +102,6 @@ export function DriveHealthPage() {
           : null
 
   const selectHost = (hostId: string | null) => {
-    setSelectedHostIdState(hostId)
     setSelectedHostId(hostId)
   }
 

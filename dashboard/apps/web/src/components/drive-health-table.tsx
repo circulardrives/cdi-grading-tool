@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useId, useMemo, useState } from "react"
 import { ArrowDownIcon, ArrowUpIcon, SearchIcon } from "lucide-react"
 
 import { Badge } from "@workspace/ui/components/badge"
@@ -14,7 +14,12 @@ import {
   TableRow,
 } from "@workspace/ui/components/table"
 
-import { healthBadgeVariant } from "@/lib/health-badges"
+import { deviceRowKeys } from "@/lib/drive-labels"
+import {
+  deviceBadgeVariant,
+  isUngradedDevice,
+  warningFlags,
+} from "@/lib/health-badges"
 import type { DeviceRecord, DriveColumn } from "@/lib/types"
 
 type DriveHealthTableProps = {
@@ -24,15 +29,32 @@ type DriveHealthTableProps = {
 
 type GradeSort = "none" | "asc" | "desc"
 
-const GRADE_ORDER = ["A", "B", "C", "D", "F", ""]
+const ARIA_SORT: Record<GradeSort, "none" | "ascending" | "descending"> = {
+  none: "none",
+  asc: "ascending",
+  desc: "descending",
+}
+
+const GRADE_ORDER = ["A", "B", "C", "D", "F", "UNGRADED", ""]
+
+const WIDE_TEXT_COLUMNS = new Set([
+  "deductions",
+  "certification_rationale",
+  "fail_reason_codes",
+])
 
 function gradeRank(device: DeviceRecord): number {
-  const grade = (device.health_grade ?? "").toUpperCase()
+  const grade = isUngradedDevice(device)
+    ? "UNGRADED"
+    : (device.health_grade ?? "").toUpperCase()
   const index = GRADE_ORDER.indexOf(grade)
   return index === -1 ? GRADE_ORDER.length : index
 }
 
 function isFailureDevice(device: DeviceRecord): boolean {
+  if (isUngradedDevice(device)) {
+    return false
+  }
   const status = (device.health_status ?? "").toLowerCase()
   const grade = (device.health_grade ?? "").toUpperCase()
   return (
@@ -63,6 +85,8 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
   const [search, setSearch] = useState("")
   const [failuresOnly, setFailuresOnly] = useState(false)
   const [gradeSort, setGradeSort] = useState<GradeSort>("none")
+  const failuresOnlyId = useId()
+  const rowKeys = useMemo(() => deviceRowKeys(devices), [devices])
 
   const filteredDevices = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -112,14 +136,14 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
             <ArrowDownIcon data-icon="inline-end" />
           ) : null}
         </Button>
-        <label className="text-muted-foreground flex items-center gap-2 text-sm">
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
           <Switch
+            id={failuresOnlyId}
             checked={failuresOnly}
             onCheckedChange={setFailuresOnly}
-            aria-label="Show failures only"
           />
-          Failures only
-        </label>
+          <label htmlFor={failuresOnlyId}>Failures only</label>
+        </div>
         <span className="text-muted-foreground text-xs">
           {filteredDevices.length} of {devices.length}
         </span>
@@ -129,11 +153,32 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              {columns.map((column) => (
-                <TableHead key={column.id} className="whitespace-nowrap">
-                  {column.label}
-                </TableHead>
-              ))}
+              {columns.map((column) =>
+                column.id === "health_grade" ? (
+                  <TableHead
+                    key={column.id}
+                    className="whitespace-nowrap"
+                    aria-sort={ARIA_SORT[gradeSort]}
+                  >
+                    <button
+                      type="button"
+                      onClick={cycleGradeSort}
+                      className="inline-flex items-center gap-1 hover:underline"
+                    >
+                      {column.label}
+                      {gradeSort === "asc" ? (
+                        <ArrowUpIcon className="size-3" aria-hidden />
+                      ) : gradeSort === "desc" ? (
+                        <ArrowDownIcon className="size-3" aria-hidden />
+                      ) : null}
+                    </button>
+                  </TableHead>
+                ) : (
+                  <TableHead key={column.id} className="whitespace-nowrap">
+                    {column.label}
+                  </TableHead>
+                )
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -148,11 +193,13 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
               </TableRow>
             ) : (
               filteredDevices.map((device, index) => (
-                <TableRow key={serialKey(device, index)}>
+                <TableRow key={rowKeys.get(device) ?? `row-${index}`}>
                   {columns.map((column) => {
                     const value = column.getValue(device)
                     const isGradeColumn = column.id === "health_grade"
                     const isStatusColumn = column.id === "health_status"
+                    const flags =
+                      column.id === "warning_flags" ? warningFlags(device) : []
 
                     return (
                       <TableCell
@@ -160,21 +207,28 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
                         className={
                           column.mono
                             ? "max-w-48 truncate font-mono text-xs"
-                            : column.id === "deductions"
+                            : WIDE_TEXT_COLUMNS.has(column.id)
                               ? "max-w-md text-xs"
                               : "whitespace-nowrap text-sm"
                         }
                         title={String(value)}
                       >
                         {isGradeColumn || isStatusColumn ? (
-                          <Badge
-                            variant={healthBadgeVariant(
-                              device.health_status,
-                              device.health_grade
-                            )}
-                          >
+                          <Badge variant={deviceBadgeVariant(device)}>
                             {value}
                           </Badge>
+                        ) : flags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {flags.map((flag) => (
+                              <Badge
+                                key={flag}
+                                variant="secondary"
+                                className="font-mono text-[10px]"
+                              >
+                                {flag}
+                              </Badge>
+                            ))}
+                          </div>
                         ) : (
                           value
                         )}
@@ -189,8 +243,4 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
       </div>
     </div>
   )
-}
-
-function serialKey(device: DeviceRecord, index: number): string {
-  return String(device.serial_number ?? device.dut ?? `row-${index}`)
 }

@@ -111,9 +111,8 @@ async function request<T>(
     headers.set("Content-Type", "application/json")
   }
 
-  if (appConfig.apiToken) {
-    headers.set("X-API-Token", appConfig.apiToken)
-  }
+  // No X-API-Token here: the Vite dev proxy and nginx inject it server-side,
+  // so the token never ships in the browser bundle.
 
   const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
     ...init,
@@ -202,11 +201,18 @@ export function listMachines(): Promise<Machine[]> {
 }
 
 export function listHistory(
-  machineId?: string | null
+  machineId?: string | null,
+  page: { limit?: number; offset?: number } = {}
 ): Promise<HistorySummary[]> {
   const params = new URLSearchParams()
   if (machineId) {
     params.set("machine_id", machineId)
+  }
+  if (page.limit != null) {
+    params.set("limit", String(page.limit))
+  }
+  if (page.offset) {
+    params.set("offset", String(page.offset))
   }
   const query = params.toString() ? `?${params.toString()}` : ""
   return request<HistorySummary[]>(`/api/v1/history${query}`)
@@ -273,10 +279,6 @@ async function fetchReportBlob(
   const headers = new Headers()
   headers.set("Accept", "*/*")
 
-  if (appConfig.apiToken) {
-    headers.set("X-API-Token", appConfig.apiToken)
-  }
-
   const response = await fetch(
     `${appConfig.apiBaseUrl}/api/v1/reports/${encodeURIComponent(filename)}${query}`,
     { headers }
@@ -303,7 +305,8 @@ export async function downloadReportFile(filename: string): Promise<void> {
   anchor.href = url
   anchor.download = filename
   anchor.click()
-  URL.revokeObjectURL(url)
+  // Revoking synchronously can cancel the download in some browsers.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 export { ApiError }

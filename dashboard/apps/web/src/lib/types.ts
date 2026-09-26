@@ -5,6 +5,7 @@ export type ScoreDeduction = {
   field?: string
   value?: unknown
   threshold?: unknown
+  attribute_grade?: string | null
 }
 
 export type ScanSummary = {
@@ -12,6 +13,19 @@ export type ScanSummary = {
   healthy: number
   warning: number
   failed: number
+  /** Drives that could not be graded (§15). Older APIs omit this count. */
+  ungraded?: number
+}
+
+export type GradingStatus = "GRADED" | "UNGRADED"
+
+/** Tri-state certification emitted by the scoring engine (§12.7). */
+export type CertificationValue = "true" | "Advisory" | "false"
+
+export type AttributeGrade = {
+  value?: unknown
+  grade?: string | null
+  threshold?: unknown
 }
 
 export type DeviceRecord = {
@@ -53,10 +67,33 @@ export type DeviceRecord = {
   data_written_tb?: number | string
   nvme_self_test_failed_count?: number | string
   ssd_percentage_used_endurance?: number | string
-  health_score?: number
+  /** Null for UNGRADED drives. */
+  health_score?: number | null
   health_grade?: string
   health_status?: string
   is_certified?: boolean
+  // Revert Standard grading fields (scoring.HealthScore.to_dict / revert.revert_fields).
+  // All optional: older APIs and cached scans may omit them.
+  certification?: CertificationValue | string | null
+  certification_rationale?: string | null
+  revert_certified?: CertificationValue | string | null
+  revert_eligible?: boolean | null
+  grading_profile?: string | null
+  fail_gates?: string[] | null
+  age_cap_grade?: string | null
+  defect_grade?: string | null
+  multi_factor_applied?: boolean | null
+  attribute_grades?: Record<string, AttributeGrade> | null
+  /** Scoring drive class ("consumer" | "enterprise"); unrelated to the UI DriveClass. */
+  drive_class?: string | null
+  final_grade?: string | null
+  grading_status?: GradingStatus | null
+  ungraded_reasons?: string[] | null
+  warning_flags?: string[] | null
+  fail_reason_codes?: string[] | null
+  recommended_use?: string | null
+  revert_standard_version?: string | null
+  scan_timestamp?: string | null
   deductions?: ScoreDeduction[]
   health_deductions?: ScoreDeduction[]
   smart_attributes?: unknown
@@ -85,13 +122,18 @@ export type HistoryDetail = HistorySummary & {
   devices: DeviceRecord[]
 }
 
+/**
+ * Unauthenticated LAN callers only receive `{status, version}`; the remaining
+ * fields are present for loopback or token-authenticated requests.
+ */
 export type HealthResponse = {
   status: string
-  is_root: boolean
-  allow_non_root_mode: boolean
-  api_token_enabled: boolean
-  missing_required_tools: string[]
-  weasyprint_available: boolean
+  version?: string
+  is_root?: boolean
+  allow_non_root_mode?: boolean
+  api_token_enabled?: boolean
+  missing_required_tools?: string[]
+  weasyprint_available?: boolean
   message?: string | null
 }
 
@@ -139,12 +181,7 @@ export type ManualMachine = {
   createdAt: string
 }
 
-export type MachineScanSummary = {
-  total: number
-  healthy: number
-  warning: number
-  failed: number
-}
+export type MachineScanSummary = ScanSummary
 
 export type Machine = {
   id: string

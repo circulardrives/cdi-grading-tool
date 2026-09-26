@@ -18,11 +18,22 @@ export function MockDataToggle({ id = "use-mock-data", compact = false }: MockDa
   const { useMockData, setUseMockData } = useMockDataSettings()
 
   return (
-    <Field orientation={compact ? "horizontal" : undefined}>
+    <Field
+      orientation={compact ? "horizontal" : undefined}
+      className={compact ? "w-auto" : undefined}
+    >
       <div className="flex flex-1 flex-col gap-1">
-        <FieldLabel htmlFor={id} className="flex items-center gap-2">
-          {!compact ? <FlaskConicalIcon className="size-4" /> : null}
-          Use mock data
+        <FieldLabel
+          htmlFor={id}
+          className="flex items-center gap-2 whitespace-nowrap"
+          title={
+            compact
+              ? "Load fixture drives instead of live hardware for scans and reports"
+              : undefined
+          }
+        >
+          <FlaskConicalIcon className="size-4" />
+          {compact ? "Mock data" : "Use mock data"}
         </FieldLabel>
         {!compact ? (
           <FieldDescription>

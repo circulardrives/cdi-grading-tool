@@ -1,3 +1,10 @@
+import {
+  formatCertification,
+  formatGradeLabel,
+  formatHealthScore,
+  isUngradedDevice,
+  warningFlags,
+} from "@/lib/health-badges"
 import type { DeviceRecord, DriveClass, DriveColumn } from "@/lib/types"
 
 export function serialLabel(device: DeviceRecord): string {
@@ -21,6 +28,10 @@ export function formatCapacity(device: DeviceRecord): string {
 export function formatDeductionsShort(device: DeviceRecord): string {
   const deductions = device.health_deductions ?? device.deductions
   if (!deductions?.length) {
+    // UNGRADED drives carry no deductions; surface why they were not graded.
+    if (isUngradedDevice(device) && device.certification_rationale) {
+      return device.certification_rationale
+    }
     return "—"
   }
 
@@ -38,6 +49,15 @@ export function formatDeductionsShort(device: DeviceRecord): string {
       return `${reason}${points}`
     })
     .join(" | ")
+}
+
+function joinList(values: string[] | null | undefined): string {
+  const items = (values ?? []).filter(Boolean)
+  return items.length ? items.join(", ") : "—"
+}
+
+export function formatWarningFlags(device: DeviceRecord): string {
+  return joinList(warningFlags(device))
 }
 
 function field(device: DeviceRecord, key: keyof DeviceRecord): string {
@@ -106,12 +126,12 @@ const gradingColumns: DriveColumn[] = [
   {
     id: "health_score",
     label: "Health score",
-    getValue: (device) => device.health_score ?? "—",
+    getValue: formatHealthScore,
   },
   {
     id: "health_grade",
     label: "Grade",
-    getValue: (device) => device.health_grade ?? "—",
+    getValue: formatGradeLabel,
   },
   {
     id: "health_status",
@@ -121,7 +141,27 @@ const gradingColumns: DriveColumn[] = [
   {
     id: "is_certified",
     label: "CDI certified",
-    getValue: (device) => (device.is_certified ? "Yes" : "No"),
+    getValue: formatCertification,
+  },
+  {
+    id: "certification_rationale",
+    label: "Rationale",
+    getValue: (device) => field(device, "certification_rationale"),
+  },
+  {
+    id: "warning_flags",
+    label: "Warnings",
+    getValue: formatWarningFlags,
+  },
+  {
+    id: "fail_reason_codes",
+    label: "Fail codes",
+    getValue: (device) => joinList(device.fail_reason_codes),
+  },
+  {
+    id: "grading_profile",
+    label: "Profile",
+    getValue: (device) => field(device, "grading_profile"),
   },
   {
     id: "deductions",
@@ -507,12 +547,12 @@ export function getSimpleColumns(category: DriveClass): DriveColumn[] {
     {
       id: "health_score",
       label: "Score",
-      getValue: (device) => device.health_score ?? "—",
+      getValue: formatHealthScore,
     },
     {
       id: "health_grade",
       label: "Grade",
-      getValue: (device) => device.health_grade ?? "—",
+      getValue: formatGradeLabel,
     },
     {
       id: "health_status",
@@ -520,6 +560,11 @@ export function getSimpleColumns(category: DriveClass): DriveColumn[] {
       getValue: (device) => device.health_status ?? "—",
     },
     ...simpleKeyColumns(category),
+    {
+      id: "warning_flags",
+      label: "Warnings",
+      getValue: formatWarningFlags,
+    },
     {
       id: "deductions",
       label: "Deductions",

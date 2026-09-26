@@ -47,7 +47,7 @@ import {
   useMachinesQuery,
 } from "@/hooks/use-cdi-queries"
 import { scanDevices } from "@/lib/api"
-import { getSelectedHostId, setSelectedHostId } from "@/lib/selected-host"
+import { setSelectedHostId, useSelectedHostId } from "@/lib/selected-host"
 import type { ScanResponse } from "@/lib/types"
 
 const LOCAL_SCAN_TARGET = "local"
@@ -58,7 +58,8 @@ export function ScanPage() {
   const machinesQuery = useMachinesQuery()
   const healthQuery = useHealthQuery()
   const [scanning, setScanning] = useState(false)
-  const [scanTarget, setScanTarget] = useState<string>(() => getSelectedHostId() ?? LOCAL_SCAN_TARGET)
+  const selectedHostId = useSelectedHostId()
+  const scanTarget = selectedHostId ?? LOCAL_SCAN_TARGET
   const [ignoreAta, setIgnoreAta] = useState(false)
   const [ignoreNvme, setIgnoreNvme] = useState(false)
   const [ignoreScsi, setIgnoreScsi] = useState(false)
@@ -75,25 +76,17 @@ export function ScanPage() {
   )
 
   useEffect(() => {
-    if (
-      machinesQuery.isLoading ||
-      scanTarget === LOCAL_SCAN_TARGET ||
-      hosts.length === 0
-    ) {
+    // A stale selection (host deleted elsewhere) falls back to the local API.
+    if (!machinesQuery.isSuccess || !selectedHostId) {
       return
     }
-    if (!hosts.some((host) => host.id === scanTarget)) {
-      setScanTarget(getSelectedHostId() ?? (hosts[0]?.id ?? LOCAL_SCAN_TARGET))
+    if (!hosts.some((host) => host.id === selectedHostId)) {
+      setSelectedHostId(null)
     }
-  }, [machinesQuery.isLoading, hosts, scanTarget])
+  }, [machinesQuery.isSuccess, hosts, selectedHostId])
 
   const selectTarget = (value: string) => {
-    setScanTarget(value)
-    if (value === LOCAL_SCAN_TARGET) {
-      setSelectedHostId(null)
-    } else {
-      setSelectedHostId(value)
-    }
+    setSelectedHostId(value === LOCAL_SCAN_TARGET ? null : value)
   }
 
   const refresh = async () => {
@@ -163,7 +156,7 @@ export function ScanPage() {
         </Alert>
       ) : null}
 
-      {health && !health.is_root ? (
+      {health?.is_root === false ? (
         <Alert>
           <AlertCircleIcon />
           <AlertTitle>Non-root API</AlertTitle>
@@ -182,7 +175,7 @@ export function ScanPage() {
               {selectedHost
                 ? `Grade drives for ${selectedHost.name}`
                 : "Scan attached drives on the local API (no fleet host)"}
-              {useMockData ? " · mock data enabled on Discover" : ""}
+              {useMockData ? " · mock data enabled" : ""}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -208,7 +201,7 @@ export function ScanPage() {
                   <FieldDescription>
                     {hosts.length === 0
                       ? "No fleet hosts yet — scanning against the local API. Register hosts on the Hosts page."
-                      : "Fleet host selection is shared with Drive Health via session storage."}
+                      : "Fleet host selection is shared with Fleet Status, Hosts, and Drive Health for this tab."}
                   </FieldDescription>
                 </Field>
               </FieldGroup>
@@ -216,16 +209,31 @@ export function ScanPage() {
 
             <FieldGroup>
               <Field orientation="horizontal">
-                <Switch checked={ignoreAta} onCheckedChange={setIgnoreAta} disabled={scanning} />
-                <FieldLabel>Ignore ATA/SATA</FieldLabel>
+                <Switch
+                  id="scan-ignore-ata"
+                  checked={ignoreAta}
+                  onCheckedChange={setIgnoreAta}
+                  disabled={scanning}
+                />
+                <FieldLabel htmlFor="scan-ignore-ata">Ignore ATA/SATA</FieldLabel>
               </Field>
               <Field orientation="horizontal">
-                <Switch checked={ignoreNvme} onCheckedChange={setIgnoreNvme} disabled={scanning} />
-                <FieldLabel>Ignore NVMe</FieldLabel>
+                <Switch
+                  id="scan-ignore-nvme"
+                  checked={ignoreNvme}
+                  onCheckedChange={setIgnoreNvme}
+                  disabled={scanning}
+                />
+                <FieldLabel htmlFor="scan-ignore-nvme">Ignore NVMe</FieldLabel>
               </Field>
               <Field orientation="horizontal">
-                <Switch checked={ignoreScsi} onCheckedChange={setIgnoreScsi} disabled={scanning} />
-                <FieldLabel>Ignore SCSI/SAS</FieldLabel>
+                <Switch
+                  id="scan-ignore-scsi"
+                  checked={ignoreScsi}
+                  onCheckedChange={setIgnoreScsi}
+                  disabled={scanning}
+                />
+                <FieldLabel htmlFor="scan-ignore-scsi">Ignore SCSI/SAS</FieldLabel>
               </Field>
             </FieldGroup>
 
@@ -302,6 +310,9 @@ export function ScanPage() {
                   <Badge variant="outline">{lastResult.summary.healthy} healthy</Badge>
                   <Badge variant="secondary">{lastResult.summary.warning} warning</Badge>
                   <Badge variant="destructive">{lastResult.summary.failed} failed</Badge>
+                  {lastResult.summary.ungraded ? (
+                    <Badge variant="outline">{lastResult.summary.ungraded} ungraded</Badge>
+                  ) : null}
                 </div>
                 {scanTarget !== LOCAL_SCAN_TARGET ? (
                   <Button variant="outline" className="w-fit" asChild>
