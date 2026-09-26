@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-26
+
 ### Added
 - **Selectable grading profiles** (`binary` / `abcdf`): Revert Standard graduated A–F pipeline (age cap, defect bands, recency-weighted self-test, tri-state certification) vs CDI v0.11.0-compatible binary fail-gates. Default `abcdf`; use `--grading-profile binary` for prior behavior. (#115–#121, #125)
 - **Revert §13/§15 output fields:** `grading_status` / UNGRADED rows for scan failures, `warning_flags`, `fail_reason_codes`, `attribute_grades`, `age_cap_grade`, and related report schema. (#117, #120, #122)
@@ -81,14 +83,14 @@ Initial public dashboard/API release line. Use **v0.9.5** for technician deploym
 
 See git history and [v0.9.0 release notes](https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.0) for full 0.9.0 detail.
 
-## [1.0.0] - 2025-02-01
+## Initial beta - 2025-02-01
 
 ### Added
 - Initial beta release (pre-dashboard CLI line).
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.12.0
 [0.11.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.11.0
 [0.10.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.10.0
 [0.9.5]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.5
 [0.9.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.9.0
-[1.0.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v1.0.0
