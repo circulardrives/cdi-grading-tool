@@ -167,6 +167,8 @@ export type HealthResponse = {
   auth_mode?: AuthMode
   missing_required_tools?: string[]
   weasyprint_available?: boolean
+  /** The API runs in Docker: a blank network search can't find benches. */
+  running_in_container?: boolean
   message?: string | null
 }
 

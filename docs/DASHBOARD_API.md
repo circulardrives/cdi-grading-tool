@@ -248,7 +248,7 @@ at that API; the **Hosts & Scans** page triggers discovery through the backend.
 
 **Flow**
 
-1. Derive subnet(s) from local IPv4 interfaces when `subnet` is omitted (defaults to /24 per interface).
+1. Derive subnet(s) from local IPv4 interfaces when `subnet` is omitted (defaults to /24 per interface). When the API runs in a container (`/.dockerenv`, `/run/.containerenv`, or a container cgroup; reported as `running_in_container` in the full `/health`), its interfaces are the container network, so a request with no subnet returns **400** `This dashboard runs in Docker, so it can't see your network on its own. Enter your network, for example 192.168.0.0/24.` (not counted against the cooldown). The dashboard shows the same text under the Networks field while it is empty.
 2. TCP-probe each address on port **8844** (configurable) with parallel workers (~1–2s timeout per host).
 3. For open ports, `GET http://{ip}:{port}/api/v1/health` (`X-API-Token` is sent **only** when the request supplies an explicit `probe_token`; the bench's own `CDI_HEALTH_API_TOKEN` is never sent, since probes are plain HTTP to every open host. The unauthenticated `{status, version}` payload is enough to identify a CDI bench).
 4. Return discovered hosts with health payload (newer benches include their own `hostname` there, even unauthenticated; the top-level `hostname` is reverse DNS) and `already_registered` when the address matches the fleet registry. `is_this_bench` is `true` for the address where this API itself answered (same `instance_id`); the dashboard lists it as "This bench" with no Add button.

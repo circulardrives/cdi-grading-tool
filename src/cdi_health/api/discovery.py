@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import socket
 import time
 import urllib.error
@@ -32,6 +33,11 @@ DEFAULT_CDI_PORT = 8844
 MAX_HOSTS_PER_SCAN = 256
 MAX_SUBNETS_PER_REQUEST = 4
 DISCOVER_COOLDOWN_SECONDS = 10
+CONTAINER_NEEDS_SUBNET_DETAIL = (
+    "This dashboard runs in Docker, so it can't see your network on its own. "
+    "Enter your network, for example 192.168.0.0/24."
+)
+_CONTAINER_CGROUP_MARKERS = ("docker", "containerd", "kubepods", "libpod", "lxc")
 
 PRIVATE_NETWORKS = (
     ipaddress.ip_network("10.0.0.0/8"),
@@ -43,6 +49,28 @@ PRIVATE_NETWORKS = (
 
 class DiscoveryError(ValueError):
     """Raised when discovery parameters or timing constraints are invalid."""
+
+
+def running_in_container(root: str = "/") -> bool:
+    """Best-effort check for a Docker / Podman / Kubernetes container.
+
+    Inside a bridged container the local interface is the container network
+    (e.g. 172.17.0.0/16), so "search the network I'm on" cannot find benches.
+    """
+    for marker in (".dockerenv", "run/.containerenv"):
+        if os.path.exists(os.path.join(root, marker)):
+            return True
+    try:
+        with open(os.path.join(root, "proc/1/cgroup"), encoding="utf-8", errors="replace") as handle:
+            cgroup = handle.read()
+    except OSError:
+        return False
+    return any(marker in cgroup for marker in _CONTAINER_CGROUP_MARKERS)
+
+
+def has_explicit_subnet(subnet: str | None, subnets: list[str] | None) -> bool:
+    """True when the caller named at least one network to search."""
+    return bool((subnet or "").strip()) or any((item or "").strip() for item in subnets or [])
 
 
 def parse_subnet(value: str) -> ipaddress.IPv4Network:

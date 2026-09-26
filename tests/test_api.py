@@ -755,6 +755,64 @@ def test_discovery_rate_limited(api_client: TestClient, monkeypatch: pytest.Monk
     assert second.status_code == 429
 
 
+CONTAINER_DETAIL = (
+    "This dashboard runs in Docker, so it can't see your network on its own. "
+    "Enter your network, for example 192.168.0.0/24."
+)
+
+
+def test_discovery_in_container_without_subnet_asks_for_network(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cdi_health.api import app as app_module
+    from cdi_health.api import discovery
+
+    monkeypatch.setattr(app_module, "running_in_container", lambda: True)
+    monkeypatch.setattr(discovery, "is_port_open", lambda ip, port, timeout_seconds: False)
+
+    for body in ({}, {"subnet": "  "}, {"subnets": ["", " "]}):
+        response = api_client.post("/api/v1/discover", json={**body, "timeout_seconds": 0.5})
+        assert response.status_code == 400
+        assert response.json()["detail"] == CONTAINER_DETAIL
+
+    # Not rate limited by the refusals: a named network works straight away.
+    response = api_client.post("/api/v1/discover", json={"subnet": "192.168.0.0/30", "timeout_seconds": 0.5})
+    assert response.status_code == 200
+
+    assert api_client.get("/api/v1/health").json()["running_in_container"] is True
+
+
+def test_discovery_outside_container_uses_local_subnet(api_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import app as app_module
+    from cdi_health.api import discovery
+
+    monkeypatch.setattr(app_module, "running_in_container", lambda: False)
+    monkeypatch.setattr(discovery, "derive_local_subnets", lambda prefix_len=24: ["192.168.7.0/30"])
+    monkeypatch.setattr(discovery, "is_port_open", lambda ip, port, timeout_seconds: False)
+
+    response = api_client.post("/api/v1/discover", json={"timeout_seconds": 0.5})
+    assert response.status_code == 200
+    assert response.json()["scanned_subnets"] == ["192.168.7.0/30"]
+    assert api_client.get("/api/v1/health").json()["running_in_container"] is False
+
+
+def test_running_in_container_detection(tmp_path: Path) -> None:
+    from cdi_health.api.discovery import running_in_container
+
+    assert running_in_container(str(tmp_path)) is False
+
+    (tmp_path / "proc" / "1").mkdir(parents=True)
+    (tmp_path / "proc" / "1" / "cgroup").write_text("0::/init.scope\n")
+    assert running_in_container(str(tmp_path)) is False
+    (tmp_path / "proc" / "1" / "cgroup").write_text("12:pids:/docker/0123abcd\n")
+    assert running_in_container(str(tmp_path)) is True
+
+    docker_root = tmp_path / "docker-root"
+    docker_root.mkdir()
+    (docker_root / ".dockerenv").touch()
+    assert running_in_container(str(docker_root)) is True
+
+
 def test_discovery_unit_helpers() -> None:
     from cdi_health.api.discovery import (
         is_already_registered,

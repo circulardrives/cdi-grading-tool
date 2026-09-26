@@ -47,6 +47,9 @@ type SearchResult = {
 
 type TokenNeed = "none" | "token" | "unknown"
 
+const CONTAINER_HINT =
+  "This dashboard runs in Docker, so it can't see your network on its own. Enter your network, for example 192.168.0.0/24."
+
 function tokenNeed(host: DiscoveredHost): TokenNeed {
   const health = host.health
   if (health?.auth_mode === "none") {
@@ -128,8 +131,12 @@ export function FindBenchesCard({
   const parsed = useMemo(() => parseNetworks(networks), [networks])
   const inputError = touched ? parsed.error : null
 
+  const health = useHealthQuery().data
+  // In Docker a blank search only sees the container network.
+  const needsNetwork =
+    health?.running_in_container === true && networks.trim() === ""
   // The bench this dashboard runs on answers too; it is never added as a bench.
-  const ownInstanceId = useHealthQuery().data?.instance_id ?? null
+  const ownInstanceId = health?.instance_id ?? null
   const isThisBench = (host: DiscoveredHost) =>
     Boolean(host.is_this_bench) ||
     (ownInstanceId != null && host.health?.instance_id === ownInstanceId)
@@ -284,11 +291,17 @@ export function FindBenchesCard({
           id={hintId}
           className={cn(
             "text-[15px]",
-            inputError ? "text-destructive" : "text-muted-foreground"
+            inputError
+              ? "text-destructive"
+              : needsNetwork
+                ? "text-tone-warn-fg"
+                : "text-muted-foreground"
           )}
         >
           {inputError ??
-            `Up to ${MAX_NETWORKS} networks, separated by commas or spaces. Leave it blank to search the network this dashboard is on.`}
+            (needsNetwork
+              ? CONTAINER_HINT
+              : `Up to ${MAX_NETWORKS} networks, separated by commas or spaces. Leave it blank to search the network this dashboard is on.`)}
         </p>
       </form>
 

@@ -37,7 +37,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import ValidationError
 
-from cdi_health.api.discovery import DISCOVER_COOLDOWN_SECONDS, DiscoveryError, discover_hosts, is_same_instance
+from cdi_health.api.discovery import (
+    CONTAINER_NEEDS_SUBNET_DETAIL,
+    DISCOVER_COOLDOWN_SECONDS,
+    DiscoveryError,
+    discover_hosts,
+    has_explicit_subnet,
+    is_same_instance,
+    running_in_container,
+)
 from cdi_health.api.history import ScanHistoryStore
 from cdi_health.api.jobs import JobStore
 from cdi_health.api.machines import MachineStore, load_or_create_instance_id
@@ -265,6 +273,7 @@ def create_app() -> FastAPI:
             auth_mode=auth_mode(),
             missing_required_tools=missing_required_tools,
             weasyprint_available=weasyprint_available(),
+            running_in_container=running_in_container(),
             message=message,
         )
 
@@ -770,6 +779,11 @@ def create_app() -> FastAPI:
 
     def _run_discovery(request: DiscoverRequest) -> DiscoverResponse:
         runtime = app.state.runtime
+        # In a bridged container the "local network" is Docker's, so a blank
+        # search would only probe the container subnet. Checked before the
+        # cooldown so the user can retry with a network straight away.
+        if not has_explicit_subnet(request.subnet, request.subnets) and running_in_container():
+            raise HTTPException(status_code=400, detail=CONTAINER_NEEDS_SUBNET_DETAIL)
         now = time.monotonic()
         with runtime.lock:
             if runtime.discover_in_progress:

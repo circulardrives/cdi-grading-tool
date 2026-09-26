@@ -281,6 +281,10 @@ class HealthResponse(BaseModel):
     auth_mode: Literal["none", "token"] | None = None
     missing_required_tools: list[str] | None = None
     weasyprint_available: bool | None = None
+    running_in_container: bool | None = Field(
+        default=None,
+        description="The API runs in a container, so discovery needs an explicit subnet.",
+    )
     message: str | None = None
 
 
