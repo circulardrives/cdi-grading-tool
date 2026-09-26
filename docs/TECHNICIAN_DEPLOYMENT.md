@@ -219,6 +219,8 @@ sudo visudo -cf /etc/sudoers.d/cdi-health-technician
 
 Then edit the file and replace `cdiapi` with your service account.
 
+The profile allows only the exact read-only and self-test commands the API issues (no `nvme format`/`sanitize`, no `smartctl --set`). It uses sudoers regular expressions, so it needs **sudo 1.9.10+** (Ubuntu 24.04, Debian 12+); older sudo rejects the file in `visudo -c` rather than granting wider access.
+
 ## Security Notes
 
 - Keep API bound to `127.0.0.1` unless you intentionally enable the LAN drop-in.
