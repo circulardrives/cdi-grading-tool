@@ -57,6 +57,9 @@ FLAG_TUR_UNAVAILABLE = "TUR_UNAVAILABLE"
 # ATA/NVMe drive answered TUR Not Ready but returned valid SMART/health data;
 # the SAT/NVMe translation result is not treated as a fail-gate (#128).
 FLAG_TUR_NOT_READY = "TUR_NOT_READY"
+# Power-on hours were not reported: the §5 age cap and §15.1 SMART-reset
+# heuristic could not be evaluated (#129). Unknown POH is never treated as 0.
+FLAG_POH_NOT_REPORTED = "POH_NOT_REPORTED"
 
 # Ungraded reason codes (§4.1, §15.5, §15.6)
 UNGRADED_SECURITY_LOCKED = "SECURITY_LOCKED"
@@ -315,7 +318,21 @@ def warning_flags(device: dict) -> list[str]:
 
     if _smart_reset_suspected(device) and FLAG_SMART_RESET_SUSPECTED not in flags:
         flags.append(FLAG_SMART_RESET_SUSPECTED)
+    if _poh_not_reported(device) and FLAG_POH_NOT_REPORTED not in flags:
+        flags.append(FLAG_POH_NOT_REPORTED)
     return flags
+
+
+def _poh_not_reported(device: dict) -> bool:
+    """
+    True when a graded drive carries a ``power_on_hours`` field with no usable
+    value (#129). Records without the field at all (hand-built dicts) and
+    UNGRADED records (which already explain themselves) are not flagged.
+    """
+    if "power_on_hours" not in device or is_ungraded(device):
+        return False
+    poh = _int_or_none(device.get("power_on_hours"))
+    return poh is None or poh < 0
 
 
 def _smart_reset_suspected(device: dict) -> bool:
@@ -325,7 +342,8 @@ def _smart_reset_suspected(device: dict) -> bool:
     suggests the SMART counters were reset.
     """
     poh = _int_or_none(device.get("power_on_hours"))
-    if poh is None or poh >= 100:
+    # Unknown POH is unknown, not "brand new" (#129)
+    if poh is None or poh < 0 or poh >= 100:
         return False
 
     power_cycles = _int_or_none(device.get("power_cycle_count")) or 0

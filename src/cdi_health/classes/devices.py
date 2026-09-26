@@ -128,6 +128,21 @@ def parse_nvme_composite_temp_thresholds(smartctl: dict) -> tuple[int | None, in
     return warning_c, critical_c
 
 
+def power_on_hours_from_smartctl(smartctl: dict) -> int | str:
+    """
+    Power-on hours from smartctl JSON, or "Not Reported" when absent (#129).
+
+    Unknown POH must never be reported as 0: a fake 0 defeats the §5 age cap
+    and trips the §15.1 SMART-reset heuristic.
+    """
+    power_on_time = smartctl.get("power_on_time") if isinstance(smartctl, dict) else None
+    if isinstance(power_on_time, dict):
+        hours = int_or_none(power_on_time.get("hours"))
+        if hours is not None and hours >= 0:
+            return hours
+    return "Not Reported"
+
+
 class Device:
     """
     Device Class
@@ -1124,9 +1139,8 @@ class ATAProtocol:
         device.transport_version: str = smartctl.get("sata_version", dict()).get("string", "Not Reported")
         device.rotation_rate: str = smartctl.get("rotation_rate", "Not Reported")
         device.form_factor: str = smartctl.get("form_factor", dict()).get("name", "Not Reported")
-        device.power_on_hours: str = (
-            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0"
-        )
+        # Always read POH from SMART; never fake 0 when TUR is not Ready (#129)
+        device.power_on_hours = power_on_hours_from_smartctl(smartctl)
 
         device.interface_link = "SATA"
 
@@ -1514,9 +1528,8 @@ class NVMeProtocol:
         device.form_factor = smartctl.get("form_factor", dict()).get("name", "Not Reported")
 
         # Power On Hours
-        device.power_on_hours = (
-            smartctl.get("power_on_time", dict()).get("hours", "Not Reported") if device.state == "Ready" else "0"
-        )
+        # Always read POH from SMART; never fake 0 when TUR is not Ready (#129)
+        device.power_on_hours = power_on_hours_from_smartctl(smartctl)
 
         # Get Capacity Information
         capacity_info = smartctl.get("user_capacity")
@@ -1823,7 +1836,8 @@ class SCSIProtocol:
             device.interface_link = "Not Reported"
         device.form_factor: str = smartctl.get("form_factor", {}).get("name", "Not Reported")
         device.rotation_rate: str = smartctl.get("rotation_rate", "Not Reported")
-        device.power_on_hours: str = smartctl.get("power_on_time", {}).get("hours", 0)
+        # Unknown POH stays "Not Reported" rather than 0 (#129)
+        device.power_on_hours = power_on_hours_from_smartctl(smartctl)
 
         # Get Capacities
         capacity_info = smartctl.get("user_capacity", {})

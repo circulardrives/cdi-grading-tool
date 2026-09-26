@@ -31,7 +31,14 @@ import pytest
 from cdi_health.classes.devices import ATAProtocol, Device, Devices
 from cdi_health.classes.exceptions import CommandException
 from cdi_health.classes.mock import MockSG3Utils, MockSmartctl, create_mock_device
-from cdi_health.classes.revert import FLAG_TUR_NOT_READY, FLAG_TUR_UNAVAILABLE, fail_reason_codes, warning_flags
+from cdi_health.classes.revert import (
+    FLAG_POH_NOT_REPORTED,
+    FLAG_SMART_RESET_SUSPECTED,
+    FLAG_TUR_NOT_READY,
+    FLAG_TUR_UNAVAILABLE,
+    fail_reason_codes,
+    warning_flags,
+)
 from cdi_health.classes.scoring import HealthScoreCalculator
 
 
@@ -299,3 +306,53 @@ class TestTurStateGrading:
         assert device.cdi_grade == "F"
         result = HealthScoreCalculator().calculate(device.to_dict(pop=True))
         assert "F-NO-RESPONSE" in fail_reason_codes(result.deductions)
+
+
+class TestPowerOnHoursUnknown:
+    """POH is never faked to 0 (#129)."""
+
+    @pytest.mark.parametrize("rel", [("ata", "healthy_hdd.json"), ("nvme", "SSDPE2KE032T8_healthy.json")])
+    def test_not_ready_keeps_real_poh(self, mock_data_dir: Path, rel: tuple[str, str]) -> None:
+        data = _load_mock(mock_data_dir, *rel)
+        expected = data["power_on_time"]["hours"]
+        assert expected > 0
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Not Ready"))
+        assert device.power_on_hours == expected
+
+    @pytest.mark.parametrize(
+        "rel",
+        [("ata", "healthy_hdd.json"), ("nvme", "SSDPE2KE032T8_healthy.json"), ("scsi", "healthy_sas.json")],
+    )
+    @pytest.mark.parametrize("state", ["Ready", "Not Ready", "Unknown"])
+    def test_missing_poh_is_not_reported_not_zero(self, mock_data_dir: Path, rel: tuple[str, str], state: str) -> None:
+        data = copy.deepcopy(_load_mock(mock_data_dir, *rel))
+        data.pop("power_on_time", None)
+        device_id = data.get("device", {}).get("name", "/dev/mock0")
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, state))
+        assert device.power_on_hours == "Not Reported"
+        d = device.to_dict(pop=True)
+        flags = warning_flags(d)
+        assert FLAG_POH_NOT_REPORTED in flags
+        assert FLAG_SMART_RESET_SUSPECTED not in flags
+
+    def test_unknown_poh_with_many_power_cycles_is_not_smart_reset(self) -> None:
+        # Previously POH forced to "0" + power cycles >= 100 tripped §15.1.
+        device = {"transport_protocol": "ATA", "power_on_hours": "Not Reported", "power_cycle_count": 5000}
+        flags = warning_flags(device)
+        assert FLAG_SMART_RESET_SUSPECTED not in flags
+        assert FLAG_POH_NOT_REPORTED in flags
+
+    def test_not_ready_ata_high_poh_still_age_capped(self, mock_data_dir: Path) -> None:
+        # A fake 0 used to defeat the §5 age cap; the real POH must drive it.
+        data = copy.deepcopy(_load_mock(mock_data_dir, "ata", "healthy_hdd.json"))
+        data["power_on_time"] = {"hours": 65000}
+        device_id = data["device"]["name"]
+        device = _device_from_mock(data, sg3=_sg_with_state(device_id, "Not Ready"))
+        result = HealthScoreCalculator().calculate(device.to_dict(pop=True))
+        assert device.power_on_hours == 65000
+        assert result.age_cap_grade == "D"
+
+    def test_ungraded_failure_record_not_flagged(self) -> None:
+        record = Devices._ungraded_placeholder({"name": "/dev/sdz", "error": "open failed"})
+        assert FLAG_POH_NOT_REPORTED not in warning_flags(record)
