@@ -76,12 +76,14 @@ from cdi_health.api.services import (
     run_selftest_start,
     weasyprint_available,
 )
+from cdi_health.cli import __version__ as PACKAGE_VERSION
 from cdi_health.cli import check_prerequisites
 
 logger = logging.getLogger(__name__)
 
 SELFTEST_MAX_WORKERS = 2
-API_VERSION = "1.0.0"
+# Report the installed cdi_health package version (setuptools-scm), same as `cdi-health --version`.
+API_VERSION = PACKAGE_VERSION
 HARDWARE_BUSY_DETAIL = "Drive hardware is busy with another scan, report, or self-test start. Retry when it completes."
 
 

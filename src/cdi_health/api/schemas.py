@@ -206,7 +206,7 @@ class SelfTestAbortRequest(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
-    version: str = "1.0.0"
+    version: str
     is_root: bool | None = None
     allow_non_root_mode: bool | None = None
     api_token_enabled: bool | None = None

@@ -505,3 +505,17 @@ def test_sudoers_profile_has_no_wildcard_tool_access() -> None:
     for dangerous in ("format", "sanitize", "security-send", "--set", "fw-download", "write"):
         assert dangerous not in joined
     assert "openSeaChest" not in joined
+
+
+# ---------------------------------------------------------------------------
+# #139: API reports the real package version
+# ---------------------------------------------------------------------------
+
+
+def test_api_reports_package_version(api_client: TestClient) -> None:
+    from cdi_health.cli import __version__
+
+    health = api_client.get("/api/v1/health").json()
+    assert health["version"] == __version__
+    assert api_client.app.version == __version__
+    assert api_client.get("/openapi.json").json()["info"]["version"] == __version__
