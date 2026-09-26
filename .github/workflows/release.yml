@@ -191,6 +191,8 @@ jobs:
           push: false
           load: true
           tags: ghcr.io/circulardrives/cdi-health-dashboard:ci
+          build-args: |
+            VITE_APP_VERSION=${{ env.VERSION }}
           cache-from: type=gha,scope=cdi-health-dashboard
           cache-to: type=gha,mode=max,scope=cdi-health-dashboard
 
@@ -295,6 +297,8 @@ jobs:
           sbom: true
           tags: ${{ steps.meta-dashboard.outputs.tags }}
           labels: ${{ steps.meta-dashboard.outputs.labels }}
+          build-args: |
+            VITE_APP_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=cdi-health-dashboard
           cache-to: type=gha,mode=max,scope=cdi-health-dashboard
 

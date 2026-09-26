@@ -10,10 +10,14 @@ COPY dashboard/packages ./packages
 ARG VITE_CDI_API_BASE_URL=/api/cdi
 ARG VITE_CDI_USE_MOCK_DATA=0
 ARG VITE_CDI_MOCK_DATA_PATH=/app/src/cdi_health/mock_data
+# Release builds pass --build-arg VITE_APP_VERSION=<tag> (see .github/workflows/release.yml);
+# empty falls back to dashboard/apps/web/package.json. Shown in Settings › About.
+ARG VITE_APP_VERSION=
 
 ENV VITE_CDI_API_BASE_URL=${VITE_CDI_API_BASE_URL}
 ENV VITE_CDI_USE_MOCK_DATA=${VITE_CDI_USE_MOCK_DATA}
 ENV VITE_CDI_MOCK_DATA_PATH=${VITE_CDI_MOCK_DATA_PATH}
+ENV VITE_APP_VERSION=${VITE_APP_VERSION}
 
 RUN bun install --frozen-lockfile
 RUN bun run build
