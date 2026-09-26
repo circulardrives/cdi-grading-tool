@@ -77,12 +77,16 @@ export function localReportsAsList(
   }))
 }
 
+/** Bench name for a report host; pass useBenchNames() so this bench isn't "Local API". */
+export type ReportHostName = (host: ReportHost) => string
+
 /** "pecan09, pecan10" (or "pecan09, pecan10 +3 more"); "—" when unknown. */
 export function formatReportBenches(
   hosts: ReportHost[] | null | undefined,
-  max = 3
+  max = 3,
+  nameOf: ReportHostName = (host) => host.name
 ): string {
-  const names = (hosts ?? []).map((host) => host.name).filter(Boolean)
+  const names = (hosts ?? []).map(nameOf).filter(Boolean)
   if (names.length === 0) {
     return "—"
   }
@@ -112,8 +116,11 @@ export function formatDrives(count: number): string {
 }
 
 /** Toast line after a report is made. */
-export function reportReadyMessage(result: ReportResponse): string {
-  const benches = formatReportBenches(result.hosts)
+export function reportReadyMessage(
+  result: ReportResponse,
+  nameOf?: ReportHostName
+): string {
+  const benches = formatReportBenches(result.hosts, 3, nameOf)
   const where = benches === "—" ? "" : ` from ${benches}`
   return `Report ready — ${formatDrives(result.devices_count)}${where}`
 }
@@ -144,13 +151,131 @@ export async function deliverReport(
   }
 }
 
+export const PDF_UNAVAILABLE_MESSAGE =
+  "PDF isn't available on this bench — use Web page or Spreadsheet"
+
+/** True when the API said it can't make PDFs (PDF library not installed). */
+export function isPdfUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /weasyprint|pdf generation requires/i.test(error.message)
+  )
+}
+
+/** Saved scans one report can combine (API limit). */
+export const MAX_REPORT_SCANS = 50
+
 /** Plain one-line message for a failed report request. */
 export function describeReportError(error: unknown): string {
+  if (isPdfUnavailableError(error)) {
+    return PDF_UNAVAILABLE_MESSAGE
+  }
   if (isValidationError(error)) {
     return "CDI Health on this computer is too old for this kind of report — update it, or use Scan this bench now"
   }
   if (error instanceof Error && error.message) {
+    if (/no saved scans to report on/i.test(error.message)) {
+      return "Nothing saved to report on yet — scan all benches first"
+    }
+    if (/scan history entry not found/i.test(error.message)) {
+      return "One of those saved scans was deleted — pick again"
+    }
+    if (/at most \d+ history_ids/i.test(error.message)) {
+      return `Pick at most ${MAX_REPORT_SCANS} saved scans for one report`
+    }
     return error.message.split("\n")[0] ?? error.message
   }
   return "Couldn't make the report"
+}
+
+/** Words for each format (the New report choice, table cells). */
+export const REPORT_FORMAT_LABEL: Record<ReportFormat, string> = {
+  pdf: "PDF",
+  html: "Web page",
+  csv: "Spreadsheet (CSV)",
+}
+
+/** Shorter words for dense rows and menus. */
+export const REPORT_FORMAT_SHORT: Record<ReportFormat, string> = {
+  pdf: "PDF",
+  html: "Web page",
+  csv: "Spreadsheet",
+}
+
+export const REPORT_FORMATS: ReportFormat[] = ["pdf", "html", "csv"]
+
+function parseTime(iso: string | null | undefined): Date | null {
+  if (!iso) {
+    return null
+  }
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+function clock(date: Date): string {
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+}
+
+/** "9:00 AM" today, "Sep 24, 9:00 AM" otherwise (year added when not this year). */
+export function formatScanTime(
+  iso: string | null | undefined,
+  now = new Date()
+): string {
+  const date = parseTime(iso)
+  if (!date) {
+    return "—"
+  }
+  if (sameDay(date, now)) {
+    return clock(date)
+  }
+  const day = date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  })
+  return `${day}, ${clock(date)}`
+}
+
+/** Full local date and time, for hover text. */
+export function formatExactTime(iso: string | null | undefined): string {
+  const date = parseTime(iso)
+  if (!date) {
+    return ""
+  }
+  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
+}
+
+/** "just now", "12 min ago", "3 h ago", "yesterday, 4:10 PM", else the date. */
+export function formatRelativeTime(
+  iso: string | null | undefined,
+  now = new Date()
+): string {
+  const date = parseTime(iso)
+  if (!date) {
+    return "—"
+  }
+  const minutes = Math.round((now.getTime() - date.getTime()) / 60_000)
+  if (minutes < 1) {
+    return "just now"
+  }
+  if (minutes < 60) {
+    return `${minutes} min ago`
+  }
+  if (sameDay(date, now)) {
+    return `${Math.round(minutes / 60)} h ago`
+  }
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (sameDay(date, yesterday)) {
+    return `yesterday, ${clock(date)}`
+  }
+  return formatScanTime(iso, now)
 }
