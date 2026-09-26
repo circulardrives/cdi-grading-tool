@@ -59,7 +59,7 @@ const navItems = [
     to: "/hosts",
     label: "Hosts",
     icon: ServerIcon,
-    description: "Fleet registry and active host context",
+    description: "Grading benches and access tokens",
   },
   {
     to: "/discover",

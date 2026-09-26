@@ -74,6 +74,7 @@ function matchesSearch(device: DeviceRecord, query: string): boolean {
     device.model_number,
     device.dut,
     device.vendor,
+    device.machine_name,
   ]
     .filter(Boolean)
     .join(" ")

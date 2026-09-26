@@ -42,15 +42,32 @@ import {
   useMockDataSettings,
 } from "@/components/mock-data-provider"
 import {
+  ScanAllHostsButton,
+  ScanAllHostsProgress,
+} from "@/components/scan-all-hosts"
+import {
+  useFleetDevicesQuery,
   useHealthQuery,
   useInvalidateCdiQueries,
   useMachinesQuery,
 } from "@/hooks/use-cdi-queries"
 import { scanDevices } from "@/lib/api"
+import { describeRequestError, hostHasAddress } from "@/lib/host-utils"
 import { setSelectedHostId, useSelectedHostId } from "@/lib/selected-host"
 import type { ScanResponse } from "@/lib/types"
 
 const LOCAL_SCAN_TARGET = "local"
+
+/** "Scanned on pecan09" / "Scanned on this bench", from where the API ran the scan. */
+function scannedOnLabel(result: ScanResponse, hostName: string | null): string {
+  if (result.executed_on === "remote") {
+    return `Scanned on ${hostName ?? result.remote_address ?? "the host"}`
+  }
+  if (result.executed_on === "local") {
+    return "Scanned on this bench"
+  }
+  return hostName ? `Scanned for ${hostName}` : "Scanned"
+}
 
 export function ScanPage() {
   const { useMockData, mockDataPath } = useMockDataSettings()
@@ -64,6 +81,7 @@ export function ScanPage() {
   const [ignoreNvme, setIgnoreNvme] = useState(false)
   const [ignoreScsi, setIgnoreScsi] = useState(false)
   const [lastResult, setLastResult] = useState<ScanResponse | null>(null)
+  const [lastResultHost, setLastResultHost] = useState<string | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
 
   const hosts = useMemo(() => machinesQuery.data ?? [], [machinesQuery.data])
@@ -74,6 +92,14 @@ export function ScanPage() {
     () => (scanTarget === LOCAL_SCAN_TARGET ? null : hosts.find((host) => host.id === scanTarget) ?? null),
     [hosts, scanTarget]
   )
+  const targetName = selectedHost?.name ?? "this bench"
+  // Scans for a host with an address run on that host, not on this bench.
+  const targetIsRemote = Boolean(selectedHost && hostHasAddress(selectedHost))
+
+  const hasAddressedHosts = hosts.some(hostHasAddress)
+  const fleetQuery = useFleetDevicesQuery(hasAddressedHosts)
+  // `null` means the API predates /fleet/devices (no Scan all hosts).
+  const canScanAll = hasAddressedHosts && fleetQuery.data !== null
 
   useEffect(() => {
     // A stale selection (host deleted elsewhere) falls back to the local API.
@@ -106,11 +132,11 @@ export function ScanPage() {
         ...mockDataRequestFields(useMockData, mockDataPath),
       })
       setLastResult(result)
+      setLastResultHost(targetName)
       await invalidateAfterScan(machineId)
-      const label = selectedHost?.name ?? "local API"
-      toast.success(`Scan complete for ${label} — ${result.summary.total} drive(s)`)
+      toast.success(`Scanned ${targetName} — ${result.summary.total} drive(s)`)
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Scan failed"
+      const message = describeRequestError(err, targetName, "Scan failed")
       setScanError(message)
       toast.error(message)
     } finally {
@@ -125,7 +151,11 @@ export function ScanPage() {
       <PageHeader
         eyebrow="Drive grading"
         title="Scan"
-        description="Execute a CDI health scan on the local API. Associate results with a fleet host when registered."
+        description={
+          canScanAll
+            ? "Scan every host at once, or pick one host. Each host's drives are graded on that host."
+            : "Grade the drives attached to this bench, or to a host you pick."
+        }
         actions={
           <Button variant="outline" onClick={() => void refresh()} disabled={loading}>
             <RefreshCwIcon data-icon="inline-start" />
@@ -134,17 +164,34 @@ export function ScanPage() {
         }
       />
 
-      <Alert>
-        <ServerIcon />
-        <AlertTitle>Local scan mode (v1)</AlertTitle>
-        <AlertDescription>
-          Scans execute on the machine running <span className="font-mono">cdi-health-api</span>.
-          Select a fleet host to store results against that host, or use Local API for an
-          unregistered scan. View full drive tables on Drive Health.
-        </AlertDescription>
-      </Alert>
+      {canScanAll ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ServerIcon className="size-4" />
+              Scan all hosts
+            </CardTitle>
+            <CardDescription>
+              Grades the drives on every host in your fleet. Hosts that can&apos;t be reached are
+              listed with what to fix — the rest still get scanned.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              <ScanAllHostsButton size="lg" />
+              <Button variant="outline" size="lg" asChild>
+                <Link to="/drives" onClick={() => setSelectedHostId(null)}>
+                  <HardDriveIcon data-icon="inline-start" />
+                  View all drives
+                </Link>
+              </Button>
+            </div>
+            <ScanAllHostsProgress hostCount={fleetQuery.data?.hosts.length} />
+          </CardContent>
+        </Card>
+      ) : null}
 
-      {missingTools.length > 0 ? (
+      {!targetIsRemote && missingTools.length > 0 ? (
         <Alert variant="destructive">
           <AlertCircleIcon />
           <AlertTitle>Missing grading tools</AlertTitle>
@@ -156,7 +203,7 @@ export function ScanPage() {
         </Alert>
       ) : null}
 
-      {health?.is_root === false ? (
+      {!targetIsRemote && health?.is_root === false ? (
         <Alert>
           <AlertCircleIcon />
           <AlertTitle>Non-root API</AlertTitle>
@@ -170,11 +217,13 @@ export function ScanPage() {
       <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Run scan</CardTitle>
+            <CardTitle>{canScanAll ? "Scan one host" : "Run scan"}</CardTitle>
             <CardDescription>
-              {selectedHost
-                ? `Grade drives for ${selectedHost.name}`
-                : "Scan attached drives on the local API (no fleet host)"}
+              {targetIsRemote && selectedHost
+                ? `Runs on ${selectedHost.name} at ${selectedHost.address}`
+                : selectedHost
+                  ? `Grade drives for ${selectedHost.name} on this bench`
+                  : "Grade the drives attached to this bench"}
               {useMockData ? " · mock data enabled" : ""}
             </CardDescription>
           </CardHeader>
@@ -184,13 +233,13 @@ export function ScanPage() {
             ) : (
               <FieldGroup>
                 <Field>
-                  <FieldLabel htmlFor="scan-target">Scan target</FieldLabel>
+                  <FieldLabel htmlFor="scan-target">Host</FieldLabel>
                   <Select value={scanTarget} onValueChange={selectTarget}>
                     <SelectTrigger id="scan-target" className="w-full max-w-xs">
                       <SelectValue placeholder="Select target" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={LOCAL_SCAN_TARGET}>Local API</SelectItem>
+                      <SelectItem value={LOCAL_SCAN_TARGET}>This bench</SelectItem>
                       {hosts.map((host) => (
                         <SelectItem key={host.id} value={host.id}>
                           {host.name}
@@ -200,8 +249,8 @@ export function ScanPage() {
                   </Select>
                   <FieldDescription>
                     {hosts.length === 0
-                      ? "No fleet hosts yet — scanning against the local API. Register hosts on the Hosts page."
-                      : "Fleet host selection is shared with Fleet Status, Hosts, and Drive Health for this tab."}
+                      ? "No hosts yet — this scans the bench running the dashboard. Add hosts on the Hosts page."
+                      : "The host you pick here is also used on Hosts and Drive Health."}
                   </FieldDescription>
                 </Field>
               </FieldGroup>
@@ -240,7 +289,7 @@ export function ScanPage() {
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void runScan()} disabled={scanning || loading}>
                 {scanning ? <Spinner data-icon="inline-start" /> : <ScanSearchIcon data-icon="inline-start" />}
-                {scanning ? "Scanning…" : "Run scan"}
+                {scanning ? "Scanning…" : `Scan ${targetName}`}
               </Button>
               {scanTarget !== LOCAL_SCAN_TARGET ? (
                 <Button variant="outline" asChild>
@@ -252,7 +301,7 @@ export function ScanPage() {
               ) : null}
               {hosts.length === 0 ? (
                 <Button variant="outline" asChild>
-                  <Link to="/hosts">Register hosts</Link>
+                  <Link to="/hosts">Add hosts</Link>
                 </Button>
               ) : null}
             </div>
@@ -260,7 +309,7 @@ export function ScanPage() {
             {scanning ? (
               <div className="text-muted-foreground flex items-center gap-2 text-sm">
                 <Spinner />
-                Grading attached drives — this may take a minute on large inventories…
+                Grading drives on {targetName} — this may take a minute on large inventories…
               </div>
             ) : null}
 
@@ -279,7 +328,7 @@ export function ScanPage() {
             <CardTitle>Last result</CardTitle>
             <CardDescription>
               {lastResult
-                ? `Scanned ${new Date(lastResult.scanned_at).toLocaleString()}`
+                ? `${scannedOnLabel(lastResult, lastResultHost)} · ${new Date(lastResult.scanned_at).toLocaleString()}`
                 : "Run a scan to see drive counts"}
             </CardDescription>
           </CardHeader>
@@ -322,8 +371,8 @@ export function ScanPage() {
               </>
             ) : (
               <p className="text-muted-foreground text-sm">
-                Summary appears here after a successful scan. For per-drive grades and telemetry, open
-                Drive Health once a fleet host is selected.
+                Summary appears here after a successful scan. For per-drive grades and telemetry,
+                open Drive Health.
               </p>
             )}
           </CardContent>

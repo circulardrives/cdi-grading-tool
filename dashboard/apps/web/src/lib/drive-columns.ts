@@ -531,6 +531,21 @@ function simpleKeyColumns(category: DriveClass): DriveColumn[] {
   }
 }
 
+/** Leading "Host" column for tables that merge drives from several hosts. */
+export const hostColumn: DriveColumn = {
+  id: "host",
+  label: "Host",
+  getValue: (device) => device.machine_name?.trim() || "—",
+}
+
+/** Prepends the Host column when a table shows drives from several hosts. */
+export function withHostColumn(
+  columns: DriveColumn[],
+  showHost: boolean
+): DriveColumn[] {
+  return showHost ? [hostColumn, ...columns] : columns
+}
+
 export function getSimpleColumns(category: DriveClass): DriveColumn[] {
   return [
     {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   AlertCircleIcon,
@@ -34,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select"
+import { Spinner } from "@workspace/ui/components/spinner"
 import {
   Tabs,
   TabsContent,
@@ -42,25 +43,40 @@ import {
 } from "@workspace/ui/components/tabs"
 
 import { DriveHealthTable } from "@/components/drive-health-table"
+import { FleetHostList } from "@/components/fleet-host-list"
 import { PageHeader } from "@/components/page-header"
+import {
+  ScanAllHostsButton,
+  ScanAllHostsProgress,
+} from "@/components/scan-all-hosts"
 import {
   mockDataRequestFields,
   useMockDataSettings,
 } from "@/components/mock-data-provider"
 import {
   useDevicesQuery,
+  useFleetDevicesQuery,
   useInvalidateCdiQueries,
   useMachinesQuery,
+  useScanAllStatus,
 } from "@/hooks/use-cdi-queries"
 import { scanDevices } from "@/lib/api"
-import { getDetailedColumns, getSimpleColumns } from "@/lib/drive-columns"
+import {
+  getDetailedColumns,
+  getSimpleColumns,
+  withHostColumn,
+} from "@/lib/drive-columns"
 import {
   countByDriveClass,
   DRIVE_CLASS_ORDER,
   getReportCategory,
 } from "@/lib/drive-labels"
+import { describeRequestError, hostHasAddress } from "@/lib/host-utils"
 import { setSelectedHostId, useSelectedHostId } from "@/lib/selected-host"
-import type { DriveClass, DriveViewMode } from "@/lib/types"
+import type { DeviceRecord, DriveClass, DriveViewMode } from "@/lib/types"
+
+const ALL_HOSTS = "all"
+const NO_HOST = "none"
 
 export function DriveHealthPage() {
   const { useMockData, mockDataPath } = useMockDataSettings()
@@ -71,7 +87,29 @@ export function DriveHealthPage() {
   const [activeClass, setActiveClass] = useState<DriveClass | "all">("all")
 
   const machinesQuery = useMachinesQuery()
-  const devicesQuery = useDevicesQuery(selectedHostId, true)
+  const hosts = useMemo(() => machinesQuery.data ?? [], [machinesQuery.data])
+  const hasAddressedHosts = hosts.some(hostHasAddress)
+
+  // `null` data means the API predates /fleet/devices: fall back to one host.
+  const fleetQuery = useFleetDevicesQuery(hasAddressedHosts)
+  const fleetAvailable = hasAddressedHosts && fleetQuery.data !== null
+  const allHostsMode = fleetAvailable && !selectedHostId
+  const scanAll = useScanAllStatus()
+
+  const devicesQuery = useDevicesQuery(
+    selectedHostId,
+    !machinesQuery.isLoading && !allHostsMode
+  )
+
+  useEffect(() => {
+    // A stale selection (host removed elsewhere) falls back to the default view.
+    if (!machinesQuery.isSuccess || !selectedHostId) {
+      return
+    }
+    if (!hosts.some((host) => host.id === selectedHostId)) {
+      setSelectedHostId(null)
+    }
+  }, [machinesQuery.isSuccess, hosts, selectedHostId])
 
   const noScanCached = Boolean(
     selectedHostId &&
@@ -79,39 +117,56 @@ export function DriveHealthPage() {
       devicesQuery.error.message.includes("No scan cached")
   )
 
-  const hosts = useMemo(() => machinesQuery.data ?? [], [machinesQuery.data])
-  const devices = useMemo(
-    () => (noScanCached ? [] : (devicesQuery.data?.devices ?? [])),
-    [devicesQuery.data?.devices, noScanCached]
-  )
-  const scannedAt = devicesQuery.data?.scanned_at ?? null
-  const loading = machinesQuery.isLoading || devicesQuery.isLoading
+  const devices: DeviceRecord[] = useMemo(() => {
+    if (allHostsMode) {
+      return fleetQuery.data?.devices ?? []
+    }
+    return noScanCached ? [] : (devicesQuery.data?.devices ?? [])
+  }, [allHostsMode, fleetQuery.data?.devices, devicesQuery.data?.devices, noScanCached])
+
+  const scannedAt = allHostsMode ? null : (devicesQuery.data?.scanned_at ?? null)
+  const loading =
+    machinesQuery.isLoading ||
+    (allHostsMode ? fleetQuery.isLoading : devicesQuery.isLoading)
 
   const selectedHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId]
   )
+  const selectedHostName = selectedHost?.name ?? "this bench"
 
-  const error =
-    noScanCached
+  const error = allHostsMode
+    ? fleetQuery.error instanceof Error
+      ? fleetQuery.error.message
+      : null
+    : noScanCached
       ? null
-      : devicesQuery.error instanceof Error
-        ? devicesQuery.error.message
+      : devicesQuery.error
+        ? describeRequestError(
+            devicesQuery.error,
+            selectedHostName,
+            "Could not load drives"
+          )
         : machinesQuery.error instanceof Error
           ? machinesQuery.error.message
           : null
 
-  const selectHost = (hostId: string | null) => {
-    setSelectedHostId(hostId)
+  const selectValue = selectedHostId ?? (fleetAvailable ? ALL_HOSTS : NO_HOST)
+
+  const selectHost = (value: string) => {
+    setSelectedHostId(value === ALL_HOSTS || value === NO_HOST ? null : value)
   }
 
   const refresh = async () => {
-    await Promise.all([machinesQuery.refetch(), devicesQuery.refetch()])
+    await Promise.all([
+      machinesQuery.refetch(),
+      allHostsMode ? fleetQuery.refetch() : devicesQuery.refetch(),
+    ])
   }
 
   const runScan = async () => {
     if (!selectedHostId) {
-      toast.error("Select a host on the Hosts page before running a scan")
+      toast.error("Pick a host first")
       return
     }
 
@@ -125,9 +180,11 @@ export function DriveHealthPage() {
         ...mockDataRequestFields(useMockData, mockDataPath),
       })
       await invalidateAfterScan(selectedHostId)
-      toast.success(`Scan complete — ${result.summary.total} drive(s) graded`)
+      toast.success(
+        `Scanned ${selectedHostName} — ${result.summary.total} drive(s) graded`
+      )
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Scan failed")
+      toast.error(describeRequestError(err, selectedHostName, "Scan failed"))
     } finally {
       setScanning(false)
     }
@@ -149,12 +206,41 @@ export function DriveHealthPage() {
     )
   }, [activeClass, devices])
 
+  const columnsFor = (driveClass: DriveClass) =>
+    withHostColumn(
+      viewMode === "simple"
+        ? getSimpleColumns(driveClass)
+        : getDetailedColumns(driveClass),
+      allHostsMode
+    )
+
+  const fleetHosts = fleetQuery.data?.hosts ?? []
+
+  const singleScanButton = (
+    <Button onClick={() => void runScan()} disabled={scanning || !selectedHostId}>
+      {scanning ? (
+        <Spinner data-icon="inline-start" />
+      ) : (
+        <ScanSearchIcon data-icon="inline-start" />
+      )}
+      {scanning
+        ? "Scanning…"
+        : selectedHost
+          ? `Scan ${selectedHost.name}`
+          : "Run scan"}
+    </Button>
+  )
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="Drive inventory"
         title="Attached Drive Health"
-        description="Review graded drives for a selected fleet host. Rows are keyed by serial number and grouped by drive class."
+        description={
+          allHostsMode
+            ? "Graded drives from every host, grouped by drive class."
+            : "Graded drives for one host, grouped by drive class."
+        }
         badge={
           scannedAt
             ? `Last scan ${new Date(scannedAt).toLocaleString()}`
@@ -162,15 +248,16 @@ export function DriveHealthPage() {
         }
         actions={
           <>
-            <Select
-              value={selectedHostId ?? "none"}
-              onValueChange={(value) => selectHost(value === "none" ? null : value)}
-            >
-              <SelectTrigger className="w-[220px]">
+            <Select value={selectValue} onValueChange={selectHost}>
+              <SelectTrigger className="w-[220px]" aria-label="Show drives from">
                 <SelectValue placeholder="Select host" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No host selected</SelectItem>
+                {fleetAvailable ? (
+                  <SelectItem value={ALL_HOSTS}>All hosts</SelectItem>
+                ) : (
+                  <SelectItem value={NO_HOST}>No host selected</SelectItem>
+                )}
                 {hosts.map((host) => (
                   <SelectItem key={host.id} value={host.id}>
                     {host.name}
@@ -178,26 +265,26 @@ export function DriveHealthPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" onClick={() => void refresh()} disabled={loading}>
+            <Button
+              variant="outline"
+              onClick={() => void refresh()}
+              disabled={loading || scanAll.pending}
+            >
               <RefreshCwIcon data-icon="inline-start" />
               Refresh
             </Button>
-            <Button onClick={() => void runScan()} disabled={scanning || !selectedHostId}>
-              <ScanSearchIcon data-icon="inline-start" />
-              {scanning ? "Scanning…" : "Run scan"}
-            </Button>
+            {allHostsMode ? <ScanAllHostsButton /> : singleScanButton}
           </>
         }
       />
 
-      {!selectedHostId ? (
+      {allHostsMode ? null : !selectedHostId ? (
         <Alert>
           <AlertCircleIcon />
-          <AlertTitle>Select a fleet host</AlertTitle>
+          <AlertTitle>Pick a host</AlertTitle>
           <AlertDescription className="flex flex-col gap-2">
             <span>
-              Drive scans are associated with a registered host. Choose one here or register hosts
-              on the Hosts page.
+              Choose a host above to see its drives, or add your benches on the Hosts page.
             </span>
             <Button variant="outline" className="w-fit" asChild>
               <Link to="/hosts">Open Hosts</Link>
@@ -207,12 +294,18 @@ export function DriveHealthPage() {
       ) : selectedHost ? (
         <Alert>
           <AlertCircleIcon />
-          <AlertTitle>Host context: {selectedHost.name}</AlertTitle>
-          <AlertDescription>
-            Showing drives from the latest scan for{" "}
-            <span className="font-mono">{selectedHost.hostname}</span>. Selecting a host filters
-            by <span className="font-mono">machine_id</span> on the configured API; host addresses
-            are registry-only and do not switch backends.
+          <AlertTitle>Showing {selectedHost.name} only</AlertTitle>
+          <AlertDescription className="flex flex-col gap-2">
+            <span>Drives from the latest scan of {selectedHost.name}.</span>
+            {fleetAvailable ? (
+              <Button
+                variant="outline"
+                className="w-fit"
+                onClick={() => setSelectedHostId(null)}
+              >
+                Show all hosts
+              </Button>
+            ) : null}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -220,17 +313,44 @@ export function DriveHealthPage() {
       {error ? (
         <Alert variant="destructive">
           <AlertCircleIcon />
-          <AlertTitle>Cannot reach grading host</AlertTitle>
+          <AlertTitle>
+            {allHostsMode ? "Couldn't load drives from your hosts" : "Couldn't load drives"}
+          </AlertTitle>
           <AlertDescription className="flex flex-col gap-2">
             <span>{error}</span>
-            <span>
-              Confirm `cdi-health-api` is running on this host (typically{" "}
-              <span className="font-mono">127.0.0.1:8844</span>) and run as root
-              for live SMART access. Use mock mode for bench testing without
-              hardware.
-            </span>
+            {!allHostsMode && !(selectedHost && hostHasAddress(selectedHost)) ? (
+              <span>
+                Confirm `cdi-health-api` is running on this bench (typically{" "}
+                <span className="font-mono">127.0.0.1:8844</span>) and run as root
+                for live SMART access. Use mock mode for bench testing without
+                hardware.
+              </span>
+            ) : null}
           </AlertDescription>
         </Alert>
+      ) : null}
+
+      {allHostsMode ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Hosts</CardTitle>
+            <CardDescription>
+              {fleetHosts.length} host(s) · pick one to see only its drives
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <ScanAllHostsProgress hostCount={fleetHosts.length} />
+            {fleetQuery.isLoading ? (
+              <Skeleton className="h-20 w-full" />
+            ) : (
+              <FleetHostList
+                hosts={fleetHosts}
+                scanning={scanAll.pending}
+                onSelectHost={(host) => setSelectedHostId(host.machine_id)}
+              />
+            )}
+          </CardContent>
+        </Card>
       ) : null}
 
       <Card>
@@ -239,7 +359,8 @@ export function DriveHealthPage() {
             <div>
               <CardTitle>Drive tables</CardTitle>
               <CardDescription>
-                {devices.length} attached drive(s) · switch between grading
+                {devices.length} drive(s)
+                {allHostsMode ? " across all hosts" : ""} · switch between grading
                 summary and full telemetry columns
               </CardDescription>
             </div>
@@ -269,15 +390,13 @@ export function DriveHealthPage() {
                 </EmptyMedia>
                 <EmptyTitle>No drives graded yet</EmptyTitle>
                 <EmptyDescription>
-                  Run a scan for the selected host from this page or from Scan to inventory attached
-                  SATA, SAS, and NVMe drives.
+                  {allHostsMode
+                    ? "Scan all hosts to grade the SATA, SAS, and NVMe drives attached to every bench."
+                    : "Scan the selected host to grade its attached SATA, SAS, and NVMe drives."}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="flex flex-wrap gap-2">
-                <Button onClick={() => void runScan()} disabled={scanning}>
-                  <ScanSearchIcon data-icon="inline-start" />
-                  Run scan
-                </Button>
+                {allHostsMode ? <ScanAllHostsButton /> : singleScanButton}
                 <Button variant="outline" asChild>
                   <Link to="/scan">Open Scan</Link>
                 </Button>
@@ -304,62 +423,34 @@ export function DriveHealthPage() {
               </TabsList>
 
               <TabsContent value="all" className="flex flex-col gap-4">
-                {viewMode === "simple" ? (
-                  visibleClasses.map((driveClass) => {
-                    const classDevices = devices.filter(
-                      (device) => getReportCategory(device) === driveClass
-                    )
-                    return (
-                      <section key={driveClass} className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                          <h2 className="font-heading text-base font-medium">
-                            {driveClass}
-                          </h2>
-                          <Badge variant="outline">
-                            {classDevices.length} drive(s)
-                          </Badge>
-                        </div>
-                        <DriveHealthTable
-                          devices={classDevices}
-                          columns={getSimpleColumns(driveClass)}
-                        />
-                      </section>
-                    )
-                  })
-                ) : (
-                  visibleClasses.map((driveClass) => {
-                    const classDevices = devices.filter(
-                      (device) => getReportCategory(device) === driveClass
-                    )
-                    return (
-                      <section key={driveClass} className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                          <h2 className="font-heading text-base font-medium">
-                            {driveClass}
-                          </h2>
-                          <Badge variant="outline">
-                            {classDevices.length} drive(s)
-                          </Badge>
-                        </div>
-                        <DriveHealthTable
-                          devices={classDevices}
-                          columns={getDetailedColumns(driveClass)}
-                        />
-                      </section>
-                    )
-                  })
-                )}
+                {visibleClasses.map((driveClass) => {
+                  const classDevices = devices.filter(
+                    (device) => getReportCategory(device) === driveClass
+                  )
+                  return (
+                    <section key={driveClass} className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-heading text-base font-medium">
+                          {driveClass}
+                        </h2>
+                        <Badge variant="outline">
+                          {classDevices.length} drive(s)
+                        </Badge>
+                      </div>
+                      <DriveHealthTable
+                        devices={classDevices}
+                        columns={columnsFor(driveClass)}
+                      />
+                    </section>
+                  )
+                })}
               </TabsContent>
 
               {visibleClasses.map((driveClass) => (
                 <TabsContent key={driveClass} value={driveClass}>
                   <DriveHealthTable
                     devices={filteredDevices}
-                    columns={
-                      viewMode === "simple"
-                        ? getSimpleColumns(driveClass)
-                        : getDetailedColumns(driveClass)
-                    }
+                    columns={columnsFor(driveClass)}
                   />
                 </TabsContent>
               ))}

@@ -2,11 +2,13 @@ import { appConfig } from "@/lib/config"
 import type {
   DiscoverRequest,
   DiscoverResponse,
+  FleetDevicesResponse,
   HealthResponse,
   HistoryDetail,
   HistorySummary,
   JobResponse,
   Machine,
+  MachineCheckResponse,
   MachineCreateRequest,
   MachineUpdateRequest,
   ReportRequest,
@@ -259,6 +261,23 @@ export function deleteMachine(machineId: string): Promise<{ deleted: boolean }> 
   )
 }
 
+/** Authenticated health probe of a registered host; updates its stored status. */
+export function checkMachine(machineId: string): Promise<MachineCheckResponse> {
+  return request<MachineCheckResponse>(
+    `/api/v1/machines/${encodeURIComponent(machineId)}/check`,
+    { method: "POST" }
+  )
+}
+
+/**
+ * Drives from every registered host. `refresh` scans all hosts first, which
+ * can take minutes; per-host failures are reported in `hosts[].error`.
+ */
+export function getFleetDevices(refresh = false): Promise<FleetDevicesResponse> {
+  const query = refresh ? "?refresh=true" : ""
+  return request<FleetDevicesResponse>(`/api/v1/fleet/devices${query}`)
+}
+
 export function discoverHosts(body: DiscoverRequest = {}): Promise<DiscoverResponse> {
   return request<DiscoverResponse>("/api/v1/discover", {
     method: "POST",
@@ -307,6 +326,11 @@ export async function downloadReportFile(filename: string): Promise<void> {
   anchor.click()
   // Revoking synchronously can cancel the download in some browsers.
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+/** True when the API predates an endpoint (older cdi-health-api). */
+export function isNotFoundError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404
 }
 
 export { ApiError }
