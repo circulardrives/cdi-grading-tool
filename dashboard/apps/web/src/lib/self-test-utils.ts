@@ -1,4 +1,8 @@
-import type { JobResponse, SelfTestDeviceStatus, SelfTestResultEntry } from "@/lib/types"
+import type {
+  JobResponse,
+  SelfTestDeviceStatus,
+  SelfTestResultEntry,
+} from "@/lib/types"
 
 export const LOG_WAIT_POLL_INTERVAL_MS = 1500
 export const MAX_LOG_WAIT_POLLS = 40
@@ -109,7 +113,9 @@ export function describeMissingLogs(entry: SelfTestDeviceStatus): string {
   return "No self-test log entries on this controller yet. Run a short self-test to populate Log Page 0x06."
 }
 
-export function logEntriesForDevice(entry: SelfTestDeviceStatus): SelfTestResultEntry[] {
+export function logEntriesForDevice(
+  entry: SelfTestDeviceStatus
+): SelfTestResultEntry[] {
   if ((entry.recent_results?.length ?? 0) > 0) {
     return entry.recent_results ?? []
   }
@@ -135,6 +141,34 @@ export function buildSerialByController(
     }
   }
   return serialMap
+}
+
+/**
+ * Raised when we asked a bench for self-tests but the API serving this
+ * dashboard is too old to forward them (it ignores machine_id).
+ */
+export class StaleBenchApiError extends Error {
+  constructor(benchName: string) {
+    super(
+      `CDI Health on this computer is too old to run self-tests on ${benchName} — update it, or pick This bench`
+    )
+    this.name = "StaleBenchApiError"
+  }
+}
+
+/** Controller paths from the saved scan plus those the self-test status lists. */
+export function mergeControllers(
+  fromScan: string[],
+  statusDevices: SelfTestDeviceStatus[]
+): string[] {
+  const controllers = new Set(fromScan)
+  for (const entry of statusDevices) {
+    const path = entry.device ?? ""
+    if (entry.supported && /^\/dev\/nvme\d+$/.test(path)) {
+      controllers.add(path)
+    }
+  }
+  return Array.from(controllers).sort()
 }
 
 export function nvmeControllersFromDevices(
