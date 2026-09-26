@@ -18,6 +18,7 @@ import {
 import { SidebarTrigger } from "@workspace/ui/components/sidebar"
 
 import { DemoModeBanner } from "@/components/demo-mode-banner"
+import { ThemeSwitch } from "@/components/theme-switch"
 import {
   ScanAllBenchesButton,
   ScanAllProgressBar,
@@ -130,15 +131,23 @@ export function AppHeader({
       <DemoModeBanner />
       <header className="flex min-h-[76px] flex-wrap items-center gap-x-4 gap-y-2 px-8 py-3 max-md:min-h-16 max-md:gap-x-2 max-md:px-4">
         <SidebarTrigger
-          className="-ml-2 size-11 xl:hidden"
+          className="-ml-2 size-11"
           aria-label="Show or hide navigation"
+          title="Show or hide navigation (Ctrl/⌘ B)"
         />
         <h1 className="text-[26px] leading-tight font-bold max-md:text-[22px]">
           {title}
         </h1>
-        {showScope ? <ScopeSwitcher /> : null}
+        {showScope ? (
+          // Phones: the bench filter drops to its own full-width row so the
+          // title, theme switch and Scan all stay together on the first row.
+          <div className="max-sm:order-last max-sm:w-full [&_button]:max-sm:w-full [&_button]:max-sm:max-w-none">
+            <ScopeSwitcher />
+          </div>
+        ) : null}
         <div className="flex-1" />
         <LastScanLine />
+        <ThemeSwitch />
         <ScanAllBenchesButton className="max-sm:hidden" />
         <ScanAllBenchesButton className="sm:hidden" compact />
       </header>

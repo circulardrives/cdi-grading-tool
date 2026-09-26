@@ -26,7 +26,7 @@ import {
   benchName,
   useBenchScope,
 } from "@/components/ui-cdi"
-import { useFleetDevicesQuery } from "@/hooks/use-cdi-queries"
+import { useFleetDevicesQuery, useMachinesQuery } from "@/hooks/use-cdi-queries"
 import { useSelfTestBench } from "@/hooks/use-self-test-polling"
 
 const THIS_BENCH = "local"
@@ -35,6 +35,7 @@ const THIS_BENCH = "local"
 function useBenchOptions() {
   const { benches, scopeId, isLoading } = useBenchScope()
   const fleet = useFleetDevicesQuery()
+  const machines = useMachinesQuery()
 
   const options = useMemo<BenchOption[]>(() => {
     const remote: BenchOption[] = benches.map((machine) => ({
@@ -61,12 +62,21 @@ function useBenchOptions() {
     scopeId,
     fleetDevices: fleet.data?.devices ?? [],
     loading: isLoading || fleet.isPending,
+    // The dashboard's own service didn't answer (e.g. restarting): say so
+    // instead of showing a skeleton forever or an empty "This bench".
+    unreachable:
+      (fleet.isError && !fleet.data) || (machines.isError && !machines.data),
+    retry: () => {
+      void fleet.refetch()
+      void machines.refetch()
+    },
   }
 }
 
 export function SelfTestsPage() {
   const [params, setParams] = useSearchParams()
-  const { options, scopeId, fleetDevices, loading } = useBenchOptions()
+  const { options, scopeId, fleetDevices, loading, unreachable, retry } =
+    useBenchOptions()
   const serialParam = params.get("serial")?.trim() || null
   const benchParam = params.get("bench")
 
@@ -110,6 +120,22 @@ export function SelfTestsPage() {
   }
 
   const bench = options.find((option) => option.value === current) ?? null
+
+  if (unreachable) {
+    return (
+      <EmptyState
+        icon={<ActivityIcon aria-hidden="true" />}
+        title="Can't load benches right now"
+        description="The dashboard's service didn't answer. It may be restarting — try again in a moment."
+        actions={
+          <Button variant="outline" onClick={retry}>
+            <RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
+            Try again
+          </Button>
+        }
+      />
+    )
+  }
 
   return (
     <>
