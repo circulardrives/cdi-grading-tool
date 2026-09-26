@@ -122,14 +122,19 @@ On a fresh Debian/Ubuntu bench (e.g. `jm@192.168.0.54`), download the `.deb` and
 ```shell
 # Enable universe on Ubuntu if needed: sudo add-apt-repository universe
 
-wget https://github.com/circulardrives/cdi-grading-tool/releases/download/v0.9.5/cdi-health_0.9.5_all.deb
+# Resolve the latest release tag (or set VERSION=<x.y.z> to pin one from the Releases page)
+VERSION=$(curl -fsSL https://api.github.com/repos/circulardrives/cdi-grading-tool/releases/latest \
+  | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p')
+wget "https://github.com/circulardrives/cdi-grading-tool/releases/download/v${VERSION}/cdi-health_${VERSION}_all.deb"
 sudo apt update
-sudo apt install ./cdi-health_0.9.5_all.deb
+sudo apt install "./cdi-health_${VERSION}_all.deb"
 ```
+
+Each release also publishes `SHA256SUMS` (verify with `sha256sum --ignore-missing -c SHA256SUMS`) and GitHub build-provenance attestations (`gh attestation verify cdi-health_${VERSION}_all.deb --repo circulardrives/cdi-grading-tool`).
 
 `apt install ./cdi-health_*.deb` resolves package dependencies and installs:
 
-- **`python3`** and **`python3-venv`** — venv + API dependencies installed at package install time
+- **`python3`** and **`python3-venv`** — venv + API dependencies installed from PyPI at package install time (network access required; see [offline installs](docs/TECHNICIAN_DEPLOYMENT.md#option-b--install-from-deb))
 - **`smartmontools`** — `smartctl`
 - **`nvme-cli`** — `nvme`
 - **`openseachest`** — OpenSeaChest utilities (when the package exists in your apt sources; **Recommends**)
@@ -158,15 +163,20 @@ sudo systemctl enable --now cdi-health-api
 curl -s http://127.0.0.1:8844/api/v1/health
 ```
 
-To appear in **Discover** from a technician laptop running Docker (host overlay), bind the API on the lab network:
+To appear in **Discover** from a technician laptop running Docker, bind the API on the lab network with the shipped drop-in (the API refuses non-loopback binds without a token):
 
 ```shell
+sudo cp /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
+# edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN (e.g. openssl rand -hex 32)
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
-printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/cdi-health-api --host 0.0.0.0 --port 8844 --data-dir /var/lib/cdi-health\n' | sudo tee /etc/systemd/system/cdi-health-api.service.d/override.conf
+sudo cp /usr/share/cdi-health/examples/systemd/cdi-health-api.service.d/lan.conf \
+  /etc/systemd/system/cdi-health-api.service.d/lan.conf
 sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
 ```
 
 Use only on trusted lab networks.
+
+**Upgrades and removal:** `apt install ./cdi-health_<new>_all.deb` rebuilds the venv and restarts `cdi-health-api` if it is running. `apt remove cdi-health` stops and disables the service and deletes the venv (scan state in `/var/lib/cdi-health` is kept). The install fails loudly if the venv or its dependencies cannot be installed.
 
 **Verify grading:**
 
@@ -175,7 +185,7 @@ cdi-health --version
 sudo cdi-health scan
 ```
 
-Layout: **`/usr/local/bin/cdi-health`** and **`/usr/local/bin/cdi-health-api`**; Python venv under **`/opt/cdi-health/venv`** (created at install); systemd unit **`cdi-health-api.service`**. See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) for dashboard and sudoers options.
+Layout: **`/usr/local/bin/cdi-health`** and **`/usr/local/bin/cdi-health-api`**; Python venv under **`/opt/cdi-health/venv`** (created at install); systemd unit **`cdi-health-api.service`**; LAN drop-in and env examples under **`/usr/share/cdi-health/examples/`**. See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) for dashboard and sudoers options.
 
 ---
 
@@ -360,7 +370,7 @@ API reference: [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md). Systemd and sudoe
 | **[Testing](TESTING.md)**                                                                                    | Manual/hardware QA with mock data and real devices                                                                                                                                                               |
 | **[Contributing](CONTRIBUTING.md)**                                                                          | Contributions                                                                                                                                                                                                    |
 | **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)**                                                   | Docker Compose, GHCR `latest`, `.deb`, git + systemd, dashboard, troubleshooting                                                                                                                                |
-| **[Team testing (0.9.5)](docs/TEAM_TESTING.md)**                                                             | End-to-end validation: bench `.deb` + laptop Docker, LAN discover, live scans                                                                                                                                     |
+| **[Team testing](docs/TEAM_TESTING.md)**                                                                     | End-to-end validation: bench `.deb` + laptop Docker, LAN discover, live scans                                                                                                                                     |
 
 
 ---

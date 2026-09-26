@@ -46,10 +46,10 @@ cdi-health --version
 sudo systemctl enable --now cdi-health-api
 
 # Expose API on the lab network (requires token — see lan.conf drop-in)
-sudo cp /path/to/cdi-grading-tool/deploy/systemd/cdi-health-api.env.example /etc/default/cdi-health-api
-# edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN
+sudo cp /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
+# edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN (e.g. openssl rand -hex 32)
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
-sudo cp /path/to/cdi-grading-tool/deploy/systemd/cdi-health-api.service.d/lan.conf \
+sudo cp /usr/share/cdi-health/examples/systemd/cdi-health-api.service.d/lan.conf \
   /etc/systemd/system/cdi-health-api.service.d/lan.conf
 sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
 
@@ -58,6 +58,8 @@ sudo cdi-health scan
 ```
 
 **Pass criteria:** health JSON `status: ok` (full detail on loopback); scan shows real drive serials and grades. Token is required for LAN binds.
+
+**Upgrade check:** with the service running, `sudo apt install ./cdi-health_<newer>_all.deb` then `cdi-health --version` and `systemctl status cdi-health-api` — the service should have restarted on the new version.
 
 ---
 

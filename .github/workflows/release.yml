@@ -9,15 +9,24 @@ on:
       - "**"
   workflow_dispatch:
 
+# Default to a read-only token; only the jobs that publish (docker-publish,
+# release) request write scopes, and both only run for v* tags after tests pass.
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 defaults:
   run:
     shell: bash
 
 jobs:
+  # Gate: tagged releases (images + GitHub Release) never publish unless tests pass.
+  # ci.yml runs the full Python matrix; one leg is enough to gate here.
+  test:
+    name: 🧪 Pytest
+    uses: ./.github/workflows/pytest.yml
+    with:
+      python-versions: '["3.12"]'
+
   build:
     name: 📦 Build packages
     runs-on: ubuntu-latest
@@ -122,63 +131,44 @@ jobs:
             dist/*.rpm
           if-no-files-found: error
 
-  docker:
-    name: 🐳 Build Docker images
+  deb-smoke:
+    name: 🧪 .deb install (${{ matrix.image }})
     runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # System python3: 3.10 (Jammy) and 3.11 (Bookworm), the oldest runtimes we ship to.
+        image: ["ubuntu:22.04", "debian:bookworm"]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version
-        id: version
-        run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-            echo "push=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=0.9.0.dev0" >> "$GITHUB_OUTPUT"
-            echo "push=false" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-packages
+          path: dist/
 
-      - uses: docker/setup-qemu-action@v3
+      - name: Install, run, and remove the .deb
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD:/work:ro" -w /work "$IMAGE" \
+            bash scripts/deb-smoke-test.sh "$(ls dist/cdi-health_*_all.deb)"
+
+  # PRs / branches / manual runs: build amd64 images locally and smoke-run them.
+  docker-ci:
+    name: 🐳 Build Docker images
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    env:
+      VERSION: 0.0.0.dev0
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        if: steps.version.outputs.push == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker metadata (API)
-        if: steps.version.outputs.push == 'true'
-        id: meta-api
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/circulardrives/cdi-health-api
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-
-      - name: Build and push API image (release)
-        if: steps.version.outputs.push == 'true'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/Dockerfile.api
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-api.outputs.tags }}
-          labels: ${{ steps.meta-api.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=gha,scope=cdi-health-api
-          cache-to: type=gha,mode=max,scope=cdi-health-api
-
-      - name: Build API image (CI)
-        if: steps.version.outputs.push != 'true'
+      - name: Build API image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -188,36 +178,11 @@ jobs:
           load: true
           tags: ghcr.io/circulardrives/cdi-health-api:ci
           build-args: |
-            VERSION=${{ steps.version.outputs.version }}
+            VERSION=${{ env.VERSION }}
           cache-from: type=gha,scope=cdi-health-api
           cache-to: type=gha,mode=max,scope=cdi-health-api
 
-      - name: Docker metadata (dashboard)
-        if: steps.version.outputs.push == 'true'
-        id: meta-dashboard
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/circulardrives/cdi-health-dashboard
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-
-      - name: Build and push dashboard image (release)
-        if: steps.version.outputs.push == 'true'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/Dockerfile.dashboard
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-dashboard.outputs.tags }}
-          labels: ${{ steps.meta-dashboard.outputs.labels }}
-          cache-from: type=gha,scope=cdi-health-dashboard
-          cache-to: type=gha,mode=max,scope=cdi-health-dashboard
-
-      - name: Build dashboard image (CI)
-        if: steps.version.outputs.push != 'true'
+      - name: Build dashboard image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -229,15 +194,118 @@ jobs:
           cache-from: type=gha,scope=cdi-health-dashboard
           cache-to: type=gha,mode=max,scope=cdi-health-dashboard
 
-      - name: Verify API image (CI)
-        if: steps.version.outputs.push != 'true'
+      - name: Smoke-run API image
         run: |
-          # Bypass api-entrypoint (LAN token check) — only smoke-import the package.
-          docker run --rm --entrypoint python ghcr.io/circulardrives/cdi-health-api:ci \
-            -c "import cdi_health; import fastapi; print('ok')"
+          docker run -d --name cdi-api-smoke -p 127.0.0.1:8844:8844 \
+            -e CDI_HEALTH_API_TOKEN=ci-smoke-token \
+            ghcr.io/circulardrives/cdi-health-api:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8844/api/v1/health; then
+              echo
+              docker rm -f cdi-api-smoke >/dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API container did not become healthy within 30s"
+          docker logs cdi-api-smoke
+          exit 1
+
+  # Tagged releases only: multi-arch build + push to GHCR, gated on tests and
+  # the .deb install test so a broken tag never publishes images.
+  docker-publish:
+    name: 🐳 Publish Docker images
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [test, build, deb-smoke]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata (API)
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/circulardrives/cdi-health-api
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push API image
+        id: push-api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.api
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          tags: ${{ steps.meta-api.outputs.tags }}
+          labels: ${{ steps.meta-api.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=cdi-health-api
+          cache-to: type=gha,mode=max,scope=cdi-health-api
+
+      - name: Attest API image provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/circulardrives/cdi-health-api
+          subject-digest: ${{ steps.push-api.outputs.digest }}
+          push-to-registry: true
+
+      - name: Docker metadata (dashboard)
+        id: meta-dashboard
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/circulardrives/cdi-health-dashboard
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push dashboard image
+        id: push-dashboard
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.dashboard
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          tags: ${{ steps.meta-dashboard.outputs.tags }}
+          labels: ${{ steps.meta-dashboard.outputs.labels }}
+          cache-from: type=gha,scope=cdi-health-dashboard
+          cache-to: type=gha,mode=max,scope=cdi-health-dashboard
+
+      - name: Attest dashboard image provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/circulardrives/cdi-health-dashboard
+          subject-digest: ${{ steps.push-dashboard.outputs.digest }}
+          push-to-registry: true
 
       - name: Set GHCR package visibility to public
-        if: steps.version.outputs.push == 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -254,12 +322,27 @@ jobs:
     name: 🚀 Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: [build, docker]
+    needs: [test, build, deb-smoke, docker-publish]
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: release-packages
           path: dist/
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum -- *.whl *.tar.gz *.deb *.rpm > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attest release asset provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/cdi*
 
       - name: Prepare container release notes
         run: |
@@ -277,6 +360,13 @@ jobs:
             echo "# or pin remotely:"
             echo "CDI_VERSION=${version} ./scripts/docker-up.sh --bench <bench-ip>"
             echo '```'
+            echo
+            echo "## Verify downloads"
+            echo
+            echo '```bash'
+            echo "sha256sum --ignore-missing -c SHA256SUMS"
+            echo "gh attestation verify cdi-health_${version}_all.deb --repo ${GITHUB_REPOSITORY}"
+            echo '```'
           } > "$RUNNER_TEMP/release-containers.md"
 
       - name: Create GitHub Release
@@ -290,3 +380,4 @@ jobs:
             dist/*.tar.gz
             dist/*.deb
             dist/*.rpm
+            dist/SHA256SUMS

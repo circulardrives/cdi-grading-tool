@@ -30,7 +30,7 @@ That generates `deploy/docker/.env` (API token) if needed, pulls `ghcr.io/circul
 | Stop | `./scripts/docker-up.sh down` |
 | Reset (clear cached scans) | `./scripts/docker-up.sh reset` |
 | Port busy | `DASHBOARD_PORT=3001 ./scripts/docker-up.sh` |
-| Pin a release | `CDI_VERSION=0.11.0 ./scripts/docker-up.sh` |
+| Pin a release | `CDI_VERSION=<x.y.z> ./scripts/docker-up.sh` (tags on [Releases](https://github.com/circulardrives/cdi-grading-tool/releases)) |
 | Build from this clone | `./scripts/docker-up.sh --build` |
 | UI → remote bench | `./scripts/docker-up.sh --bench 192.168.0.74` |
 
@@ -84,17 +84,28 @@ Layout:
 - **`/usr/local/bin/cdi-health`** — CLI
 - **`/usr/local/bin/cdi-health-api`** — API entry point (includes FastAPI/uvicorn dependencies)
 - **`/opt/cdi-health/venv`** — Python venv created at install time (matches system `python3`, including 3.14+)
-- **`/opt/cdi-health/pkg`** — bundled wheel used by postinst
+- **`/opt/cdi-health/pkg`** — bundled wheel + `requirements-lock.txt` used by postinst
+- **`/usr/share/cdi-health/examples/`** — LAN drop-in (`systemd/cdi-health-api.service.d/lan.conf`) and `cdi-health-api.env.example`
+
+**Install-time network access:** postinst installs the locked Python dependencies with pip, so the bench needs to reach PyPI (or a mirror). If that fails, `apt` reports an error and the package stays unconfigured — fix the cause and run `sudo dpkg --configure -a`. For air-gapped benches, stage a wheelhouse (`pip download -r /opt/cdi-health/pkg/requirements-lock.txt -d /srv/wheelhouse` on a connected machine with the same Python version) and add to `/etc/pip.conf`:
+
+```ini
+[global]
+no-index = true
+find-links = /srv/wheelhouse
+```
+
+**Upgrades / removal:** installing a newer `.deb` rebuilds the venv and restarts `cdi-health-api` if it is running (a stopped or disabled service stays that way). `apt remove cdi-health` stops and disables the service and deletes `/opt/cdi-health/venv`; `/var/lib/cdi-health` (scan state) is kept.
 
 Systemd unit **`cdi-health-api.service`** may be installed under `/usr/lib/systemd/system/`; enable it if you want the API on boot (see below). It stores state in **`/var/lib/cdi-health`** and does not require a git clone.
 
 **LAN discovery:** the default unit binds to `127.0.0.1` only. For a bench to appear in **Discover** from a technician laptop, use the shipped LAN drop-in (requires a token in `/etc/default/cdi-health-api`):
 
 ```bash
-sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.env.example /etc/default/cdi-health-api
-# edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN to a strong random value
+sudo cp /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
+# edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN (e.g. openssl rand -hex 32)
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
-sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.service.d/lan.conf \
+sudo cp /usr/share/cdi-health/examples/systemd/cdi-health-api.service.d/lan.conf \
   /etc/systemd/system/cdi-health-api.service.d/lan.conf
 sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
 ```
