@@ -48,7 +48,6 @@ import { useFleetDevicesQuery, useMachinesQuery } from "@/hooks/use-cdi-queries"
 import { useSelfTestPolling } from "@/hooks/use-self-test-polling"
 import {
   hostHasAddress,
-  hostProblemMessage,
   machineStatusBadgeVariant,
   machineStatusLabel,
 } from "@/lib/host-utils"
@@ -62,9 +61,8 @@ type BenchOption = {
   value: string
   machineId: string | null
   name: string
+  /** Last known connection status; the live calls below have the final say. */
   status: string
-  /** Known connection problem from the last check or scan, if any. */
-  problem: string | null
 }
 
 const THIS_BENCH_OPTION: BenchOption = {
@@ -72,7 +70,6 @@ const THIS_BENCH_OPTION: BenchOption = {
   machineId: null,
   name: "This bench",
   status: "",
-  problem: null,
 }
 
 /** Benches with an address (self-tests run there), then "This bench" last. */
@@ -92,14 +89,12 @@ function useBenchOptions() {
             machineId: host.machine_id,
             name: host.name,
             status: host.status,
-            problem: hostProblemMessage(host.name, host.status, host.error),
           }))
       : machines.filter(hostHasAddress).map((host) => ({
           value: host.id,
           machineId: host.id,
           name: host.name,
           status: host.status,
-          problem: hostProblemMessage(host.name, host.status),
         }))
     return [...remote, THIS_BENCH_OPTION]
   }, [fleetQuery.data, machines])
@@ -186,12 +181,6 @@ export function SelfTestPage() {
               ) : null}
             </div>
           )}
-          {bench?.problem ? (
-            <p className="flex items-start gap-1.5 text-sm text-destructive">
-              <AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <span>{bench.problem}</span>
-            </p>
-          ) : null}
         </CardContent>
       </Card>
 
