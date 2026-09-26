@@ -31,7 +31,7 @@ const NETWORK_PATTERN =
   /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/
 
 /**
- * Parses "10.100.10.0/24, 10.100.194.0/24" (commas or spaces). Blank means
+ * Parses "192.168.0.0/24, 192.168.1.0/24" (commas or spaces). Blank means
  * "the network this dashboard is on". Returns a message a technician can act
  * on when something is off. The limits match what the search allows: up to 4
  * networks, each /24 or smaller.
@@ -55,7 +55,7 @@ export function parseNetworks(
     if (!match || octets.some((octet) => octet > 255)) {
       return {
         networks: null,
-        error: `“${item}” doesn't look like a network. Write it like 10.100.10.0/24.`,
+        error: `“${item}” doesn't look like a network. Write it like 192.168.0.0/24.`,
       }
     }
     const size = match[5] == null ? 32 : Number(match[5])
@@ -132,7 +132,7 @@ export function parseBenchAddress(
     return {
       address: null,
       error:
-        "That isn't an address. Write it like 10.100.10.57 or 10.100.10.57:8844.",
+        "That isn't an address. Write it like 192.168.0.21 or 192.168.0.21:8844.",
     }
   }
   return { address, error: null }

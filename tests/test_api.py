@@ -282,7 +282,7 @@ def test_api_health_minimal_when_unauthenticated_non_loopback(
     from cdi_health.api import app as app_module
 
     monkeypatch.setattr(app_module, "client_is_loopback", lambda _request: False)
-    monkeypatch.setattr(app_module.socket, "gethostname", lambda: "pecan09-101h")
+    monkeypatch.setattr(app_module.socket, "gethostname", lambda: "bench-01")
 
     response = token_client.get("/api/v1/health")
     assert response.status_code == 200
@@ -293,7 +293,7 @@ def test_api_health_minimal_when_unauthenticated_non_loopback(
         "status": "ok",
         "version": PACKAGE_VERSION,
         "auth_mode": "token",
-        "hostname": "pecan09-101h",
+        "hostname": "bench-01",
     }
 
 

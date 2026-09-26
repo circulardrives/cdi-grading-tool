@@ -167,7 +167,7 @@ class ApiState:
 
 
 def bench_hostname() -> str | None:
-    """This bench's own hostname (e.g. ``pecan09-101h``), shown by dashboards as the bench name.
+    """This bench's own hostname (e.g. ``bench-01``), shown by dashboards as the bench name.
 
     Not sensitive (reverse DNS and discovery already expose it), so it is part
     of the minimal unauthenticated ``/health`` payload too.

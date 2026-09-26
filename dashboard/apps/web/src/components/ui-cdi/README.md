@@ -34,7 +34,7 @@ Drive names and hours live in `lib/drive-names.ts` (pure, shared): `friendlyMode
 Link to a drive's full-screen page with `driveDetailsHref(row)` from
 `pages/drive-details/drive-details-href.ts` (`/drives/:benchKey/:serial?dev=<slot>`).
 | `countByGrade(devices)` | `{A, B, C, D, F, UNGRADED}` counts. |
-| `benchName(machine)` / `benchAddress(machine)` | Bench's own hostname (`remote_hostname`), else name, else address / "10.100.10.57". |
+| `benchName(machine)` / `benchAddress(machine)` | Bench's own hostname (`remote_hostname`), else name, else address / "192.168.0.21". |
 | `useBenchNames()` | `(machineId, fallback) => name` for drive rows and fleet hosts; `machineId` null = this bench (its `/health` hostname). |
 | `BenchLabel({ machine })` | Bold name with the IP small underneath. |
 | `BenchStatusPill({ status, scanning? })` | Online / Scanning… / Can't reach / Needs access token / Unknown. |

@@ -245,7 +245,7 @@ export function FindBenchesCard({
               value={networks}
               onChange={(event) => setNetworks(event.target.value)}
               onBlur={() => setTouched(true)}
-              placeholder="For example 10.100.10.0/24, 10.100.194.0/24"
+              placeholder="For example 192.168.0.0/24, 192.168.1.0/24"
               spellCheck={false}
               autoComplete="off"
               disabled={searching}

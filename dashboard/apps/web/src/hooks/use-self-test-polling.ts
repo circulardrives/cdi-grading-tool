@@ -32,7 +32,7 @@ import type { SelfTestStatusResponse } from "@/lib/types"
 type UseSelfTestBenchOptions = {
   /** Registered bench to run on; `null` = the bench serving this dashboard. */
   machineId: string | null
-  /** Plain name for messages ("pecan09", "this bench"). */
+  /** Plain name for messages ("bench-01", "this bench"). */
   benchName: string
 }
 

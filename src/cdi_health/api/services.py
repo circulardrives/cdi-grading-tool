@@ -772,7 +772,7 @@ def _write_report(
 
 
 def saved_scans_source_label(hosts: list[dict[str, Any]]) -> str:
-    """``Saved scans — pecan09 (2026-09-26 08:59 UTC), pecan10 (…)``."""
+    """``Saved scans — bench-01 (2026-09-26 08:59 UTC), bench-02 (…)``."""
     parts = [f"{host['name']} ({format_scan_time(host.get('scanned_at'))})" for host in hosts]
     return "Saved scans — " + ", ".join(parts)
 

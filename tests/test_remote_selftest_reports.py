@@ -220,12 +220,12 @@ def test_fleet_report_uses_stored_scans_and_preserves_grades(
     api_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     device, rescored_grade = _graded_device_with_recorded_grade("D", 42)
-    pecan09 = _register(api_client, "pecan09", "10.0.0.9:8844")
-    pecan10 = _register(api_client, "pecan10", "10.0.0.10:8844")
-    _store_remote_scan(api_client, pecan09["id"], [device], "2026-09-26T08:59:00+00:00")
+    bench_01 = _register(api_client, "bench-01", "10.0.0.9:8844")
+    bench_02 = _register(api_client, "bench-02", "10.0.0.10:8844")
+    _store_remote_scan(api_client, bench_01["id"], [device], "2026-09-26T08:59:00+00:00")
     _store_remote_scan(
         api_client,
-        pecan10["id"],
+        bench_02["id"],
         [{**device, "serial_number": "OTHER-SERIAL"}],
         "2026-09-26T09:30:00+00:00",
     )
@@ -242,11 +242,11 @@ def test_fleet_report_uses_stored_scans_and_preserves_grades(
     body = response.json()
     assert body["source"] == "fleet"
     assert body["devices_count"] == 2
-    assert {h["name"] for h in body["hosts"]} == {"pecan09", "pecan10"}
+    assert {h["name"] for h in body["hosts"]} == {"bench-01", "bench-02"}
     assert all(h["device_count"] == 1 for h in body["hosts"])
 
     rows = _csv_rows(api_client, body["filename"])
-    assert {row["Host"] for row in rows} == {"pecan09", "pecan10"}
+    assert {row["Host"] for row in rows} == {"bench-01", "bench-02"}
     assert all(row["Grade"] == "D" and row["Health score"] == "42" for row in rows)
     assert rescored_grade not in {row["Grade"] for row in rows}
     assert {row["Scanned at"] for row in rows} == {"2026-09-26 08:59 UTC", "2026-09-26 09:30 UTC"}
@@ -258,14 +258,14 @@ def test_fleet_html_report_has_host_columns_and_source_line(
     api_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     device, rescored_grade = _graded_device_with_recorded_grade("B", 80)
-    pecan09 = _register(api_client, "pecan09", "10.0.0.9:8844")
-    _store_remote_scan(api_client, pecan09["id"], [device], "2026-09-26T08:59:00+00:00")
+    bench_01 = _register(api_client, "bench-01", "10.0.0.9:8844")
+    _store_remote_scan(api_client, bench_01["id"], [device], "2026-09-26T08:59:00+00:00")
     _forbid_local_scans(monkeypatch)
 
     response = api_client.post("/api/v1/reports", json={"source": "fleet", "format": "html"})
     assert response.status_code == 200, response.text
     html = api_client.get(f"/api/v1/reports/{response.json()['filename']}").text
-    assert "Source: Saved scans — pecan09 (2026-09-26 08:59 UTC)" in html
+    assert "Source: Saved scans — bench-01 (2026-09-26 08:59 UTC)" in html
     assert "<th>Host</th><th>Scanned at</th>" in html
     assert 'title="Host"' in html  # advanced table header
     assert "Grade B" in html
@@ -314,7 +314,7 @@ def test_history_report_validation(api_client: TestClient) -> None:
 
 
 def test_fleet_report_without_devices_is_400(api_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    _register(api_client, "pecan09", "10.0.0.9:8844")
+    _register(api_client, "bench-01", "10.0.0.9:8844")
     _forbid_local_scans(monkeypatch)
     response = api_client.post("/api/v1/reports", json={"source": "fleet"})
     assert response.status_code == 400
@@ -391,7 +391,7 @@ def test_report_index_is_capped(tmp_path: Path) -> None:
 
 
 def test_forwarded_selftest_start_status_jobs_abort(api_client: TestClient, bench: FakeBench) -> None:
-    machine = _register(api_client, "pecan09", bench.address)
+    machine = _register(api_client, "bench-01", bench.address)
     runtime = api_client.app.state.runtime
     # The local hardware lock is never taken for forwarded calls.
     assert runtime.hardware_lock.acquire(blocking=False)

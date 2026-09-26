@@ -43,7 +43,7 @@ export function ScanReportMenu({
   label,
 }: {
   scanId: string
-  /** Accessible name, e.g. "Report on pecan09, 9:00 AM". */
+  /** Accessible name, e.g. "Report on bench-01, 9:00 AM". */
   label: string
 }) {
   const { makeReport, isBusy } = useScanReport()

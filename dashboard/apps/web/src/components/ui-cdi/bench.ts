@@ -3,8 +3,8 @@
  * This is the single home for bench error → message wording; lib/host-utils.ts
  * re-exports the older names for pages that still import them.
  *
- * - `benchName(machine)`        → "pecan09-101h" (bench's own hostname, else name, else address)
- * - `benchAddress(machine)`     → "10.100.10.57" (shown small under the name)
+ * - `benchName(machine)`        → "bench-01" (bench's own hostname, else name, else address)
+ * - `benchAddress(machine)`     → "192.168.0.21" (shown small under the name)
  * - `fleetHostName(host, …)`    → name for a FleetHost row (the dashboard's own bench too)
  * - `benchStatus(status, …)`    → "online" | "scanning" | "unreachable" | "needs_token" | "unknown"
  * - `benchProblem(name, …)`     → { tone, text } one actionable line, or null when fine
@@ -38,7 +38,7 @@ export function benchAddress(
 
 function shortHostname(value: string): string {
   const trimmed = value.trim()
-  // "pecan09-101h.lab.example" → "pecan09-101h"; never shorten an IP.
+  // "bench-01.lab.example" → "bench-01"; never shorten an IP.
   if (!trimmed || IPV4.test(trimmed)) {
     return trimmed
   }

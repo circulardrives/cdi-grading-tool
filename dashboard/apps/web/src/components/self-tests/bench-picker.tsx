@@ -1,5 +1,5 @@
 /**
- * Segmented control of benches for the Self-tests page (mockup: pecan09 | pecan10).
+ * Segmented control of benches for the Self-tests page (mockup: bench-01 | bench-02).
  * Real toggle buttons (aria-pressed), 44px tall, keyboard reachable.
  */
 import { cn } from "@workspace/ui/lib/utils"

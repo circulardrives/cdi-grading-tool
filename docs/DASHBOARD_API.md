@@ -23,7 +23,7 @@
 
 ## HTTP Endpoints
 
-- `GET /api/v1/health` — always returns `{status, version, hostname}` (`hostname` is the bench's own `socket.gethostname()`, e.g. `pecan09-101h`; not sensitive, so it is in the minimal payload too); full diagnostics when auth is disabled, or with a valid token / loopback client when auth is enabled
+- `GET /api/v1/health` — always returns `{status, version, hostname}` (`hostname` is the bench's own `socket.gethostname()`, e.g. `bench-01`; not sensitive, so it is in the minimal payload too); full diagnostics when auth is disabled, or with a valid token / loopback client when auth is enabled
 - `POST /api/v1/scan` — optional `machine_id` associates the scan with a registered host (unknown id → 404); when that machine has an `address` the scan **runs on the remote host** (see [Remote Hosts](#remote-hosts)); optional `grading_profile` (`binary` | `abcdf`, like `--grading-profile`); successful scans are appended to scan history. Responses carry `machine_id`, `executed_on` (`"local"` | `"remote"`), and `remote_address` (remote only)
 - `GET /api/v1/devices` — optional `machine_id` returns cached scan for that host; `refresh=true` rescans (forwarded to the remote host when the machine has an `address`) and appends history
 - `GET /api/v1/fleet/devices` — aggregated drives across all remote hosts plus this API's own latest scan; `refresh=true` rescans every remote host first
@@ -98,7 +98,7 @@ or `GET /api/v1/jobs/{job_id}` until `in_progress` is false, then read
 
 **Recorded grades are preserved.** Devices in stored scans already carry `health_score`, `health_grade` / `final_grade`, `health_deductions`, certification fields, etc. Saved-scan reports render those as recorded (`ReportGenerator(preserve_grades=True)`); they are **not** re-scored with the current thresholds. The `cdi-health report` CLI and `source: "scan"` score fresh devices as before.
 
-**Host columns.** Saved-scan reports tag every device with its host, and the HTML (simple and advanced tables) and CSV gain **Host** and **Scanned at** (`YYYY-MM-DD HH:MM UTC`) columns right after **Serial**. Fresh single-host scans keep the original layout. The HTML header shows a **Source** line: `Saved scans — pecan09 (2026-09-26 08:59 UTC), pecan10 (…)` or `Fresh scan on this bench`. Scan-history entries of a deleted machine are labelled `Removed host <id-prefix>`; scans of this API's own drives are `Local API`.
+**Host columns.** Saved-scan reports tag every device with its host, and the HTML (simple and advanced tables) and CSV gain **Host** and **Scanned at** (`YYYY-MM-DD HH:MM UTC`) columns right after **Serial**. Fresh single-host scans keep the original layout. The HTML header shows a **Source** line: `Saved scans — bench-01 (2026-09-26 08:59 UTC), bench-02 (…)` or `Fresh scan on this bench`. Scan-history entries of a deleted machine are labelled `Removed host <id-prefix>`; scans of this API's own drives are `Local API`.
 
 Response (`ReportResponse`):
 
@@ -111,8 +111,8 @@ Response (`ReportResponse`):
   "devices_count": 16,
   "source": "fleet",
   "hosts": [
-    { "name": "pecan09", "machine_id": "…", "scanned_at": "2026-09-26T08:59:00+00:00", "device_count": 8 },
-    { "name": "pecan10", "machine_id": "…", "scanned_at": "2026-09-26T09:30:00+00:00", "device_count": 8 }
+    { "name": "bench-01", "machine_id": "…", "scanned_at": "2026-09-26T08:59:00+00:00", "device_count": 8 },
+    { "name": "bench-02", "machine_id": "…", "scanned_at": "2026-09-26T09:30:00+00:00", "device_count": 8 }
   ]
 }
 ```
@@ -193,8 +193,8 @@ Sends `GET <remote>/api/v1/health` and then `GET <remote>/api/v1/jobs?limit=1`, 
 
 ```json
 {
-  "machine": { "id": "…", "status": "reachable", "remote_version": "0.9.0", "remote_hostname": "pecan09-101h", "has_api_token": true, "…": "…" },
-  "health": { "status": "ok", "version": "0.9.0", "hostname": "pecan09-101h", "is_root": true, "api_token_enabled": true },
+  "machine": { "id": "…", "status": "reachable", "remote_version": "0.9.0", "remote_hostname": "bench-01", "has_api_token": true, "…": "…" },
+  "health": { "status": "ok", "version": "0.9.0", "hostname": "bench-01", "is_root": true, "api_token_enabled": true },
   "error": null
 }
 ```

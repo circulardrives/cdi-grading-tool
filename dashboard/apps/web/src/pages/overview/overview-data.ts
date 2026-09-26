@@ -201,7 +201,7 @@ function plural(count: number, word: string, many = `${word}s`): string {
   return `${count} ${count === 1 ? word : many}`
 }
 
-/** "14 drives on 2 benches" / "8 drives on pecan09". */
+/** "14 drives on 2 benches" / "8 drives on bench-01". */
 export function headline(
   driveCount: number,
   benches: OverviewBench[],

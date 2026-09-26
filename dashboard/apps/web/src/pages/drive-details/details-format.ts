@@ -220,7 +220,7 @@ export function dateStamp(iso: string | null | undefined): string {
   return `${valid.getFullYear()}-${pad(valid.getMonth() + 1)}-${pad(valid.getDate())}`
 }
 
-/** Safe file-name part: "pecan09 101h" → "pecan09-101h". */
+/** Safe file-name part: "bench 01" → "bench-01". */
 export function fileSlug(text: string): string {
   return (
     text

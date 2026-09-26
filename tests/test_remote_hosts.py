@@ -64,7 +64,7 @@ class FakeRemote:
     def __init__(self, token: str | None = REMOTE_TOKEN) -> None:
         self.token = token
         # None mimics an older API whose /health has no hostname.
-        self.hostname: str | None = "pecan09-101h"
+        self.hostname: str | None = "bench-01"
         self.scan_status = 200
         self.scan_payload: Any = REMOTE_SCAN
         self.scan_delay = 0.0
@@ -478,26 +478,26 @@ def test_check_auth_failed_with_wrong_or_missing_token(api_client: TestClient, f
         assert body["machine"]["status"] == "auth_failed"
         assert body["machine"]["remote_auth"] == "token"
         assert body["error"] == f"Host 'Bench {token}' rejected the API token"
-        assert body["health"] == {"status": "ok", "version": "9.9.9", "hostname": "pecan09-101h"}
+        assert body["health"] == {"status": "ok", "version": "9.9.9", "hostname": "bench-01"}
         # The hostname is public, so it is recorded even when the token is wrong.
-        assert body["machine"]["remote_hostname"] == "pecan09-101h"
+        assert body["machine"]["remote_hostname"] == "bench-01"
 
 
 def test_check_records_remote_hostname(api_client: TestClient, fake_remote: FakeRemote) -> None:
     machine = _register(api_client, "10.0.0.5", fake_remote.address)
     assert machine["remote_hostname"] is None
     body = api_client.post(f"/api/v1/machines/{machine['id']}/check").json()
-    assert body["machine"]["remote_hostname"] == "pecan09-101h"
+    assert body["machine"]["remote_hostname"] == "bench-01"
     # The user-chosen name is never overwritten; dashboards decide what to show.
     assert body["machine"]["name"] == "10.0.0.5"
     listed = api_client.get("/api/v1/machines").json()
-    assert [m["remote_hostname"] for m in listed] == ["pecan09-101h"]
+    assert [m["remote_hostname"] for m in listed] == ["bench-01"]
 
     # An older API without hostname keeps the last known value.
     fake_remote.hostname = None
     body = api_client.post(f"/api/v1/machines/{machine['id']}/check").json()
     assert "hostname" not in body["health"] or body["health"]["hostname"] is None
-    assert body["machine"]["remote_hostname"] == "pecan09-101h"
+    assert body["machine"]["remote_hostname"] == "bench-01"
 
 
 def test_no_auth_remote_is_reachable_without_stored_token(api_client: TestClient) -> None:

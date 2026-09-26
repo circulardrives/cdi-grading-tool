@@ -226,7 +226,7 @@ export function AddBenchDialog({
                 setAddress(value)
                 setAddressError(null)
               }}
-              placeholder="10.100.10.57"
+              placeholder="192.168.0.21"
               error={addressError}
               mono
               disabled={saving}
@@ -237,7 +237,7 @@ export function AddBenchDialog({
               optional
               value={name}
               onChange={setName}
-              placeholder="pecan09"
+              placeholder="bench-01"
               description="Only used if the bench doesn't report its own name."
               disabled={saving}
             />

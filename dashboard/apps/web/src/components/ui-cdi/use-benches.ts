@@ -88,7 +88,7 @@ export function useBenchNames(): (
 export type LastScan = {
   /** Newest scan time, or null when nothing was scanned yet. */
   at: Date | null
-  /** Which benches that covers: "both benches", "all 5 benches", "pecan09", … */
+  /** Which benches that covers: "both benches", "all 5 benches", "bench-01", … */
   label: string
 }
 

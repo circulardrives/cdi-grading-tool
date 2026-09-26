@@ -306,7 +306,7 @@ function FormatChoice({
   )
 }
 
-/** "pecan09 at 9:00 AM · pecan10 at 9:00 AM" (+N more). */
+/** "bench-01 at 9:00 AM · bench-02 at 9:00 AM" (+N more). */
 function benchesLine(hosts: FleetHost[], nameOf: (host: FleetHost) => string) {
   const parts = hosts
     .slice(0, MAX_NAMED_BENCHES)

@@ -80,7 +80,7 @@ export function localReportsAsList(
 /** Bench name for a report host; pass useBenchNames() so this bench isn't "Local API". */
 export type ReportHostName = (host: ReportHost) => string
 
-/** "pecan09, pecan10" (or "pecan09, pecan10 +3 more"); "—" when unknown. */
+/** "bench-01, bench-02" (or "bench-01, bench-02 +3 more"); "—" when unknown. */
 export function formatReportBenches(
   hosts: ReportHost[] | null | undefined,
   max = 3,

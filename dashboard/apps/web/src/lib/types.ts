@@ -156,7 +156,7 @@ export type AuthMode = "none" | "token"
 export type HealthResponse = {
   status: string
   version?: string
-  /** The bench's own hostname (e.g. "pecan09-101h"). Older APIs omit it. */
+  /** The bench's own hostname (e.g. "bench-01"). Older APIs omit it. */
   hostname?: string | null
   is_root?: boolean
   allow_non_root_mode?: boolean
