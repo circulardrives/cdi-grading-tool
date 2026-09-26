@@ -66,12 +66,5 @@ D Advisory, F Do not reuse, ? Couldn't grade. Problems say what to do next.
 
 ## What each page agent replaces
 
-Pages under `src/pages/*.tsx` currently wrap the old pages in `src/pages/legacy/`.
-Replace the wrapper body, then delete the legacy file (and `components/page-header.tsx`
 once nothing imports it).
 
-- **Overview** (`overview-page.tsx` ← `legacy/dashboard-page`): headline, grade bar + legend, bench cards, "Worth a look" (non-A + `driveNote`).
-- **Drives** (`drives-page.tsx` ← `legacy/drive-health-page`): one list with search/filters, detail panel with "Why B" (`gradeReason`) and `StatTile`s.
-- **Benches** (`benches-page.tsx` ← `legacy/hosts-page` + `legacy/discover-page`): Find benches card (`emphasis`), bench table with `BenchLabel`, `BenchStatusPill`, `BenchProblemLine`. Run a check after adding a bench so `remote_hostname` fills in.
-- **Self-tests** (`self-tests-page.tsx` ← `legacy/self-test-page`): bench toggle, drive checkboxes, start short/extended.
-- **Reports** (`reports-page.tsx` ← `legacy/reports-page` + `legacy/history-page`): New report + Recent reports; "Scan history" tab (`?tab=history`), saved scan at `/reports/history/:scanId`.
