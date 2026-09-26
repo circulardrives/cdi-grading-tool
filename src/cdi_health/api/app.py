@@ -45,7 +45,9 @@ from cdi_health.api.remote import (
     forwarded_scan_body,
     remote_auth_mode,
 )
+from cdi_health.api.reports_index import ReportIndexStore
 from cdi_health.api.schemas import (
+    REPORT_MAX_HISTORY_IDS,
     DiscoverRequest,
     DiscoverResponse,
     FleetDevicesResponse,
@@ -57,6 +59,7 @@ from cdi_health.api.schemas import (
     MachineCreate,
     MachineResponse,
     MachineUpdate,
+    ReportListEntry,
     ReportRequest,
     ReportResponse,
     ScanRequest,
@@ -78,9 +81,12 @@ from cdi_health.api.security import (
     warn_if_auth_disabled,
 )
 from cdi_health.api.services import (
+    LOCAL_HOST_NAME,
+    NO_SAVED_SCANS_DETAIL,
     abort_selftest,
     apply_scan_defaults,
     generate_report,
+    generate_report_from_scans,
     get_selftest_status,
     http_error_detail,
     media_type_for_report,
@@ -97,7 +103,6 @@ logger = logging.getLogger(__name__)
 SELFTEST_MAX_WORKERS = 2
 # Max remote hosts scanned concurrently by GET /api/v1/fleet/devices?refresh=true.
 FLEET_REFRESH_MAX_WORKERS = 4
-LOCAL_HOST_NAME = "Local API"
 SUMMARY_KEYS = ("total", "healthy", "warning", "failed", "ungraded")
 # Report the installed cdi_health package version (setuptools-scm), same as `cdi-health --version`.
 API_VERSION = PACKAGE_VERSION
@@ -131,7 +136,8 @@ class ApiState:
             thread_name_prefix="cdi-selftest",
         )
         self.latest_scan: dict | None = None
-        self.report_paths: set[str] = set()
+        # Persisted (reports/index.json): listing and downloads survive restarts.
+        self.report_index = ReportIndexStore()
         self.lock = Lock()
         self.last_discover_at: float | None = None
         self.discover_in_progress = False
@@ -430,9 +436,51 @@ def create_app() -> FastAPI:
         """
         return _fleet_response(refresh=True)
 
-    def _fleet_response(*, refresh: bool) -> FleetDevicesResponse:
+    def _remote_machines() -> list[dict[str, Any]]:
+        return [m for m in app.state.runtime.machine_store.list_machines() if _is_remote(m)]
+
+    def _fleet_host_scans(
+        remote_machines: list[dict[str, Any]],
+        errors: dict[str, str],
+    ) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
+        """(host, latest stored scan) for this API (if it has devices) and every remote host."""
         runtime = app.state.runtime
-        remote_machines = [m for m in runtime.machine_store.list_machines() if _is_remote(m)]
+        pairs: list[tuple[dict[str, Any], dict[str, Any] | None]] = []
+        with runtime.lock:
+            local_scan = runtime.latest_scan
+        if local_scan and local_scan.get("devices"):
+            pairs.append(
+                (
+                    {
+                        "machine_id": None,
+                        "name": LOCAL_HOST_NAME,
+                        "address": None,
+                        "status": "reachable",
+                        "error": None,
+                        "executed_on": "local",
+                    },
+                    local_scan,
+                )
+            )
+        for listed in remote_machines:
+            machine = runtime.machine_store.get_machine(listed["id"]) or listed
+            pairs.append(
+                (
+                    {
+                        "machine_id": machine["id"],
+                        "name": machine["name"],
+                        "address": machine["address"],
+                        "status": machine.get("status") or "unknown",
+                        "error": errors.get(machine["id"]),
+                        "executed_on": "remote",
+                    },
+                    runtime.machine_store.get_scan(machine["id"]),
+                )
+            )
+        return pairs
+
+    def _fleet_response(*, refresh: bool) -> FleetDevicesResponse:
+        remote_machines = _remote_machines()
 
         errors: dict[str, str] = _refresh_fleet(remote_machines) if refresh and remote_machines else {}
 
@@ -462,34 +510,8 @@ def create_app() -> FastAPI:
                     )
             hosts.append(host)
 
-        with runtime.lock:
-            local_scan = runtime.latest_scan
-        if local_scan and local_scan.get("devices"):
-            _add_host(
-                {
-                    "machine_id": None,
-                    "name": LOCAL_HOST_NAME,
-                    "address": None,
-                    "status": "reachable",
-                    "error": None,
-                    "executed_on": "local",
-                },
-                local_scan,
-            )
-
-        for listed in remote_machines:
-            machine = runtime.machine_store.get_machine(listed["id"]) or listed
-            _add_host(
-                {
-                    "machine_id": machine["id"],
-                    "name": machine["name"],
-                    "address": machine["address"],
-                    "status": machine.get("status") or "unknown",
-                    "error": errors.get(machine["id"]),
-                    "executed_on": "remote",
-                },
-                runtime.machine_store.get_scan(machine["id"]),
-            )
+        for host, scan_result in _fleet_host_scans(remote_machines, errors):
+            _add_host(host, scan_result)
 
         return FleetDevicesResponse.model_validate(
             {
@@ -773,19 +795,77 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Job not found")
         return JobResponse.model_validate(job.to_dict())
 
+    def _history_host_name(machine_id: str | None) -> str:
+        if not machine_id:
+            return LOCAL_HOST_NAME
+        machine = app.state.runtime.machine_store.get_machine(machine_id)
+        return machine["name"] if machine else f"Removed host {machine_id[:8]}"
+
+    def _saved_scans_for_report(request: ReportRequest) -> list[dict[str, Any]]:
+        """Stored scans for a fleet/history report ({name, machine_id, scanned_at, devices})."""
+        runtime = app.state.runtime
+        if request.source == "fleet":
+            return [
+                {
+                    "name": host["name"],
+                    "machine_id": host["machine_id"],
+                    "scanned_at": scan_result.get("scanned_at"),
+                    "devices": scan_result.get("devices") or [],
+                }
+                for host, scan_result in _fleet_host_scans(_remote_machines(), {})
+                if scan_result
+            ]
+
+        ids = list(dict.fromkeys(request.history_ids or []))
+        if not ids:
+            raise HTTPException(status_code=400, detail="history_ids is required for source=history")
+        if len(ids) > REPORT_MAX_HISTORY_IDS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"At most {REPORT_MAX_HISTORY_IDS} history_ids per report",
+            )
+        scans: list[dict[str, Any]] = []
+        for scan_id in ids:
+            entry = runtime.history_store.get_scan(scan_id)
+            if entry is None:
+                raise HTTPException(status_code=404, detail=f"Scan history entry not found: {scan_id[:64]}")
+            scans.append(
+                {
+                    "name": _history_host_name(entry.get("machine_id")),
+                    "machine_id": entry.get("machine_id"),
+                    "scanned_at": entry.get("scanned_at"),
+                    "devices": entry.get("devices") or [],
+                }
+            )
+        return scans
+
     @app.post("/api/v1/reports", response_model=ReportResponse)
     def report(request: ReportRequest, _: None = Depends(verify_api_token)) -> ReportResponse:
+        """Generate a report from a fresh local scan (source=scan) or stored scans.
+
+        fleet / history reports never rescan and never take the hardware lock.
+        """
         runtime = app.state.runtime
         try:
-            with runtime.hardware_session():
-                result = generate_report(request)
-            with runtime.lock:
-                runtime.report_paths.add(result["output_file"])
+            if request.source == "scan":
+                with runtime.hardware_session():
+                    result = generate_report(request)
+            else:
+                scans = _saved_scans_for_report(request)
+                if not any(scan["devices"] for scan in scans):
+                    raise HTTPException(status_code=400, detail=NO_SAVED_SCANS_DETAIL)
+                result = generate_report_from_scans(request, scans)
+            runtime.report_index.add(result)
             return ReportResponse.model_validate(result)
-        except HardwareBusyError:
+        except (HTTPException, HardwareBusyError):
             raise
         except Exception as exc:
             _raise_mapped(exc, context="report")
+
+    @app.get("/api/v1/reports", response_model=list[ReportListEntry])
+    def list_reports(_: None = Depends(verify_api_token)) -> list[ReportListEntry]:
+        """Generated reports, newest first (persisted index; missing files are skipped)."""
+        return [ReportListEntry.model_validate(record) for record in app.state.runtime.report_index.list()]
 
     @app.get("/api/v1/reports/{filename}")
     def download_report(
@@ -793,8 +873,7 @@ def create_app() -> FastAPI:
         download: bool = False,
         _: None = Depends(verify_api_token),
     ) -> FileResponse:
-        with app.state.runtime.lock:
-            registered = set(app.state.runtime.report_paths)
+        registered = app.state.runtime.report_index.paths()
         try:
             report_path = resolve_report_file(filename, registered_paths=registered)
         except ValueError as exc:
