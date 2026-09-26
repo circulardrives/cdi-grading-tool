@@ -1,65 +1,101 @@
-import { ScanSearchIcon } from "lucide-react"
+/**
+ * "Scan all benches": the primary action in the header on every page, and
+ * the global progress bar under the header while it runs. The in-progress
+ * state is shared through the react-query mutation key, so every page sees it.
+ */
+import { ScanLineIcon } from "lucide-react"
 
 import { Button } from "@workspace/ui/components/button"
 import { Spinner } from "@workspace/ui/components/spinner"
+import { cn } from "@workspace/ui/lib/utils"
 
-import {
-  useScanAllHostsMutation,
-  useScanAllStatus,
-} from "@/hooks/use-cdi-queries"
+import { useScanAllBenches, useScanAllStatus } from "@/hooks/use-cdi-queries"
 import { formatElapsed } from "@/lib/host-utils"
 
-type ScanAllHostsButtonProps = {
+type ScanAllBenchesButtonProps = {
   size?: "default" | "sm" | "lg"
   disabled?: boolean
+  className?: string
+  /** Shorter label ("Scan all") for narrow screens. */
+  compact?: boolean
 }
 
-/** The main "Scan all hosts" action; shares its in-progress state across pages. */
-export function ScanAllHostsButton({
+export function ScanAllBenchesButton({
   size = "default",
   disabled = false,
-}: ScanAllHostsButtonProps) {
-  const scanAll = useScanAllHostsMutation()
-  const { pending } = useScanAllStatus()
+  className,
+  compact = false,
+}: ScanAllBenchesButtonProps) {
+  const { start, pending } = useScanAllBenches()
+  const idleLabel = compact ? "Scan all" : "Scan all benches"
 
   return (
     <Button
       size={size}
-      onClick={() => scanAll.mutate()}
+      className={className}
+      onClick={start}
       disabled={pending || disabled}
     >
       {pending ? (
-        <Spinner data-icon="inline-start" />
+        <Spinner
+          data-icon="inline-start"
+          role="presentation"
+          aria-hidden="true"
+        />
       ) : (
-        <ScanSearchIcon data-icon="inline-start" />
+        <ScanLineIcon data-icon="inline-start" />
       )}
-      {pending ? "Scanning all hosts…" : "Scan all hosts"}
+      {pending ? "Scanning…" : idleLabel}
     </Button>
   )
 }
 
-/** Progress line shown while every host is being scanned. */
-export function ScanAllHostsProgress({ hostCount }: { hostCount?: number }) {
+/** Progress line shown under the header while every bench is being scanned. */
+export function ScanAllProgressBar({
+  benchCount,
+  thisBenchOnly = false,
+  className,
+}: {
+  benchCount?: number
+  /** The run scans only the bench this dashboard runs on. */
+  thisBenchOnly?: boolean
+  className?: string
+}) {
   const { pending, elapsedSeconds } = useScanAllStatus()
   if (!pending) {
     return null
   }
-  const hosts =
-    hostCount && hostCount > 0
-      ? `${hostCount} host${hostCount === 1 ? "" : "s"}`
-      : "all hosts"
+  const benches = thisBenchOnly
+    ? "this bench"
+    : benchCount && benchCount > 0
+      ? `${benchCount} bench${benchCount === 1 ? "" : "es"}`
+      : "all benches"
 
   return (
     <div
-      className="text-muted-foreground flex items-center gap-2 text-sm"
+      className={cn(
+        "flex items-center gap-2.5 bg-accent px-8 py-2.5 text-[15px] text-accent-foreground max-md:px-4",
+        className
+      )}
       role="status"
       aria-live="polite"
     >
-      <Spinner />
+      <Spinner role="presentation" aria-hidden="true" />
       <span>
-        Scanning {hosts} · {formatElapsed(elapsedSeconds)} elapsed. This can take a few
-        minutes — you can keep using the dashboard, results appear here when done.
+        <span className="font-semibold">
+          Scanning {benches} · {formatElapsed(elapsedSeconds)}
+        </span>{" "}
+        — this can take a few minutes. Keep working; results appear when it's
+        done.
       </span>
     </div>
   )
+}
+
+/** @deprecated Old name; the header owns this button now. Pages should not render it. */
+export const ScanAllHostsButton = ScanAllBenchesButton
+
+/** @deprecated The shell shows progress globally; pages render nothing here. */
+export function ScanAllHostsProgress(_props: { hostCount?: number }) {
+  return null
 }

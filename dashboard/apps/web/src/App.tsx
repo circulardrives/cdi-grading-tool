@@ -1,45 +1,39 @@
 import { lazy, Suspense } from "react"
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useParams,
+} from "react-router-dom"
 
 import { Spinner } from "@workspace/ui/components/spinner"
 
 import { AppLayout } from "@/components/app-layout"
 
-const DashboardPage = lazy(() =>
-  import("@/pages/dashboard-page").then((m) => ({ default: m.DashboardPage }))
+const OverviewPage = lazy(() =>
+  import("@/pages/overview-page").then((m) => ({ default: m.OverviewPage }))
 )
-const DiscoverPage = lazy(() =>
-  import("@/pages/discover-page").then((m) => ({ default: m.DiscoverPage }))
+const DrivesPage = lazy(() =>
+  import("@/pages/drives-page").then((m) => ({ default: m.DrivesPage }))
 )
-const DriveHealthPage = lazy(() =>
-  import("@/pages/drive-health-page").then((m) => ({ default: m.DriveHealthPage }))
+const BenchesPage = lazy(() =>
+  import("@/pages/benches-page").then((m) => ({ default: m.BenchesPage }))
 )
-const HistoryPage = lazy(() =>
-  import("@/pages/history-page").then((m) => ({ default: m.HistoryPage }))
-)
-const HostsPage = lazy(() =>
-  import("@/pages/hosts-page").then((m) => ({ default: m.HostsPage }))
+const SelfTestsPage = lazy(() =>
+  import("@/pages/self-tests-page").then((m) => ({
+    default: m.SelfTestsPage,
+  }))
 )
 const ReportsPage = lazy(() =>
   import("@/pages/reports-page").then((m) => ({ default: m.ReportsPage }))
 )
-const ScanPage = lazy(() =>
-  import("@/pages/scan-page").then((m) => ({ default: m.ScanPage }))
+const SavedScanPage = lazy(() =>
+  import("@/pages/reports-page").then((m) => ({ default: m.SavedScanPage }))
 )
-const SelfTestPage = lazy(() =>
-  import("@/pages/self-test-page").then((m) => ({ default: m.SelfTestPage }))
+const SettingsPage = lazy(() =>
+  import("@/pages/settings-page").then((m) => ({ default: m.SettingsPage }))
 )
-
-const pageTitles: Record<string, string> = {
-  "/": "Fleet Status",
-  "/hosts": "Hosts",
-  "/discover": "Discover",
-  "/scan": "Scan",
-  "/drives": "Drive Health",
-  "/history": "Scan History",
-  "/reports": "Health Reports",
-  "/self-test": "NVMe Self-Test",
-}
 
 function PageFallback() {
   return (
@@ -49,35 +43,93 @@ function PageFallback() {
   )
 }
 
-function LayoutShell() {
-  const location = useLocation()
-  const title = location.pathname.startsWith("/history")
-    ? "Scan History"
-    : (pageTitles[location.pathname] ?? "CDI Health")
-
-  return <AppLayout title={title} />
+/** /history/:scanId → /reports/history/:scanId */
+function SavedScanRedirect() {
+  const { scanId = "" } = useParams()
+  return (
+    <Navigate to={`/reports/history/${encodeURIComponent(scanId)}`} replace />
+  )
 }
 
 export function App() {
   return (
     <BrowserRouter>
-      <Suspense fallback={<PageFallback />}>
-        <Routes>
-          <Route element={<LayoutShell />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="hosts" element={<HostsPage />} />
-            <Route path="discover" element={<DiscoverPage />} />
-            <Route path="scan" element={<ScanPage />} />
-            <Route path="drives" element={<DriveHealthPage />} />
-            <Route path="history" element={<HistoryPage />} />
-            <Route path="history/:scanId" element={<HistoryPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-            <Route path="self-test" element={<SelfTestPage />} />
-            <Route path="machines" element={<Navigate to="/hosts" replace />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
-      </Suspense>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route
+            index
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <OverviewPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="drives"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <DrivesPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="benches"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <BenchesPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="self-tests"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <SelfTestsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="reports"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <ReportsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="reports/history/:scanId"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <SavedScanPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="settings"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <SettingsPage />
+              </Suspense>
+            }
+          />
+
+          {/* Old paths from before the redesign. */}
+          <Route path="hosts" element={<Navigate to="/benches" replace />} />
+          <Route path="machines" element={<Navigate to="/benches" replace />} />
+          <Route path="discover" element={<Navigate to="/benches" replace />} />
+          <Route path="scan" element={<Navigate to="/" replace />} />
+          <Route
+            path="history"
+            element={<Navigate to="/reports?tab=history" replace />}
+          />
+          <Route path="history/:scanId" element={<SavedScanRedirect />} />
+          <Route
+            path="self-test"
+            element={<Navigate to="/self-tests" replace />}
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
     </BrowserRouter>
   )
 }

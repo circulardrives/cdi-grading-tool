@@ -52,8 +52,7 @@ export function SelfTestLogsCard({
       <CardHeader>
         <CardTitle>Self-test logs</CardTitle>
         <CardDescription>
-          Raw entries from NVMe Device Self-test Log (Log Page 0x06) via{" "}
-          <span className="font-mono">GET /api/v1/selftests/status</span>.
+          Every self-test result each drive has recorded, newest first.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
@@ -77,7 +76,7 @@ export function SelfTestLogsCard({
                 )}
               </div>
               {entry.current_operation ? (
-                <p className="text-muted-foreground text-xs">
+                <p className="text-xs text-muted-foreground">
                   Current operation: {String(entry.current_operation)}
                   {entry.current_completion != null
                     ? ` · ${entry.current_completion}% complete`
@@ -101,9 +100,13 @@ export function SelfTestLogsCard({
                   <TableBody>
                     {logEntries.map((result, logIndex) => (
                       <TableRow key={`${devicePath}-log-${logIndex}`}>
-                        <TableCell className="font-mono text-xs">{logIndex}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {logIndex}
+                        </TableCell>
                         <TableCell>
-                          <Badge variant={statusBadgeVariant(result.result ?? "")}>
+                          <Badge
+                            variant={statusBadgeVariant(result.result ?? "")}
+                          >
                             {result.result ?? "—"}
                           </Badge>
                         </TableCell>
@@ -128,7 +131,9 @@ export function SelfTestLogsCard({
                       <TestTubeDiagonalIcon />
                     </EmptyMedia>
                     <EmptyTitle>No log entries yet</EmptyTitle>
-                    <EmptyDescription>{describeMissingLogs(entry)}</EmptyDescription>
+                    <EmptyDescription>
+                      {describeMissingLogs(entry)}
+                    </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               )}

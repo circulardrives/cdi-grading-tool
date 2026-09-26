@@ -281,7 +281,7 @@ function SelfTestConsole({ machineId, benchName }: SelfTestConsoleProps) {
           <span className="flex flex-wrap gap-2">
             {machineId ? (
               <Button size="sm" variant="outline" asChild>
-                <Link to="/hosts">Go to Hosts</Link>
+                <Link to="/benches">Go to Hosts</Link>
               </Button>
             ) : null}
             <Button

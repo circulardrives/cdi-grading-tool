@@ -9,7 +9,11 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert"
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@workspace/ui/components/alert"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -100,7 +104,7 @@ function SummaryStatCards({
           <CardDescription>Total Devices</CardDescription>
           <CardTitle className="text-2xl">{summary?.total ?? 0}</CardTitle>
         </CardHeader>
-        <CardContent className="text-muted-foreground text-sm">
+        <CardContent className="text-sm text-muted-foreground">
           {scannedAt !== undefined
             ? `Last scan ${scannedAt ? new Date(scannedAt).toLocaleString() : "not yet run"}`
             : "Across all hosts"}
@@ -113,7 +117,7 @@ function SummaryStatCards({
             {summary?.healthy ?? 0}
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-muted-foreground text-sm">
+        <CardContent className="text-sm text-muted-foreground">
           Passing CDI health thresholds
         </CardContent>
       </Card>
@@ -124,7 +128,7 @@ function SummaryStatCards({
             {(summary?.warning ?? 0) + (summary?.failed ?? 0)}
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-muted-foreground text-sm">
+        <CardContent className="text-sm text-muted-foreground">
           {summary?.warning ?? 0} warning · {summary?.failed ?? 0} failed
           {summary?.ungraded ? ` · ${summary.ungraded} ungraded` : ""}
         </CardContent>
@@ -176,8 +180,12 @@ function RecentDrivesTable({
       <TableBody>
         {shown.map((device, index) => (
           <TableRow key={rowKeys.get(device) ?? `row-${index}`}>
-            {showHost ? <TableCell>{device.machine_name ?? "—"}</TableCell> : null}
-            <TableCell className="font-mono text-xs">{device.dut ?? "—"}</TableCell>
+            {showHost ? (
+              <TableCell>{device.machine_name ?? "—"}</TableCell>
+            ) : null}
+            <TableCell className="font-mono text-xs">
+              {device.dut ?? "—"}
+            </TableCell>
             <TableCell>{device.model_number ?? "—"}</TableCell>
             <TableCell>{device.transport_protocol ?? "—"}</TableCell>
             <TableCell>
@@ -220,7 +228,9 @@ export function DashboardPage() {
   const scan = devicesQuery.data ?? null
   const fleet = fleetQuery.data ?? null
   const fleetHosts = fleet?.hosts ?? []
-  const problemHosts = fleetHosts.filter((host) => fleetHostProblem(host) != null)
+  const problemHosts = fleetHosts.filter(
+    (host) => fleetHostProblem(host) != null
+  )
 
   const loading =
     healthQuery.isLoading ||
@@ -238,7 +248,11 @@ export function DashboardPage() {
           : null
 
   useEffect(() => {
-    if (healthQuery.isSuccess || devicesQuery.isSuccess || fleetQuery.isSuccess) {
+    if (
+      healthQuery.isSuccess ||
+      devicesQuery.isSuccess ||
+      fleetQuery.isSuccess
+    ) {
       setLastRefreshedAt(new Date())
     }
   }, [
@@ -299,7 +313,9 @@ export function DashboardPage() {
         ...mockDataRequestFields(useMockData, mockDataPath),
       })
       await invalidateAfterScan(machineId)
-      toast.success(`Scanned ${hostName} — ${result.summary.total} device(s) found`)
+      toast.success(
+        `Scanned ${hostName} — ${result.summary.total} device(s) found`
+      )
     } catch (err) {
       toast.error(describeRequestError(err, hostName, "Scan failed"))
     } finally {
@@ -307,12 +323,14 @@ export function DashboardPage() {
     }
   }
 
-  const devices: DeviceRecord[] = fleetMode ? (fleet?.devices ?? []) : (scan?.devices ?? [])
+  const devices: DeviceRecord[] = fleetMode
+    ? (fleet?.devices ?? [])
+    : (scan?.devices ?? [])
 
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
-        <p className="text-muted-foreground font-mono text-xs uppercase tracking-[0.28em]">
+        <p className="font-mono text-xs tracking-[0.28em] text-muted-foreground uppercase">
           Overview
         </p>
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -320,20 +338,20 @@ export function DashboardPage() {
             <h1 className="text-3xl font-semibold tracking-tight">
               Fleet Health Snapshot
             </h1>
-            <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               {fleetMode
                 ? "Drive health across every host in your fleet. Scan all hosts to refresh every bench at once."
                 : "Monitor readiness, run inventory scans, and inspect the latest drive telemetry from this bench."}
             </p>
             {lastRefreshedAt ? (
-              <p className="text-muted-foreground mt-1 text-xs">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Last refreshed {lastRefreshedAt.toLocaleTimeString()}
                 {autoRefresh ? " · auto-refresh on" : ""}
               </p>
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <label className="text-muted-foreground flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <Switch
                 checked={autoRefresh}
                 onCheckedChange={setAutoRefresh}
@@ -349,9 +367,8 @@ export function DashboardPage() {
               <RefreshCwIcon data-icon="inline-start" />
               Refresh
             </Button>
-            {fleetMode ? (
-              <ScanAllHostsButton size="lg" />
-            ) : (
+            {/* Scan all benches lives in the app header. */}
+            {fleetMode ? null : (
               <Button onClick={() => void runScan()} disabled={scanning}>
                 <HardDriveIcon data-icon="inline-start" />
                 {scanning ? "Scanning…" : "Run Scan"}
@@ -359,7 +376,9 @@ export function DashboardPage() {
             )}
           </div>
         </div>
-        {fleetMode ? <ScanAllHostsProgress hostCount={fleetHosts.length} /> : null}
+        {fleetMode ? (
+          <ScanAllHostsProgress hostCount={fleetHosts.length} />
+        ) : null}
       </section>
 
       {error ? (
@@ -380,10 +399,11 @@ export function DashboardPage() {
                 <CardDescription>Hosts OK</CardDescription>
                 <CardTitle className="flex items-center gap-2 text-2xl">
                   <ServerIcon className="text-primary" />
-                  {fleetHosts.length - problemHosts.length} of {fleetHosts.length}
+                  {fleetHosts.length - problemHosts.length} of{" "}
+                  {fleetHosts.length}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-muted-foreground text-sm">
+              <CardContent className="text-sm text-muted-foreground">
                 {problemHosts.length > 0
                   ? `${problemHosts.length} host${problemHosts.length === 1 ? " needs" : "s need"} attention — see below`
                   : "Every host is answering"}
@@ -401,7 +421,7 @@ export function DashboardPage() {
                   {health?.status ?? "—"}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-muted-foreground text-sm">
+              <CardContent className="text-sm text-muted-foreground">
                 {benchStatusLine(health)}
               </CardContent>
             </Card>

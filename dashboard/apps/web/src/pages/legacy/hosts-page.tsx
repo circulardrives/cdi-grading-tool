@@ -73,11 +73,7 @@ import {
   useInvalidateCdiQueries,
   useMachinesQuery,
 } from "@/hooks/use-cdi-queries"
-import {
-  createMachine,
-  deleteMachine,
-  updateMachine,
-} from "@/lib/api"
+import { createMachine, deleteMachine, updateMachine } from "@/lib/api"
 import {
   checkHostConnection,
   emptyHostForm,
@@ -282,7 +278,11 @@ export function HostsPage() {
         description="The grading benches in your fleet. Scans for a host run on that host itself, so every host needs an address — and its access token, if it uses one."
         actions={
           <>
-            <Button variant="outline" onClick={() => void refresh()} disabled={loading}>
+            <Button
+              variant="outline"
+              onClick={() => void refresh()}
+              disabled={loading}
+            >
               <RefreshCwIcon data-icon="inline-start" />
               Refresh
             </Button>
@@ -307,7 +307,7 @@ export function HostsPage() {
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             <Button asChild>
-              <Link to="/scan">
+              <Link to="/">
                 <ScanSearchIcon data-icon="inline-start" />
                 Scan {selectedHost.name}
               </Link>
@@ -326,7 +326,8 @@ export function HostsPage() {
         <CardHeader>
           <CardTitle>Fleet hosts</CardTitle>
           <CardDescription>
-            {hosts.length} host(s) · click a name to use it on Scan and Drive Health
+            {hosts.length} host(s) · click a name to use it on Scan and Drive
+            Health
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -343,7 +344,8 @@ export function HostsPage() {
                 </EmptyMedia>
                 <EmptyTitle>No hosts yet</EmptyTitle>
                 <EmptyDescription>
-                  Add a grading bench by hand, or use Discover to find benches on your network.
+                  Add a grading bench by hand, or use Discover to find benches
+                  on your network.
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="flex flex-wrap gap-2">
@@ -352,7 +354,7 @@ export function HostsPage() {
                   Add host
                 </Button>
                 <Button size="sm" variant="outline" asChild>
-                  <Link to="/discover">Discover on LAN</Link>
+                  <Link to="/benches">Discover on LAN</Link>
                 </Button>
               </EmptyContent>
             </Empty>
@@ -394,11 +396,11 @@ export function HostsPage() {
                               <Badge variant="outline">Active</Badge>
                             ) : null}
                           </div>
-                          <span className="text-muted-foreground font-mono text-xs">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {host.hostname}
                           </span>
                           {hostHasAddress(host) ? (
-                            <span className="text-muted-foreground font-mono text-xs">
+                            <span className="font-mono text-xs text-muted-foreground">
                               {host.address}
                             </span>
                           ) : null}
@@ -409,7 +411,9 @@ export function HostsPage() {
                         <div className="flex max-w-xs flex-col gap-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             {hostHasAddress(host) ? (
-                              <Badge variant={machineStatusBadgeVariant(host.status)}>
+                              <Badge
+                                variant={machineStatusBadgeVariant(host.status)}
+                              >
                                 {machineStatusLabel(host.status)}
                               </Badge>
                             ) : (
@@ -418,18 +422,18 @@ export function HostsPage() {
                             {host.has_api_token ? (
                               <Badge variant="outline">Token set</Badge>
                             ) : hostNeedsNoToken(host) ? (
-                              <span className="text-muted-foreground text-xs">
+                              <span className="text-xs text-muted-foreground">
                                 No token needed
                               </span>
                             ) : null}
                           </div>
                           {host.remote_version ? (
-                            <span className="text-muted-foreground text-xs">
+                            <span className="text-xs text-muted-foreground">
                               CDI Health v{host.remote_version}
                             </span>
                           ) : null}
                           {problem ? (
-                            <span className="text-destructive flex items-start gap-1 text-xs">
+                            <span className="flex items-start gap-1 text-xs text-destructive">
                               <AlertCircleIcon
                                 className="mt-px size-3.5 shrink-0"
                                 aria-hidden
@@ -446,7 +450,7 @@ export function HostsPage() {
                               ? new Date(host.last_scan_at).toLocaleString()
                               : "Never"}
                           </span>
-                          <span className="text-muted-foreground text-xs">
+                          <span className="text-xs text-muted-foreground">
                             {formatScanSummary(host)}
                           </span>
                         </div>
@@ -492,7 +496,7 @@ export function HostsPage() {
               </TableBody>
             </Table>
           )}
-          <p className="text-muted-foreground text-xs">
+          <p className="text-xs text-muted-foreground">
             Benches in lab mode don&apos;t use access tokens.
           </p>
         </CardContent>
@@ -512,7 +516,9 @@ export function HostsPage() {
               <Input
                 id="host-name"
                 value={form.name}
-                onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
+                onChange={(e) =>
+                  setForm((current) => ({ ...current, name: e.target.value }))
+                }
                 placeholder="pecan09"
               />
             </Field>
@@ -522,7 +528,10 @@ export function HostsPage() {
                 id="host-hostname"
                 value={form.hostname}
                 onChange={(e) =>
-                  setForm((current) => ({ ...current, hostname: e.target.value }))
+                  setForm((current) => ({
+                    ...current,
+                    hostname: e.target.value,
+                  }))
                 }
                 placeholder="pecan09.local"
               />
@@ -533,13 +542,16 @@ export function HostsPage() {
                 id="host-address"
                 value={form.address}
                 onChange={(e) =>
-                  setForm((current) => ({ ...current, address: e.target.value }))
+                  setForm((current) => ({
+                    ...current,
+                    address: e.target.value,
+                  }))
                 }
                 placeholder="10.0.0.12:8844"
               />
               <FieldDescription>
-                IP or hostname and port of the host. Leave blank only for the bench running
-                this dashboard.
+                IP or hostname and port of the host. Leave blank only for the
+                bench running this dashboard.
               </FieldDescription>
             </Field>
             <AccessTokenField
@@ -559,7 +571,10 @@ export function HostsPage() {
                 id="host-location"
                 value={form.location}
                 onChange={(e) =>
-                  setForm((current) => ({ ...current, location: e.target.value }))
+                  setForm((current) => ({
+                    ...current,
+                    location: e.target.value,
+                  }))
                 }
                 placeholder="Sacramento · Row 3 · Rack 12"
               />
@@ -569,7 +584,9 @@ export function HostsPage() {
               <Textarea
                 id="host-notes"
                 value={form.notes}
-                onChange={(e) => setForm((current) => ({ ...current, notes: e.target.value }))}
+                onChange={(e) =>
+                  setForm((current) => ({ ...current, notes: e.target.value }))
+                }
                 placeholder="NVMe backplane, 8-bay"
               />
             </Field>
@@ -605,7 +622,10 @@ export function HostsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => void confirmDelete()}>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => void confirmDelete()}
+            >
               Remove host
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -3,7 +3,6 @@ import { Link } from "react-router-dom"
 import { PlusIcon, RadarIcon, ServerIcon } from "lucide-react"
 import { toast } from "sonner"
 
-import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -92,7 +91,10 @@ export function DiscoverPage() {
   const [bulkAdding, setBulkAdding] = useState(false)
   const [tokenPromptHosts, setTokenPromptHosts] = useState<Machine[]>([])
 
-  const parsedSubnets = useMemo(() => parseSubnetInput(discoverSubnet), [discoverSubnet])
+  const parsedSubnets = useMemo(
+    () => parseSubnetInput(discoverSubnet),
+    [discoverSubnet]
+  )
 
   /** After adding hosts, go straight to asking for tokens where needed. */
   const promptForTokens = async (added: AddedHost[]) => {
@@ -152,7 +154,9 @@ export function DiscoverPage() {
       })
       setDiscoveredHosts((current) =>
         current.map((item) =>
-          item.address === host.address ? { ...item, already_registered: true } : item
+          item.address === host.address
+            ? { ...item, already_registered: true }
+            : item
         )
       )
       toast.success(`Added ${hostname} to fleet`)
@@ -231,46 +235,42 @@ export function DiscoverPage() {
     }
   }
 
-  const pendingDiscoveryCount = discoveredHosts.filter((host) => !host.already_registered).length
+  const pendingDiscoveryCount = discoveredHosts.filter(
+    (host) => !host.already_registered
+  ).length
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="Network discovery"
         title="Discover"
-        description="Find grading benches on your network (port 8844). The search runs from this bench, not from your browser."
+        description="Find benches on the network. List other networks below if your benches are on a different one (for example 192.168.0.0/24); leave it blank to search this bench's own network."
         actions={
           <Button onClick={() => void runDiscovery()} disabled={discovering}>
-            {discovering ? <Spinner data-icon="inline-start" /> : <RadarIcon data-icon="inline-start" />}
+            {discovering ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <RadarIcon data-icon="inline-start" />
+            )}
             {discovering ? "Discovering…" : "Discover on LAN"}
           </Button>
         }
       />
 
-      <Alert>
-        <RadarIcon />
-        <AlertTitle>Cross-subnet discovery</AlertTitle>
-        <AlertDescription>
-          If the grading hosts are on a different subnet than this bench, list their subnets
-          below (for example 192.168.0.0/24, 10.0.1.0/24), or set{" "}
-          <span className="font-mono">VITE_CDI_DISCOVER_SUBNET</span> in{" "}
-          <span className="font-mono">.env.local</span>. Leave blank to search this bench&apos;s
-          own network.
-        </AlertDescription>
-      </Alert>
-
       <Card>
         <CardHeader>
           <CardTitle>LAN scan</CardTitle>
           <CardDescription>
-            Checks up to 256 addresses per subnet. Add what it finds to your hosts — you&apos;ll be
-            asked for an access token if a host uses one.
+            Checks up to 256 addresses per subnet. Add what it finds to your
+            hosts — you&apos;ll be asked for an access token if a host uses one.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="discover-subnet">Subnets (optional)</FieldLabel>
+              <FieldLabel htmlFor="discover-subnet">
+                Subnets (optional)
+              </FieldLabel>
               <Input
                 id="discover-subnet"
                 value={discoverSubnet}
@@ -283,8 +283,9 @@ export function DiscoverPage() {
                 <FieldError>{parsedSubnets.error}</FieldError>
               ) : (
                 <FieldDescription>
-                  Up to {MAX_DISCOVER_SUBNETS} subnets, separated by commas or spaces, each /24 or
-                  smaller. You can run a search about every 10 seconds.
+                  Up to {MAX_DISCOVER_SUBNETS} subnets, separated by commas or
+                  spaces, each /24 or smaller. You can run a search about every
+                  10 seconds.
                 </FieldDescription>
               )}
             </Field>
@@ -294,7 +295,11 @@ export function DiscoverPage() {
               onClick={() => void runDiscovery()}
               disabled={discovering || parsedSubnets.error != null}
             >
-              {discovering ? <Spinner data-icon="inline-start" /> : <RadarIcon data-icon="inline-start" />}
+              {discovering ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <RadarIcon data-icon="inline-start" />
+              )}
               {discovering ? "Scanning LAN…" : "Start discovery"}
             </Button>
             {discoveredHosts.length > 0 ? (
@@ -303,14 +308,18 @@ export function DiscoverPage() {
                 onClick={() => void addAllDiscovered()}
                 disabled={bulkAdding || pendingDiscoveryCount === 0}
               >
-                {bulkAdding ? <Spinner data-icon="inline-start" /> : <PlusIcon data-icon="inline-start" />}
+                {bulkAdding ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <PlusIcon data-icon="inline-start" />
+                )}
                 {bulkAdding
                   ? "Adding hosts…"
                   : `Add ${pendingDiscoveryCount} new to fleet`}
               </Button>
             ) : null}
             <Button variant="outline" asChild>
-              <Link to="/hosts">
+              <Link to="/benches">
                 <ServerIcon data-icon="inline-start" />
                 View fleet
               </Link>
@@ -318,16 +327,16 @@ export function DiscoverPage() {
           </div>
 
           {discovering ? (
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Spinner />
               Probing local subnet(s) for CDI APIs…
             </div>
           ) : null}
 
           {discoverMeta ? (
-            <p className="text-muted-foreground text-sm">
-              Scanned {discoverMeta.scannedSubnets.join(", ")} · {discoverMeta.hostsScanned} host(s)
-              · {discoverMeta.durationMs} ms
+            <p className="text-sm text-muted-foreground">
+              Scanned {discoverMeta.scannedSubnets.join(", ")} ·{" "}
+              {discoverMeta.hostsScanned} host(s) · {discoverMeta.durationMs} ms
             </p>
           ) : null}
 
@@ -344,7 +353,9 @@ export function DiscoverPage() {
               <TableBody>
                 {discoveredHosts.map((host) => (
                   <TableRow key={host.address}>
-                    <TableCell className="font-mono text-xs">{host.address}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {host.address}
+                    </TableCell>
                     <TableCell>{host.hostname ?? "—"}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
@@ -352,7 +363,7 @@ export function DiscoverPage() {
                           {discoveryHealthLabel(host)}
                         </Badge>
                         {discoveredNeedsNoToken(host) ? (
-                          <span className="text-muted-foreground text-xs">
+                          <span className="text-xs text-muted-foreground">
                             No token needed
                           </span>
                         ) : null}
@@ -365,7 +376,9 @@ export function DiscoverPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={addingDiscovered === host.address || bulkAdding}
+                          disabled={
+                            addingDiscovered === host.address || bulkAdding
+                          }
                           onClick={() => void addDiscoveredHost(host)}
                         >
                           {addingDiscovered === host.address ? (
@@ -389,8 +402,9 @@ export function DiscoverPage() {
                 </EmptyMedia>
                 <EmptyTitle>No CDI APIs found</EmptyTitle>
                 <EmptyDescription>
-                  No hosts answered on port 8844 in the searched subnet(s). Check the grading hosts are
-                  powered on and on the same network as this bench.
+                  No hosts answered on port 8844 in the searched subnet(s).
+                  Check the grading hosts are powered on and on the same network
+                  as this bench.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

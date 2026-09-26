@@ -177,7 +177,7 @@ function HistoryList() {
       <PageHeader
         eyebrow="Operations"
         title="Scan History"
-        description="Browse previous grading scans persisted on this API host."
+        description="Every saved scan, newest first. Open one to see its drives or make a report from it."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => void refresh()}>
@@ -247,15 +247,15 @@ function HistoryList() {
                 </EmptyMedia>
                 <EmptyTitle>No scan history yet</EmptyTitle>
                 <EmptyDescription>
-                  Run a scan from the Scan page. Successful results are saved
-                  under this API data directory.
+                  Scan all benches (top right). Every scan is saved here
+                  automatically.
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
                 <Button asChild>
-                  <Link to="/scan">
+                  <Link to="/">
                     <ScanSearchIcon />
-                    Go to Scan
+                    Go to Overview
                   </Link>
                 </Button>
               </EmptyContent>
@@ -298,7 +298,9 @@ function HistoryList() {
                     <TableCell>
                       <div className="flex flex-wrap justify-end gap-2">
                         <Button variant="outline" size="sm" asChild>
-                          <Link to={`/history/${encodeURIComponent(entry.id)}`}>
+                          <Link
+                            to={`/reports/history/${encodeURIComponent(entry.id)}`}
+                          >
                             View
                           </Link>
                         </Button>
@@ -380,8 +382,8 @@ function HistoryList() {
             <AlertDialogTitle>Clear all scan history?</AlertDialogTitle>
             <AlertDialogDescription>
               {exactTotalKnown
-                ? `This permanently deletes all ${entries.length} persisted scan snapshot${entries.length === 1 ? "" : "s"} on this API host.`
-                : "This permanently deletes every persisted scan snapshot on this API host, for all hosts — including scans not shown in the current list."}
+                ? `This permanently deletes all ${entries.length} saved scan${entries.length === 1 ? "" : "s"}.`
+                : "This permanently deletes every saved scan from every bench — including scans not shown in the current list."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -425,7 +427,7 @@ function HistoryDetailView({ scanId }: { scanId: string }) {
       toast.success("Scan deleted")
       setDeleteOpen(false)
       await invalidateHistory()
-      navigate("/history")
+      navigate("/reports?tab=history")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete scan")
     } finally {
@@ -442,7 +444,7 @@ function HistoryDetailView({ scanId }: { scanId: string }) {
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>
-              <Link to="/history">
+              <Link to="/reports?tab=history">
                 <ArrowLeftIcon />
                 Back to history
               </Link>
@@ -492,7 +494,7 @@ function HistoryDetailView({ scanId }: { scanId: string }) {
           </EmptyHeader>
           <EmptyContent>
             <Button variant="outline" asChild>
-              <Link to="/history">
+              <Link to="/reports?tab=history">
                 <ArrowLeftIcon />
                 Back to history
               </Link>
@@ -529,7 +531,7 @@ function HistoryDetailView({ scanId }: { scanId: string }) {
                     </EmptyMedia>
                     <EmptyTitle>No devices in this scan</EmptyTitle>
                     <EmptyDescription>
-                      The persisted snapshot has an empty device list.
+                      This saved scan has no drives.
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>

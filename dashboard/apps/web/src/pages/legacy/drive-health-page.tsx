@@ -8,7 +8,11 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert"
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@workspace/ui/components/alert"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -113,8 +117,8 @@ export function DriveHealthPage() {
 
   const noScanCached = Boolean(
     selectedHostId &&
-      devicesQuery.error instanceof Error &&
-      devicesQuery.error.message.includes("No scan cached")
+    devicesQuery.error instanceof Error &&
+    devicesQuery.error.message.includes("No scan cached")
   )
 
   const devices: DeviceRecord[] = useMemo(() => {
@@ -122,9 +126,16 @@ export function DriveHealthPage() {
       return fleetQuery.data?.devices ?? []
     }
     return noScanCached ? [] : (devicesQuery.data?.devices ?? [])
-  }, [allHostsMode, fleetQuery.data?.devices, devicesQuery.data?.devices, noScanCached])
+  }, [
+    allHostsMode,
+    fleetQuery.data?.devices,
+    devicesQuery.data?.devices,
+    noScanCached,
+  ])
 
-  const scannedAt = allHostsMode ? null : (devicesQuery.data?.scanned_at ?? null)
+  const scannedAt = allHostsMode
+    ? null
+    : (devicesQuery.data?.scanned_at ?? null)
   const loading =
     machinesQuery.isLoading ||
     (allHostsMode ? fleetQuery.isLoading : devicesQuery.isLoading)
@@ -201,9 +212,7 @@ export function DriveHealthPage() {
     if (activeClass === "all") {
       return devices
     }
-    return devices.filter(
-      (device) => getReportCategory(device) === activeClass
-    )
+    return devices.filter((device) => getReportCategory(device) === activeClass)
   }, [activeClass, devices])
 
   const columnsFor = (driveClass: DriveClass) =>
@@ -217,7 +226,10 @@ export function DriveHealthPage() {
   const fleetHosts = fleetQuery.data?.hosts ?? []
 
   const singleScanButton = (
-    <Button onClick={() => void runScan()} disabled={scanning || !selectedHostId}>
+    <Button
+      onClick={() => void runScan()}
+      disabled={scanning || !selectedHostId}
+    >
       {scanning ? (
         <Spinner data-icon="inline-start" />
       ) : (
@@ -249,7 +261,10 @@ export function DriveHealthPage() {
         actions={
           <>
             <Select value={selectValue} onValueChange={selectHost}>
-              <SelectTrigger className="w-[220px]" aria-label="Show drives from">
+              <SelectTrigger
+                className="w-[220px]"
+                aria-label="Show drives from"
+              >
                 <SelectValue placeholder="Select host" />
               </SelectTrigger>
               <SelectContent>
@@ -273,7 +288,8 @@ export function DriveHealthPage() {
               <RefreshCwIcon data-icon="inline-start" />
               Refresh
             </Button>
-            {allHostsMode ? <ScanAllHostsButton /> : singleScanButton}
+            {/* Scan all benches lives in the app header. */}
+            {allHostsMode ? null : singleScanButton}
           </>
         }
       />
@@ -284,10 +300,11 @@ export function DriveHealthPage() {
           <AlertTitle>Pick a host</AlertTitle>
           <AlertDescription className="flex flex-col gap-2">
             <span>
-              Choose a host above to see its drives, or add your benches on the Hosts page.
+              Choose a host above to see its drives, or add your benches on the
+              Hosts page.
             </span>
             <Button variant="outline" className="w-fit" asChild>
-              <Link to="/hosts">Open Hosts</Link>
+              <Link to="/benches">Open Hosts</Link>
             </Button>
           </AlertDescription>
         </Alert>
@@ -314,16 +331,19 @@ export function DriveHealthPage() {
         <Alert variant="destructive">
           <AlertCircleIcon />
           <AlertTitle>
-            {allHostsMode ? "Couldn't load drives from your hosts" : "Couldn't load drives"}
+            {allHostsMode
+              ? "Couldn't load drives from your hosts"
+              : "Couldn't load drives"}
           </AlertTitle>
           <AlertDescription className="flex flex-col gap-2">
             <span>{error}</span>
-            {!allHostsMode && !(selectedHost && hostHasAddress(selectedHost)) ? (
+            {!allHostsMode &&
+            !(selectedHost && hostHasAddress(selectedHost)) ? (
               <span>
                 Confirm `cdi-health-api` is running on this bench (typically{" "}
-                <span className="font-mono">127.0.0.1:8844</span>) and run as root
-                for live SMART access. Use mock mode for bench testing without
-                hardware.
+                <span className="font-mono">127.0.0.1:8844</span>) and run as
+                root for live SMART access. Use mock mode for bench testing
+                without hardware.
               </span>
             ) : null}
           </AlertDescription>
@@ -360,8 +380,8 @@ export function DriveHealthPage() {
               <CardTitle>Drive tables</CardTitle>
               <CardDescription>
                 {devices.length} drive(s)
-                {allHostsMode ? " across all hosts" : ""} · switch between grading
-                summary and full telemetry columns
+                {allHostsMode ? " across all hosts" : ""} · switch between
+                grading summary and full telemetry columns
               </CardDescription>
             </div>
             <Tabs
@@ -398,7 +418,7 @@ export function DriveHealthPage() {
               <EmptyContent className="flex flex-wrap gap-2">
                 {allHostsMode ? <ScanAllHostsButton /> : singleScanButton}
                 <Button variant="outline" asChild>
-                  <Link to="/scan">Open Scan</Link>
+                  <Link to="/">Open Scan</Link>
                 </Button>
               </EmptyContent>
             </Empty>
