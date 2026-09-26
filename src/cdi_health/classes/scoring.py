@@ -55,7 +55,7 @@ from cdi_health.classes.config import (
     GRADING_PROFILE_BINARY,
     get_config,
 )
-from cdi_health.classes.revert import tur_not_ready_waived
+from cdi_health.classes.revert import missing_defect_data, tur_not_ready_waived
 
 # Grade ordering, best to worst
 GRADE_ORDER: tuple[str, ...] = ("A", "B", "C", "D", "F")
@@ -271,6 +271,11 @@ class HealthScoreCalculator:
         deductions.extend(temp_deductions)
         score -= sum(d.points for d in temp_deductions)
 
+        # Missing critical defect data caps the grade (#134)
+        missing_deductions = self._check_missing_defect_data(device, None)
+        deductions.extend(missing_deductions)
+        score -= sum(d.points for d in missing_deductions)
+
         score = max(0, min(100, score))
 
         has_failed_selftest = any("failed" in d.reason.lower() and "self-test" in d.reason.lower() for d in deductions)
@@ -341,6 +346,9 @@ class HealthScoreCalculator:
         # Self-test history (§10) — graduated and recency-weighted, cross-protocol
         if protocol in ("ATA", "NVME", "SCSI"):
             deductions.extend(self._check_selftest_history(device, protocol, attribute_grades))
+
+        # Missing critical defect data caps the grade (#134)
+        deductions.extend(self._check_missing_defect_data(device, attribute_grades))
 
         # Temperature (§11)
         deductions.extend(self._check_temperature(device))
@@ -419,6 +427,51 @@ class HealthScoreCalculator:
             if s.lstrip("-").isdigit():
                 return int(s)
         return None
+
+    @classmethod
+    def _defect_value(cls, device: dict, *keys: str) -> int | None:
+        """
+        First usable value among ``keys`` (canonical name, then legacy aliases).
+
+        Returns None when a key is present but unreported (None / negative
+        sentinel) so missing data is never graded as a healthy 0 (#134);
+        records carrying none of the keys (hand-built dicts) read as 0.
+        """
+        present = False
+        for key in keys:
+            if key not in device:
+                continue
+            present = True
+            value = cls._coerce_int(device.get(key))
+            if value is not None and value >= 0:
+                return value
+        return None if present else 0
+
+    def _check_missing_defect_data(self, device: dict, attribute_grades: dict | None) -> list[ScoreDeduction]:
+        """
+        Cap drives that did not report critical defect/health counters (#134).
+
+        The cap grade comes from ``grading.missing_defect_data_grade_cap``
+        (default B), so such a drive can never certify as A. Under abcdf it is
+        recorded in ``attribute_grades`` (worst-attribute-wins); under binary
+        it is a warning deduction that lowers the score into the cap band.
+        """
+        missing = missing_defect_data(device)
+        if not missing:
+            return []
+        cap = self.config.missing_defect_data_grade_cap
+        if attribute_grades is not None:
+            attribute_grades["missing_defect_data"] = {"value": list(missing), "grade": cap}
+        return [
+            ScoreDeduction(
+                reason="Critical defect data not reported (" + ", ".join(missing) + ")",
+                points=100 - self._band_base_score(cap),
+                severity="warning",
+                field="missing_defect_data",
+                value=list(missing),
+                attribute_grade=cap if attribute_grades is not None else None,
+            )
+        ]
 
     @staticmethod
     def _determine_drive_class(device: dict) -> str:
@@ -999,7 +1052,7 @@ class HealthScoreCalculator:
         # Reallocated sectors (graduated bands, worst-attribute-wins)
         d = self._grade_attribute(
             field_name="reallocated_sectors",
-            value=device.get("reallocated_sectors", 0) or 0,
+            value=self._defect_value(device, "reallocated_sectors"),
             bands=self.config.ata_reallocated_sectors_bands,
             reason="Reallocated sectors",
             attribute_grades=attribute_grades,
@@ -1008,12 +1061,9 @@ class HealthScoreCalculator:
             deductions.append(d)
 
         # Pending sectors
-        pending_raw = device.get("pending_sectors")
-        if pending_raw is None:
-            pending_raw = device.get("pending_reallocated_sectors")
         d = self._grade_attribute(
             field_name="pending_sectors",
-            value=pending_raw or 0,
+            value=self._defect_value(device, "pending_sectors", "pending_reallocated_sectors"),
             bands=self.config.ata_pending_sectors_bands,
             reason="Pending sectors",
             attribute_grades=attribute_grades,
@@ -1022,12 +1072,9 @@ class HealthScoreCalculator:
             deductions.append(d)
 
         # Uncorrectable / offline uncorrectable (canonical + legacy alias; grade once)
-        uncorrectable_raw = device.get("uncorrectable_errors")
-        if uncorrectable_raw is None:
-            uncorrectable_raw = device.get("offline_uncorrectable_sectors")
         d = self._grade_attribute(
             field_name="uncorrectable_errors",
-            value=uncorrectable_raw or 0,
+            value=self._defect_value(device, "uncorrectable_errors", "offline_uncorrectable_sectors"),
             bands=self.config.ata_uncorrectable_errors_bands,
             reason="Uncorrectable errors",
             attribute_grades=attribute_grades,
@@ -1085,12 +1132,9 @@ class HealthScoreCalculator:
         deductions = []
 
         # Grown defects: A=0, B=1-9, C=10-50, D=51-100, F>100
-        grown_raw = device.get("grown_defects")
-        if grown_raw is None:
-            grown_raw = device.get("reallocated_sectors")
         d = self._grade_attribute(
             field_name="grown_defects",
-            value=grown_raw or 0,
+            value=self._defect_value(device, "grown_defects", "reallocated_sectors"),
             bands=self.config.scsi_grown_defects_bands,
             reason="Grown defects",
             attribute_grades=attribute_grades,
@@ -1099,14 +1143,11 @@ class HealthScoreCalculator:
             deductions.append(d)
 
         # Uncorrected read/write errors: A=0, B=1-5, C=6-25, D=26-100, F>100
-        uncorrected = device.get("uncorrected_errors")
-        if uncorrected is None:
-            uncorrected = device.get("uncorrectable_errors")
-        if uncorrected is None:
-            uncorrected = device.get("offline_uncorrectable_sectors")
         d = self._grade_attribute(
             field_name="uncorrected_errors",
-            value=uncorrected or 0,
+            value=self._defect_value(
+                device, "uncorrected_errors", "uncorrectable_errors", "offline_uncorrectable_sectors"
+            ),
             bands=self.config.scsi_uncorrected_errors_bands,
             reason="Uncorrected read/write errors",
             attribute_grades=attribute_grades,
@@ -1327,13 +1368,13 @@ class HealthScoreCalculator:
             )
 
         # Available spare — prefer drive AVSPT; YAML fallback is ~10%, not 97%
-        spare = device.get("available_spare")
-        if spare is None:
-            spare = 100
+        # Missing spare is unknown, never assumed 100% (#134): the threshold
+        # check is skipped and _check_missing_defect_data caps the grade.
+        spare = self._coerce_int(device.get("available_spare"))
         threshold = device.get("available_spare_threshold")
         if threshold is None:
             threshold = self.config.minimum_ssd_available_spare
-        if spare < threshold:
+        if spare is not None and spare < threshold:
             deductions.append(
                 ScoreDeduction(
                     reason="Available spare below threshold",

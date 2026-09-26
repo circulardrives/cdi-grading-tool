@@ -1234,13 +1234,18 @@ class ATAProtocol:
         # S.M.A.R.T Self Tests
         device.smart_self_tests = self_tests
 
+        # Defect counters stay None when the attribute is absent: missing data
+        # must never read as a healthy 0 (#134).
         # Get Reallocated Sectors
-        device.reallocated_sectors = self.get_smart_attribute_by_id(attribute_id=5, attributes=device.smart_attributes)
+        device.reallocated_sectors = self.get_smart_attribute_by_id(
+            attribute_id=5, attributes=device.smart_attributes, default=None
+        )
 
         # Get Pending Sectors (canonical name; keep legacy alias for consumers)
         device.pending_sectors = self.get_smart_attribute_by_id(
             attribute_id=197,
             attributes=device.smart_attributes,
+            default=None,
         )
         device.pending_reallocated_sectors = device.pending_sectors
 
@@ -1248,6 +1253,7 @@ class ATAProtocol:
         device.uncorrectable_errors = self.get_smart_attribute_by_id(
             attribute_id=198,
             attributes=device.smart_attributes,
+            default=None,
         )
         device.offline_uncorrectable_sectors = device.uncorrectable_errors
 
@@ -1891,11 +1897,14 @@ class SCSIProtocol:
         # Set Self Tests
         device.smart_self_tests: list = self_tests
 
-        # Get Grown Defects
-        grown_defects: int = smartctl.get("scsi_grown_defect_list", -1)
+        # Get Grown Defects - None (not -1) when unreported so it is never
+        # silently skipped and graded A (#134)
+        grown_defects = int_or_none(smartctl.get("scsi_grown_defect_list"))
+        if grown_defects is not None and grown_defects < 0:
+            grown_defects = None
 
         # Set Grown Defects
-        device.reallocated_sectors: int = grown_defects
+        device.reallocated_sectors = grown_defects
         device.non_medium_errors = smartctl.get("non_medium_error_count")
 
         # Check for Error Counter Log
@@ -1942,11 +1951,11 @@ class SCSIProtocol:
 
         # Else
         else:
-            # Set Uncorrectable Errors
-            uncorrectable_errors: int = -1
+            # Not reported (#134): None, never a -1 sentinel
+            uncorrectable_errors = None
 
         # Convert Uncorrectable Errors (canonical + legacy alias for scoring)
-        device.uncorrectable_errors: int = int(uncorrectable_errors)
+        device.uncorrectable_errors = int(uncorrectable_errors) if uncorrectable_errors is not None else None
         device.offline_uncorrectable_sectors: int = device.uncorrectable_errors
 
         # Grading is applied centrally via Device.apply_health_grade() so the

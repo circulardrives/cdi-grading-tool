@@ -32,11 +32,13 @@ from cdi_health.classes.devices import ATAProtocol, Device, Devices
 from cdi_health.classes.exceptions import CommandException
 from cdi_health.classes.mock import MockSG3Utils, MockSmartctl, create_mock_device
 from cdi_health.classes.revert import (
+    FLAG_MISSING_DEFECT_DATA,
     FLAG_POH_NOT_REPORTED,
     FLAG_SMART_RESET_SUSPECTED,
     FLAG_TUR_NOT_READY,
     FLAG_TUR_UNAVAILABLE,
     fail_reason_codes,
+    missing_defect_data,
     warning_flags,
 )
 from cdi_health.classes.scoring import HealthScoreCalculator
@@ -356,3 +358,90 @@ class TestPowerOnHoursUnknown:
     def test_ungraded_failure_record_not_flagged(self) -> None:
         record = Devices._ungraded_placeholder({"name": "/dev/sdz", "error": "open failed"})
         assert FLAG_POH_NOT_REPORTED not in warning_flags(record)
+
+
+def _drop_ata_attrs(data: dict, *ids: int) -> dict:
+    data = copy.deepcopy(data)
+    table = data["ata_smart_attributes"]["table"]
+    data["ata_smart_attributes"]["table"] = [a for a in table if a.get("id") not in ids]
+    return data
+
+
+class TestMissingDefectData:
+    """Missing critical defect data must not grade as a clean A (#134)."""
+
+    @pytest.mark.parametrize("profile", ["abcdf", "binary"])
+    def test_scsi_missing_grown_defects(self, mock_data_dir: Path, profile: str) -> None:
+        from cdi_health.classes.config import get_config
+
+        get_config().set_grading_profile(profile)
+        data = copy.deepcopy(_load_mock(mock_data_dir, "scsi", "healthy_sas.json"))
+        data.pop("scsi_grown_defect_list", None)
+        device = _device_from_mock(data)
+        assert device.reallocated_sectors is None  # not a -1 sentinel
+        d = device.to_dict(pop=True)
+        assert FLAG_MISSING_DEFECT_DATA in warning_flags(d)
+        assert device.cdi_grade != "A"
+        result = HealthScoreCalculator().calculate(d)
+        assert result.grade == "B"
+        assert any(x.field == "missing_defect_data" for x in result.deductions)
+
+    def test_scsi_legacy_minus_one_sentinel_is_missing(self) -> None:
+        device = {
+            "transport_protocol": "SCSI",
+            "smart_status": True,
+            "reallocated_sectors": -1,
+            "uncorrectable_errors": 0,
+        }
+        assert missing_defect_data(device) == ["grown_defects"]
+        assert HealthScoreCalculator().calculate(device).grade == "B"
+
+    @pytest.mark.parametrize("attr_ids", [(5,), (197,), (5, 197)])
+    def test_ata_hdd_missing_realloc_or_pending(self, mock_data_dir: Path, attr_ids: tuple[int, ...]) -> None:
+        data = _drop_ata_attrs(_load_mock(mock_data_dir, "ata", "healthy_hdd.json"), *attr_ids)
+        device = _device_from_mock(data)
+        d = device.to_dict(pop=True)
+        assert FLAG_MISSING_DEFECT_DATA in warning_flags(d)
+        assert device.cdi_grade == "B"
+        if 5 in attr_ids:
+            assert device.reallocated_sectors is None
+            assert "reallocated_sectors" not in HealthScoreCalculator().calculate(d).attribute_grades
+
+    def test_ata_hdd_missing_optional_198_not_flagged(self, mock_data_dir: Path) -> None:
+        data = _drop_ata_attrs(_load_mock(mock_data_dir, "ata", "healthy_hdd.json"), 198)
+        device = _device_from_mock(data)
+        assert device.uncorrectable_errors is None
+        assert FLAG_MISSING_DEFECT_DATA not in warning_flags(device.to_dict(pop=True))
+        assert device.cdi_grade == "A"
+
+    def test_ata_ssd_without_197_not_flagged(self, mock_data_dir: Path) -> None:
+        # Many SSDs (Samsung, Intel) legitimately omit 197; only 5 is critical.
+        data = _drop_ata_attrs(_load_mock(mock_data_dir, "ata", "MK000960GWSSD_healthy.json"), 197, 198)
+        device = _device_from_mock(data)
+        assert device.media_type == "SSD"
+        assert FLAG_MISSING_DEFECT_DATA not in warning_flags(device.to_dict(pop=True))
+        assert device.cdi_grade == "A"
+
+    def test_nvme_missing_available_spare(self, mock_data_dir: Path) -> None:
+        data = copy.deepcopy(_load_mock(mock_data_dir, "nvme", "SSDPE2KE032T8_healthy.json"))
+        data["nvme_smart_health_information_log"].pop("available_spare", None)
+        device = _device_from_mock(data)
+        assert device.available_spare is None
+        d = device.to_dict(pop=True)
+        assert FLAG_MISSING_DEFECT_DATA in warning_flags(d)
+        assert device.cdi_grade == "B"
+        result = HealthScoreCalculator().calculate(d)
+        # Unknown spare is not assumed 100 and not a fail-gate either
+        assert not any(x.field == "available_spare" for x in result.deductions)
+
+    def test_grade_cap_is_configurable(self, mock_data_dir: Path) -> None:
+        from cdi_health.classes.config import get_config
+
+        get_config().load_from_dict({"grading": {"missing_defect_data_grade_cap": "C"}})
+        data = copy.deepcopy(_load_mock(mock_data_dir, "scsi", "healthy_sas.json"))
+        data.pop("scsi_grown_defect_list", None)
+        assert _device_from_mock(data).cdi_grade == "C"
+
+    def test_ungraded_record_not_flagged(self) -> None:
+        record = Devices._ungraded_placeholder({"name": "/dev/sdz", "error": "open failed", "protocol": "ATA"})
+        assert missing_defect_data(record) == []

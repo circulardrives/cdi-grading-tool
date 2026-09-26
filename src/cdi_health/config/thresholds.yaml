@@ -148,6 +148,12 @@ grading:
   # Self-test recency window (§10 / #121) — abcdf profile only.
   selftest_recent_poh_window: 1000
 
+  # Best grade a drive can receive when it does not report a critical
+  # defect/health counter (ATA 5 / HDD 197, SCSI grown defects / uncorrected
+  # errors, NVMe available spare). Missing data is never graded as healthy;
+  # the drive also carries the MISSING_DEFECT_DATA warning flag (#134).
+  missing_defect_data_grade_cap: B
+
   # Point deductions for non-graduated warnings / universal fail-gates
   deductions:
     smart_failure: 50

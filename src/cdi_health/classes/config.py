@@ -123,6 +123,10 @@ DEFAULT_THRESHOLDS = {
         },
         # Self-test recency window (§10 / #121) — abcdf profile only.
         "selftest_recent_poh_window": 1000,
+        # Best grade a drive can receive when it does not report a critical
+        # defect/health counter (ATA 5/197, SCSI grown defects / uncorrected
+        # errors, NVMe available spare) (#134).
+        "missing_defect_data_grade_cap": "B",
         "deductions": {
             "smart_failure": 50,
             "per_sector": 5,
@@ -507,6 +511,12 @@ class ThresholdConfig:
     def selftest_recent_poh_window(self) -> int:
         """POH window within which a failed self-test counts as 'recent' (§10 / #121)."""
         return int(self.get("grading", "selftest_recent_poh_window", default=1000))
+
+    @property
+    def missing_defect_data_grade_cap(self) -> str:
+        """Best grade allowed when critical defect data is missing (#134)."""
+        cap = str(self.get("grading", "missing_defect_data_grade_cap", default="B") or "B").strip().upper()
+        return cap if cap in ("A", "B", "C", "D", "F") else "B"
 
     @property
     def grade_band_base_scores(self) -> dict:
