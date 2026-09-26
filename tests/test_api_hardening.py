@@ -519,3 +519,27 @@ def test_api_reports_package_version(api_client: TestClient) -> None:
     assert health["version"] == __version__
     assert api_client.app.version == __version__
     assert api_client.get("/openapi.json").json()["info"]["version"] == __version__
+
+
+class _FakeSelfTestHandler:
+    def __init__(self, result_code: int) -> None:
+        self._result_code = result_code
+
+    def get_results(self) -> dict:
+        return {
+            "current_self_test_operation": {"value": 0, "string": "No self-test in progress"},
+            "current_self_test_completion": 0,
+            "entries": [{"result": self._result_code, "type": 1, "completion_time": 7294}],
+        }
+
+
+@pytest.mark.parametrize(
+    ("result_code", "expected"),
+    [(0, "passed"), (1, "aborted"), (2, "aborted"), (5, "failed"), (6, "failed"), (7, "failed"), (9, "aborted")],
+)
+def test_read_selftest_outcome_uses_spec_result_codes(result_code: int, expected: str) -> None:
+    from cdi_health.api.services import _read_selftest_outcome
+
+    outcome = _read_selftest_outcome(_FakeSelfTestHandler(result_code))  # type: ignore[arg-type]
+
+    assert {k for k in ("passed", "failed", "aborted") if outcome[k]} == {expected}

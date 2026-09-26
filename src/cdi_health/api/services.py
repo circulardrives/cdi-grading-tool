@@ -39,7 +39,7 @@ from cdi_health.api.schemas import (
 )
 from cdi_health.classes.config import ThresholdConfig, get_default_config_path
 from cdi_health.classes.explain import attach_explanation
-from cdi_health.classes.nvme_selftest import NVMeSelfTest, validate_nvme_device_path
+from cdi_health.classes.nvme_selftest import NVMeSelfTest, classify_result, validate_nvme_device_path
 from cdi_health.classes.reporter import ReportGenerator
 from cdi_health.classes.scoring import HealthScoreCalculator
 from cdi_health.cli import (
@@ -468,7 +468,11 @@ def _read_selftest_outcome(handler: NVMeSelfTest) -> dict[str, Any]:
         outcome["current_operation"] = current_op.get("string") or current_op.get("value")
 
         entries = results.get("entries", [])
-        valid_entries = [e for e in entries if e.get("result") in (0, 1, 2) and e.get("type") in (1, 2)]
+        valid_entries = [
+            e
+            for e in entries
+            if classify_result(e.get("result")) in ("passed", "failed", "aborted") and e.get("type") in (1, 2)
+        ]
         outcome["recent_results"] = [_serialize_selftest_entry(entry) for entry in valid_entries[:5]]
 
         if not valid_entries:
@@ -479,13 +483,11 @@ def _read_selftest_outcome(handler: NVMeSelfTest) -> dict[str, Any]:
             return outcome
 
         latest = valid_entries[0]
-        result = latest.get("result")
-        if result == 0:
-            outcome["passed"] = True
-        elif result == 1:
-            outcome["failed"] = True
-        elif result == 2:
-            outcome["aborted"] = True
+        # NVMe Log Page 06h: 0 passed, 5-7 failed, 1-4/8/9 aborted (#130)
+        status = classify_result(latest.get("result"))
+        outcome["passed"] = status == "passed"
+        outcome["failed"] = status == "failed"
+        outcome["aborted"] = status == "aborted"
 
         outcome["latest_result"] = _serialize_selftest_entry(latest)
     except Exception as exc:
