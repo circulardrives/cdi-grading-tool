@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 # Strict NVMe controller/namespace paths only (no whitespace or extra tokens).
 NVME_DEVICE_PATTERN = re.compile(r"^/dev/nvme[0-9]+(n[0-9]+)?$")
@@ -229,6 +229,10 @@ class ReportListEntry(BaseModel):
 class SelfTestStartRequest(BaseModel):
     """Start self-test job request payload."""
 
+    # Reject unknown fields: a misspelled "devices" must not silently fall back
+    # to running self-tests on every supported drive.
+    model_config = ConfigDict(extra="forbid")
+
     device: str | None = Field(
         default=None,
         description="Single NVMe controller path, e.g. /dev/nvme0. If omitted, run on all supported devices.",
@@ -249,6 +253,8 @@ class SelfTestStartRequest(BaseModel):
 
 
 class SelfTestAbortRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     device: str
     machine_id: str | None = Field(
         default=None,
