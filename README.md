@@ -122,9 +122,12 @@ On a fresh Debian/Ubuntu bench (e.g. `jm@192.168.0.54`), download the `.deb` and
 ```shell
 # Enable universe on Ubuntu if needed: sudo add-apt-repository universe
 
-wget https://github.com/circulardrives/cdi-grading-tool/releases/download/v0.9.5/cdi-health_0.9.5_all.deb
+# Resolve the latest release tag (or set VERSION=<x.y.z> to pin one from the Releases page)
+VERSION=$(curl -fsSL https://api.github.com/repos/circulardrives/cdi-grading-tool/releases/latest \
+  | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p')
+wget "https://github.com/circulardrives/cdi-grading-tool/releases/download/v${VERSION}/cdi-health_${VERSION}_all.deb"
 sudo apt update
-sudo apt install ./cdi-health_0.9.5_all.deb
+sudo apt install "./cdi-health_${VERSION}_all.deb"
 ```
 
 `apt install ./cdi-health_*.deb` resolves package dependencies and installs:
@@ -158,7 +161,7 @@ sudo systemctl enable --now cdi-health-api
 curl -s http://127.0.0.1:8844/api/v1/health
 ```
 
-To appear in **Discover** from a technician laptop running Docker (host overlay), bind the API on the lab network:
+To appear in **Discover** from a technician laptop running Docker, bind the API on the lab network:
 
 ```shell
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
@@ -360,7 +363,7 @@ API reference: [docs/DASHBOARD_API.md](docs/DASHBOARD_API.md). Systemd and sudoe
 | **[Testing](TESTING.md)**                                                                                    | Manual/hardware QA with mock data and real devices                                                                                                                                                               |
 | **[Contributing](CONTRIBUTING.md)**                                                                          | Contributions                                                                                                                                                                                                    |
 | **[Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md)**                                                   | Docker Compose, GHCR `latest`, `.deb`, git + systemd, dashboard, troubleshooting                                                                                                                                |
-| **[Team testing (0.9.5)](docs/TEAM_TESTING.md)**                                                             | End-to-end validation: bench `.deb` + laptop Docker, LAN discover, live scans                                                                                                                                     |
+| **[Team testing](docs/TEAM_TESTING.md)**                                                                     | End-to-end validation: bench `.deb` + laptop Docker, LAN discover, live scans                                                                                                                                     |
 
 
 ---

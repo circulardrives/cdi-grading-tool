@@ -30,7 +30,7 @@ That generates `deploy/docker/.env` (API token) if needed, pulls `ghcr.io/circul
 | Stop | `./scripts/docker-up.sh down` |
 | Reset (clear cached scans) | `./scripts/docker-up.sh reset` |
 | Port busy | `DASHBOARD_PORT=3001 ./scripts/docker-up.sh` |
-| Pin a release | `CDI_VERSION=0.11.0 ./scripts/docker-up.sh` |
+| Pin a release | `CDI_VERSION=<x.y.z> ./scripts/docker-up.sh` (tags on [Releases](https://github.com/circulardrives/cdi-grading-tool/releases)) |
 | Build from this clone | `./scripts/docker-up.sh --build` |
 | UI → remote bench | `./scripts/docker-up.sh --bench 192.168.0.74` |
 

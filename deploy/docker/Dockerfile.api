@@ -14,7 +14,9 @@ COPY src ./src
 COPY deploy/docker/api-entrypoint.sh /usr/local/bin/cdi-api-entrypoint.sh
 RUN chmod +x /usr/local/bin/cdi-api-entrypoint.sh
 
-ARG VERSION=0.9.5
+# Release builds pass --build-arg VERSION=<tag> (see .github/workflows/release.yml).
+# The VCS directory is excluded from the build context, so source builds report a dev version.
+ARG VERSION=0.0.0.dev0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 RUN pip install --no-cache-dir ".[api]"
 
