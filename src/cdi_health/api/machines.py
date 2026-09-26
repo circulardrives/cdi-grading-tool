@@ -172,6 +172,7 @@ class MachineStore:
                 "healthy": int(summary.get("healthy", 0)),
                 "warning": int(summary.get("warning", 0)),
                 "failed": int(summary.get("failed", 0)),
+                "ungraded": int(summary.get("ungraded", 0)),
             }
             entry["last_seen_at"] = now
             entry["status"] = "reachable" if success else entry.get("status", "unknown")

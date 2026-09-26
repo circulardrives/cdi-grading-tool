@@ -243,15 +243,23 @@ def apply_scan_defaults(request: ScanRequest) -> ScanRequest:
     return request.model_copy(update=updates)
 
 
-def build_threshold_config(config_path: str | None = None) -> ThresholdConfig:
+def build_threshold_config(
+    config_path: str | None = None,
+    grading_profile: str | None = None,
+) -> ThresholdConfig:
     """
     Build a request-local threshold configuration (never touches the global).
 
     Mirrors the CLI's ``load_threshold_config``: an explicit ``config`` path
-    wins, otherwise the packaged ``thresholds.yaml`` defaults apply.
+    wins, otherwise the packaged ``thresholds.yaml`` defaults apply; an
+    explicit ``grading_profile`` (like ``--grading-profile``) overrides
+    ``grading.profile`` from the YAML.
     """
     path: str | Path | None = resolve_data_path(config_path) if config_path else get_default_config_path()
-    return ThresholdConfig(path) if path else ThresholdConfig()
+    threshold_config = ThresholdConfig(path) if path else ThresholdConfig()
+    if grading_profile:
+        threshold_config.set_grading_profile(grading_profile)
+    return threshold_config
 
 
 @contextmanager
@@ -283,16 +291,23 @@ def _enrich_devices_with_scores(
     devices: list[dict[str, Any]],
     threshold_config: ThresholdConfig,
 ) -> list[dict[str, Any]]:
-    """Attach health scoring and grading explainability fields to device dictionaries."""
-    with scoped_thresholds(threshold_config):
-        calculator = HealthScoreCalculator()
-    enriched: list[dict[str, Any]] = []
+    """
+    Score devices and attach explainability plus Revert §13/§15 fields.
+
+    Reuses the report generator's enrichment so API payloads match CLI/report
+    semantics (``revert_fields`` UNGRADED overrides, duplicate-serial flags,
+    ``report_category``).
+    """
+    reporter = report_generator_for(threshold_config)
+    return [_serialize(device) for device in reporter._enrich_devices(devices)]
+
+
+def summarize_devices(devices: list[dict[str, Any]]) -> dict[str, int]:
+    """Summary counts; UNGRADED drives are counted separately, never as failed."""
+    counts = {"total": len(devices), "healthy": 0, "warning": 0, "failed": 0, "ungraded": 0}
     for device in devices:
-        score = calculator.calculate(device)
-        payload = attach_explanation(device, score)
-        payload["report_category"] = ReportGenerator._device_report_category(payload)
-        enriched.append(_serialize(payload))
-    return enriched
+        counts[ReportGenerator._score_bucket(device)] += 1
+    return counts
 
 
 def _collect_devices(request: ScanRequest) -> list[dict[str, Any]]:
@@ -333,22 +348,15 @@ def _collect_devices(request: ScanRequest) -> list[dict[str, Any]]:
 def run_scan(request: ScanRequest) -> dict[str, Any]:
     """Execute a device scan and return structured JSON data."""
     request = apply_scan_defaults(request)
-    threshold_config = build_threshold_config(request.config)
+    threshold_config = build_threshold_config(request.config, request.grading_profile)
 
     devices = _collect_devices(request)
     enriched = _enrich_devices_with_scores(devices, threshold_config)
-    healthy = sum(1 for d in enriched if d.get("health_score", 0) >= 75)
-    warning = sum(1 for d in enriched if 40 <= d.get("health_score", 0) < 75)
-    failed = sum(1 for d in enriched if d.get("health_score", 0) < 40)
 
     return {
         "scanned_at": utc_now().isoformat(),
-        "summary": {
-            "total": len(enriched),
-            "healthy": healthy,
-            "warning": warning,
-            "failed": failed,
-        },
+        "grading_profile": threshold_config.grading_profile,
+        "summary": summarize_devices(enriched),
         "devices": enriched,
     }
 
@@ -643,10 +651,11 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
             config=request.config,
             mock_data=request.mock_data,
             mock_file=request.mock_file,
+            grading_profile=request.grading_profile,
         )
     )
     output_path = resolve_report_output_path(request.output_file, request.format)
-    threshold_config = build_threshold_config(scan_request.config)
+    threshold_config = build_threshold_config(scan_request.config, scan_request.grading_profile)
     devices = _collect_devices(scan_request)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

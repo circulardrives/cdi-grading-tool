@@ -21,7 +21,7 @@
 ## HTTP Endpoints
 
 - `GET /api/v1/health` — always returns `{status, version}`; full diagnostics when auth is disabled, or with a valid token / loopback client when auth is enabled
-- `POST /api/v1/scan` — optional `machine_id` associates the scan with a registered host; successful scans are appended to scan history
+- `POST /api/v1/scan` — optional `machine_id` associates the scan with a registered host; optional `grading_profile` (`binary` | `abcdf`, like `--grading-profile`); successful scans are appended to scan history
 - `GET /api/v1/devices` — optional `machine_id` returns cached scan for that host; `refresh=true` rescans (and appends history)
 - `GET /api/v1/history` — list persisted scans (`limit`/`offset`; optional `machine_id` filter); newest first
 - `GET /api/v1/history/{id}` — full scan snapshot (devices + summary)
@@ -39,6 +39,8 @@
 - `POST /api/v1/selftests/abort`
 
 **Hardware lock.** Only one drive-touching operation runs at a time: `POST /api/v1/scan`, `GET /api/v1/devices` when it rescans (`refresh=true` or empty cache), `POST /api/v1/reports`, and the start phase of `POST /api/v1/selftests`. A request that arrives while another holds the lock gets **HTTP 409** (`{"detail": "Drive hardware is busy ..."}`) instead of queueing; retry after the running operation completes. Self-test `wait` polling, status, and abort do not take the lock.
+
+**Scan payload.** Scan responses (and `GET /api/v1/devices`) include `grading_profile` (profile actually applied) and `summary: {total, healthy, warning, failed, ungraded}`. Devices carry the same Revert §13/§15 fields as CLI JSON and reports (`grading_status`, `final_grade`, `fail_reason_codes`, `warning_flags`, `ungraded_reasons`, `recommended_use`, ...). UNGRADED drives (e.g. security-locked, unreadable SMART) have `grading_status: "UNGRADED"`, `final_grade`/`health_grade: "UNGRADED"`, `health_score: null`, and are counted in `summary.ungraded`, **not** `failed`. `POST /api/v1/reports` also accepts `grading_profile`.
 
 **Per-request thresholds.** A scan/report `config` path is applied only to that request (the process-global thresholds are never replaced). Without `config`, the packaged `thresholds.yaml` defaults apply, matching the CLI.
 
@@ -88,7 +90,7 @@ Each machine (host) record includes:
 | `last_seen_at` | Last time the host was observed (updated on successful scan) |
 | `last_scan_at` | Timestamp of the latest associated scan |
 | `last_scan_status` | `success` or `failed` |
-| `last_scan_summary` | `{ total, healthy, warning, failed }` device counts |
+| `last_scan_summary` | `{ total, healthy, warning, failed, ungraded }` device counts |
 
 **v1 behavior:** scans always execute on the local API process. The `address` field and reachability status prepare for remote agents; associating a scan with `machine_id` stores per-host snapshots for dashboard context.
 
@@ -96,7 +98,7 @@ Persistence file: `{data_dir}/machines.json` with `machines` and `latest_scans` 
 
 ## Scan History
 
-Successful scans (via `POST /api/v1/scan` or a refreshing `GET /api/v1/devices`) are also written under `{data_dir}/scan-history/` as one JSON file per scan (`YYYYMMDD-HHMMSS-<8hex>.json`). Each file stores the full device snapshot plus summary counts and grade tallies. The dashboard **History** page lists these entries and opens a read-only drive table for any past scan.
+Successful scans (via `POST /api/v1/scan` or a refreshing `GET /api/v1/devices`) are also written under `{data_dir}/scan-history/` as one JSON file per scan (`YYYYMMDD-HHMMSS-<8hex>.json`). Each file stores the full device snapshot plus `grading_profile`, summary counts (including `ungraded`), and grade tallies (UNGRADED drives tally under `"UNGRADED"`, never `"F"`). Entries written before this field existed read back with `ungraded: 0`. The dashboard **History** page lists these entries and opens a read-only drive table for any past scan.
 
 Per-drive longitudinal timelines (metric deltas across scans for one serial) are deferred to a follow-up.
 

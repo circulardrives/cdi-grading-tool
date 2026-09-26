@@ -197,3 +197,104 @@ def test_selftest_saturation_does_not_take_hardware_lock(api_client: TestClient)
 
 def test_api_state_has_no_unused_executor(api_client: TestClient) -> None:
     assert not hasattr(_runtime(api_client), "executor")
+
+
+# ---------------------------------------------------------------------------
+# #131: API scans apply Revert §13/§15 fields; UNGRADED is not "failed"
+# ---------------------------------------------------------------------------
+
+
+def _patch_scan_with_ungraded(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import services
+    from cdi_health.classes.devices import Devices
+
+    healthy = services.scan_single_mock(str(MOCK_NVME_FILE))
+    ungraded = Devices._ungraded_placeholder(
+        {
+            "name": "/dev/sdz",
+            "open_error": "Security locked",
+            "serial_number": "LOCKED001",
+            "protocol": "ATA",
+        }
+    )
+
+    def fake_scan_devices_mock(path, ignore_ata=False, ignore_nvme=False, ignore_scsi=False):
+        return [*healthy, ungraded]
+
+    monkeypatch.setattr(services, "scan_devices_mock", fake_scan_devices_mock)
+
+
+def test_scan_reports_ungraded_drive_separately(api_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_scan_with_ungraded(monkeypatch)
+
+    response = api_client.post("/api/v1/scan", json={"mock_data": str(MOCK_DATA_PATH)})
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert body["summary"]["total"] == 2
+    assert body["summary"]["ungraded"] == 1
+    assert body["summary"]["failed"] == 0
+    assert body["grading_profile"] == "abcdf"
+
+    by_serial = {d["serial_number"]: d for d in body["devices"]}
+    locked = by_serial["LOCKED001"]
+    assert locked["grading_status"] == "UNGRADED"
+    assert locked["final_grade"] == "UNGRADED"
+    assert locked["health_grade"] == "UNGRADED"
+    assert locked["health_score"] is None
+    assert locked["fail_reason_codes"]
+    assert locked["recommended_use"] == "Manual review required"
+
+    graded = next(d for d in body["devices"] if d["serial_number"] != "LOCKED001")
+    for key in ("grading_status", "final_grade", "warning_flags", "fail_reason_codes", "revert_standard_version"):
+        assert key in graded
+    assert graded["grading_status"] == "GRADED"
+
+    history = api_client.get("/api/v1/history").json()
+    assert history[0]["summary"]["ungraded"] == 1
+    assert history[0]["summary"]["failed"] == 0
+    assert history[0]["grades"].get("UNGRADED") == 1
+    assert "F" not in history[0]["grades"]
+
+    detail = api_client.get(f"/api/v1/history/{history[0]['id']}").json()
+    stored = {d["serial_number"]: d for d in detail["devices"]}["LOCKED001"]
+    assert stored["final_grade"] == "UNGRADED"
+
+
+def test_machine_summary_tracks_ungraded(api_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_scan_with_ungraded(monkeypatch)
+    machine_id = api_client.post("/api/v1/machines", json={"name": "Bench", "hostname": "bench-01"}).json()["id"]
+    scanned = api_client.post("/api/v1/scan", json={"mock_data": str(MOCK_DATA_PATH), "machine_id": machine_id})
+    assert scanned.status_code == 200
+    machine = api_client.get(f"/api/v1/machines/{machine_id}").json()
+    assert machine["last_scan_summary"]["ungraded"] == 1
+    assert machine["last_scan_summary"]["failed"] == 0
+
+
+def test_scan_grading_profile_is_per_request(api_client: TestClient) -> None:
+    from cdi_health.classes.config import get_config
+
+    binary = api_client.post("/api/v1/scan", json={"mock_file": str(MOCK_NVME_FILE), "grading_profile": "binary"})
+    assert binary.status_code == 200, binary.text
+    assert binary.json()["grading_profile"] == "binary"
+    assert {d["grading_profile"] for d in binary.json()["devices"]} == {"binary"}
+    assert get_config().grading_profile == "abcdf"
+
+    default = api_client.post("/api/v1/scan", json={"mock_file": str(MOCK_NVME_FILE)})
+    assert default.json()["grading_profile"] == "abcdf"
+
+    history = api_client.get("/api/v1/history").json()
+    assert {entry["grading_profile"] for entry in history} == {"binary", "abcdf"}
+
+
+def test_scan_rejects_unknown_grading_profile(api_client: TestClient) -> None:
+    response = api_client.post("/api/v1/scan", json={"mock_file": str(MOCK_NVME_FILE), "grading_profile": "xyz"})
+    assert response.status_code == 422
+
+
+def test_report_accepts_grading_profile(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/api/v1/reports",
+        json={"format": "csv", "mock_file": str(MOCK_NVME_FILE), "grading_profile": "binary"},
+    )
+    assert response.status_code == 200, response.text
