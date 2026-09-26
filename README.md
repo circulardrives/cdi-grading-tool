@@ -134,7 +134,7 @@ Each release also publishes `SHA256SUMS` (verify with `sha256sum --ignore-missin
 
 `apt install ./cdi-health_*.deb` resolves package dependencies and installs:
 
-- **`python3`** and **`python3-venv`** — venv + API dependencies installed at package install time
+- **`python3`** and **`python3-venv`** — venv + API dependencies installed from PyPI at package install time (network access required; see [offline installs](docs/TECHNICIAN_DEPLOYMENT.md#option-b--install-from-deb))
 - **`smartmontools`** — `smartctl`
 - **`nvme-cli`** — `nvme`
 - **`openseachest`** — OpenSeaChest utilities (when the package exists in your apt sources; **Recommends**)
@@ -163,15 +163,20 @@ sudo systemctl enable --now cdi-health-api
 curl -s http://127.0.0.1:8844/api/v1/health
 ```
 
-To appear in **Discover** from a technician laptop running Docker, bind the API on the lab network:
+To appear in **Discover** from a technician laptop running Docker, bind the API on the lab network with the shipped drop-in (the API refuses non-loopback binds without a token):
 
 ```shell
+sudo cp /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
+# edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN (e.g. openssl rand -hex 32)
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
-printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/cdi-health-api --host 0.0.0.0 --port 8844 --data-dir /var/lib/cdi-health\n' | sudo tee /etc/systemd/system/cdi-health-api.service.d/override.conf
+sudo cp /usr/share/cdi-health/examples/systemd/cdi-health-api.service.d/lan.conf \
+  /etc/systemd/system/cdi-health-api.service.d/lan.conf
 sudo systemctl daemon-reload && sudo systemctl restart cdi-health-api
 ```
 
 Use only on trusted lab networks.
+
+**Upgrades and removal:** `apt install ./cdi-health_<new>_all.deb` rebuilds the venv and restarts `cdi-health-api` if it is running. `apt remove cdi-health` stops and disables the service and deletes the venv (scan state in `/var/lib/cdi-health` is kept). The install fails loudly if the venv or its dependencies cannot be installed.
 
 **Verify grading:**
 
@@ -180,7 +185,7 @@ cdi-health --version
 sudo cdi-health scan
 ```
 
-Layout: **`/usr/local/bin/cdi-health`** and **`/usr/local/bin/cdi-health-api`**; Python venv under **`/opt/cdi-health/venv`** (created at install); systemd unit **`cdi-health-api.service`**. See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) for dashboard and sudoers options.
+Layout: **`/usr/local/bin/cdi-health`** and **`/usr/local/bin/cdi-health-api`**; Python venv under **`/opt/cdi-health/venv`** (created at install); systemd unit **`cdi-health-api.service`**; LAN drop-in and env examples under **`/usr/share/cdi-health/examples/`**. See [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) for dashboard and sudoers options.
 
 ---
 

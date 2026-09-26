@@ -8,7 +8,8 @@
 #     bash scripts/deb-smoke-test.sh [dist/cdi-health_X.Y.Z_all.deb]
 #
 # Checks: apt resolves Depends, postinst builds the venv (and fails the install
-# if it cannot), CLI/API entry points work, and a mock scan succeeds.
+# if it cannot), CLI/API entry points work, a mock scan succeeds, and removal
+# stops cleanly and deletes the generated venv.
 set -euo pipefail
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -51,5 +52,18 @@ with open("/tmp/scan.json") as fh:
 assert data, "mock scan returned no results"
 print(f"mock scan ok ({len(data)} top-level entries)")
 PY
+
+log "Shipped examples"
+test -f /usr/share/cdi-health/examples/systemd/cdi-health-api.service.d/lan.conf
+test -f /usr/share/cdi-health/examples/cdi-health-api.env.example
+
+log "Remove package"
+apt-get remove -y -qq cdi-health
+for path in /usr/local/bin/cdi-health /usr/local/bin/cdi-health-api /opt/cdi-health/venv; do
+  if [[ -e "$path" ]]; then
+    echo "error: ${path} still present after removal" >&2
+    exit 1
+  fi
+done
 
 log "deb smoke test passed on ${PRETTY_NAME}"
