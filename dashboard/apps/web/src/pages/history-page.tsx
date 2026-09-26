@@ -19,7 +19,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@workspace/ui/components/alert-dialog"
-import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert"
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@workspace/ui/components/alert"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -57,6 +61,10 @@ import {
 
 import { DriveHealthTable } from "@/components/drive-health-table"
 import { PageHeader } from "@/components/page-header"
+import {
+  SavedScanReportButtons,
+  SavedScanReportMenu,
+} from "@/components/saved-scan-report-actions"
 import {
   useHistoryDetailQuery,
   useHistoryPagesQuery,
@@ -156,7 +164,9 @@ function HistoryList() {
       setClearOpen(false)
       await invalidateHistory()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to clear history")
+      toast.error(
+        err instanceof Error ? err.message : "Failed to clear history"
+      )
     } finally {
       setBusy(false)
     }
@@ -226,7 +236,7 @@ function HistoryList() {
               <Skeleton className="h-10 w-full" />
             </div>
           ) : entries.length === 0 && machineId ? (
-            <p className="text-muted-foreground text-sm">
+            <p className="text-sm text-muted-foreground">
               No scans recorded for this host yet.
             </p>
           ) : entries.length === 0 ? (
@@ -265,13 +275,13 @@ function HistoryList() {
               <TableBody>
                 {entries.map((entry: HistorySummary) => (
                   <TableRow key={entry.id}>
-                    <TableCell className="whitespace-nowrap font-mono text-xs">
+                    <TableCell className="font-mono text-xs whitespace-nowrap">
                       {formatTimestamp(entry.scanned_at)}
                     </TableCell>
                     <TableCell>
                       {entry.machine_id
                         ? (hostsById.get(entry.machine_id) ?? entry.machine_id)
-                        : "Local"}
+                        : "This bench"}
                       {entry.mock ? (
                         <Badge variant="secondary" className="ml-2">
                           Mock
@@ -279,7 +289,7 @@ function HistoryList() {
                       ) : null}
                     </TableCell>
                     <TableCell>{entry.device_count}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
+                    <TableCell className="text-sm text-muted-foreground">
                       {formatSummaryCounts(entry.summary)}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
@@ -292,6 +302,7 @@ function HistoryList() {
                             View
                           </Link>
                         </Button>
+                        <SavedScanReportMenu scanId={entry.id} />
                         <Button
                           variant="ghost"
                           size="sm"
@@ -309,7 +320,7 @@ function HistoryList() {
             </Table>
           )}
           {!loading && entries.length > 0 ? (
-            <div className="text-muted-foreground mt-4 flex flex-wrap items-center gap-3 text-sm">
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
               <span>
                 Showing {entries.length} scan{entries.length === 1 ? "" : "s"}
                 {historyQuery.hasNextPage ? " (more available)" : ""}
@@ -399,7 +410,7 @@ function HistoryDetailView({ scanId }: { scanId: string }) {
   const columns = useMemo(() => getSimpleColumns("Other"), [])
   const entry = detailQuery.data
   const hostName = !entry?.machine_id
-    ? "Local"
+    ? "This bench"
     : (machinesQuery.data?.find((host) => host.id === entry.machine_id)?.name ??
       entry.machine_id)
 
@@ -436,7 +447,11 @@ function HistoryDetailView({ scanId }: { scanId: string }) {
                 Back to history
               </Link>
             </Button>
-            <Button variant="outline" onClick={() => void detailQuery.refetch()}>
+            <SavedScanReportButtons scanId={scanId} disabled={!entry} />
+            <Button
+              variant="outline"
+              onClick={() => void detailQuery.refetch()}
+            >
               <RefreshCwIcon />
               Refresh
             </Button>
