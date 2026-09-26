@@ -1,14 +1,22 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import {
   AlertCircleIcon,
+  CheckCircle2Icon,
   DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
-  FolderOutputIcon,
+  HistoryIcon,
   PlayIcon,
+  ScanSearchIcon,
+  ServerIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@workspace/ui/components/alert"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -40,6 +48,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select"
+import { Skeleton } from "@workspace/ui/components/skeleton"
+import { Spinner } from "@workspace/ui/components/spinner"
 import { Switch } from "@workspace/ui/components/switch"
 import {
   Table,
@@ -49,285 +59,663 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table"
-import { Spinner } from "@workspace/ui/components/spinner"
-
-import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert"
+import { cn } from "@workspace/ui/lib/utils"
 
 import {
   mockDataRequestFields,
   useMockDataSettings,
 } from "@/components/mock-data-provider"
+import { PageHeader } from "@/components/page-header"
+import {
+  ScanAllHostsButton,
+  ScanAllHostsProgress,
+} from "@/components/scan-all-hosts"
 import {
   useDevicesQuery,
+  useFleetDevicesQuery,
+  useGenerateReportMutation,
   useHealthQuery,
-  useInvalidateCdiQueries,
+  useHistoryPagesQuery,
   useMachinesQuery,
+  useReportsQuery,
 } from "@/hooks/use-cdi-queries"
+import { downloadReportFile, openReportFile } from "@/lib/api"
+import { formatScannedAgo, hostProblemMessage } from "@/lib/host-utils"
 import {
-  downloadReportFile,
-  generateReport,
-  openReportFile,
-  reportFilename,
-} from "@/lib/api"
-import { useSelectedHostId } from "@/lib/selected-host"
-import type { ReportHistoryEntry } from "@/lib/types"
+  describeReportError,
+  formatDrives,
+  formatReportBenches,
+  OLD_API_REPORT_MESSAGE,
+  reportFileOf,
+  reportIgnoredSource,
+  reportReadyMessage,
+  reportSourceLabel,
+} from "@/lib/report-utils"
+import type {
+  FleetHost,
+  HistorySummary,
+  ReportFormat,
+  ReportListEntry,
+  ReportResponse,
+  ReportSource,
+} from "@/lib/types"
 
-const HISTORY_KEY = "cdi-report-history"
-
-/** Prefer crypto.randomUUID; fall back on HTTP LAN where it is unavailable. */
-function newReportId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID()
+function formatWhen(value?: string | null): string {
+  if (!value) {
+    return "—"
   }
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
-function loadReportHistory(): ReportHistoryEntry[] {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY)
-    if (!raw) {
-      return []
-    }
-    return JSON.parse(raw) as ReportHistoryEntry[]
-  } catch {
-    return []
-  }
+type SourceOptionProps = {
+  selected: boolean
+  onSelect: () => void
+  icon: typeof ServerIcon
+  title: string
+  description: string
+  badge?: string
 }
 
-function saveReportHistory(entries: ReportHistoryEntry[]): void {
-  try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(entries))
-  } catch {
-    /* quota exceeded or storage blocked; keep in-memory history only */
+function SourceOption({
+  selected,
+  onSelect,
+  icon: Icon,
+  title,
+  description,
+  badge,
+}: SourceOptionProps) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "flex flex-col gap-1 rounded-2xl border p-4 text-left transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/30",
+        selected
+          ? "border-primary bg-primary/5 ring-1 ring-primary/40"
+          : "hover:bg-muted/60"
+      )}
+    >
+      <span className="flex items-center gap-2 font-medium">
+        <Icon className="size-4 text-primary" aria-hidden />
+        {title}
+        {badge ? <Badge variant="secondary">{badge}</Badge> : null}
+      </span>
+      <span className="text-sm text-muted-foreground">{description}</span>
+    </button>
+  )
+}
+
+/** Benches the "Latest scans from all benches" report will include. */
+function FleetPreview({
+  hosts,
+  loading,
+  unsupported,
+  error,
+}: {
+  hosts: FleetHost[]
+  loading: boolean
+  unsupported: boolean
+  error: string | null
+}) {
+  if (loading) {
+    return <Skeleton className="h-20 w-full" />
   }
+  if (error) {
+    return (
+      <p className="text-sm text-destructive">
+        Couldn't load the benches' saved scans: {error}
+      </p>
+    )
+  }
+  if (unsupported) {
+    return (
+      <Alert>
+        <AlertCircleIcon />
+        <AlertTitle>Can't combine benches yet</AlertTitle>
+        <AlertDescription>
+          CDI Health on this computer is too old to report on other benches.
+          Update it, or use Scan this bench now below.
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  const included = hosts.filter((host) => host.scanned_at)
+  const missing = hosts.filter((host) => !host.scanned_at)
+
+  if (included.length === 0) {
+    return (
+      <div className="flex flex-col gap-3 rounded-2xl border border-dashed p-4">
+        <p className="text-sm">
+          <span className="font-medium">No saved scans yet.</span> Scan all
+          benches first, then come back and make the report.
+        </p>
+        <div>
+          <ScanAllHostsButton size="sm" />
+        </div>
+        <ScanAllHostsProgress hostCount={hosts.length} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm font-medium">
+        Will include {included.length} bench{included.length === 1 ? "" : "es"}:
+      </p>
+      <ul className="flex flex-col gap-1.5" aria-label="Benches in this report">
+        {included.map((host, index) => {
+          const problem = hostProblemMessage(host.name, host.status, host.error)
+          return (
+            <li
+              key={host.machine_id ?? `${host.name}-${index}`}
+              className="flex flex-col gap-0.5 rounded-xl border px-3 py-2 text-sm"
+            >
+              <span className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">{host.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {formatDrives(host.device_count)} ·{" "}
+                  {formatScannedAgo(host.scanned_at)}
+                </span>
+              </span>
+              {problem ? (
+                <span className="text-xs text-muted-foreground">
+                  Last scan attempt failed, so this uses the older scan.{" "}
+                  {problem}
+                </span>
+              ) : null}
+            </li>
+          )
+        })}
+      </ul>
+      {missing.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Not included (never scanned):{" "}
+          {missing.map((host) => host.name).join(", ")}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>Want fresher results? Scan all benches first.</span>
+        <ScanAllHostsButton size="sm" />
+      </div>
+      <ScanAllHostsProgress hostCount={hosts.length} />
+    </div>
+  )
+}
+
+/** Pick one or more saved scans from History. */
+function SavedScanPicker({
+  selectedIds,
+  onToggle,
+  hostName,
+}: {
+  selectedIds: string[]
+  onToggle: (entry: HistorySummary) => void
+  hostName: (machineId?: string | null) => string
+}) {
+  const historyQuery = useHistoryPagesQuery(null)
+  const entries = useMemo(
+    () => historyQuery.data?.pages.flat() ?? [],
+    [historyQuery.data]
+  )
+
+  if (historyQuery.isLoading) {
+    return <Skeleton className="h-32 w-full" />
+  }
+  if (historyQuery.error instanceof Error) {
+    return (
+      <p className="text-sm text-destructive">
+        Couldn't load saved scans: {historyQuery.error.message}
+      </p>
+    )
+  }
+  if (entries.length === 0) {
+    return (
+      <div className="flex flex-col gap-3 rounded-2xl border border-dashed p-4">
+        <p className="text-sm">
+          <span className="font-medium">No saved scans yet.</span> Scan all
+          benches first, then pick a scan here.
+        </p>
+        <div>
+          <ScanAllHostsButton size="sm" />
+        </div>
+        <ScanAllHostsProgress />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm font-medium">
+        Pick one or more saved scans
+        {selectedIds.length > 0 ? ` · ${selectedIds.length} picked` : ""}
+      </p>
+      <ul
+        className="flex max-h-80 flex-col gap-1.5 overflow-y-auto pr-1"
+        aria-label="Saved scans"
+      >
+        {entries.map((entry) => {
+          const checked = selectedIds.includes(entry.id)
+          const id = `saved-scan-${entry.id}`
+          return (
+            <li key={entry.id}>
+              <label
+                htmlFor={id}
+                className={cn(
+                  "flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-sm",
+                  checked ? "border-primary bg-primary/5" : "hover:bg-muted/60"
+                )}
+              >
+                <input
+                  id={id}
+                  type="checkbox"
+                  className="size-4 shrink-0 accent-primary"
+                  checked={checked}
+                  onChange={() => onToggle(entry)}
+                />
+                <span className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium">
+                    {hostName(entry.machine_id)}
+                    {entry.mock ? (
+                      <Badge variant="secondary" className="ml-2">
+                        Mock
+                      </Badge>
+                    ) : null}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDrives(entry.device_count)} · Scanned{" "}
+                    {formatWhen(entry.scanned_at)}
+                  </span>
+                </span>
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+      {historyQuery.hasNextPage ? (
+        <div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={historyQuery.isFetchingNextPage}
+            aria-busy={historyQuery.isFetchingNextPage}
+            onClick={() => void historyQuery.fetchNextPage()}
+          >
+            {historyQuery.isFetchingNextPage ? (
+              <Spinner data-icon="inline-start" />
+            ) : null}
+            Show older scans
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 export function ReportsPage() {
   const { useMockData, mockDataPath } = useMockDataSettings()
-  const { invalidateDevices, invalidateHealth } = useInvalidateCdiQueries()
   const healthQuery = useHealthQuery()
-  const devicesQuery = useDevicesQuery()
   const machinesQuery = useMachinesQuery()
-  const selectedHostId = useSelectedHostId()
-  const selectedHostName = selectedHostId
-    ? (machinesQuery.data?.find((host) => host.id === selectedHostId)?.name ??
-      selectedHostId)
-    : null
-  const [format, setFormat] = useState<"html" | "pdf" | "csv">("html")
+  const fleetQuery = useFleetDevicesQuery()
+  const reportsQuery = useReportsQuery()
+  const generate = useGenerateReportMutation()
+
+  const [source, setSource] = useState<ReportSource>("fleet")
+  const [format, setFormat] = useState<ReportFormat>("html")
+  const [historyIds, setHistoryIds] = useState<string[]>([])
+  const [historyPicks, setHistoryPicks] = useState<HistorySummary[]>([])
   const [outputPath, setOutputPath] = useState("")
   const [device, setDevice] = useState("")
   const [ignoreAta, setIgnoreAta] = useState(false)
   const [ignoreNvme, setIgnoreNvme] = useState(false)
   const [ignoreScsi, setIgnoreScsi] = useState(false)
-  const [running, setRunning] = useState(false)
-  const [history, setHistory] = useState<ReportHistoryEntry[]>(() =>
-    loadReportHistory()
-  )
+  const [lastReport, setLastReport] = useState<ReportResponse | null>(null)
   const [reportAction, setReportAction] = useState<string | null>(null)
 
-  const devices = devicesQuery.data?.devices ?? []
+  // Drive paths for the "Scan this bench now" device filter.
+  const devicesQuery = useDevicesQuery(null, source === "scan")
+  const localDevices = devicesQuery.data?.devices ?? []
+
+  const hostNames = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const host of machinesQuery.data ?? []) {
+      map.set(host.id, host.name)
+    }
+    return map
+  }, [machinesQuery.data])
+  const hostName = (machineId?: string | null) =>
+    machineId ? (hostNames.get(machineId) ?? "Unknown bench") : "This bench"
+
+  const fleetHosts = fleetQuery.data?.hosts ?? []
+  const fleetUnsupported = fleetQuery.data === null
+  const fleetHasSaved = fleetHosts.some((host) => host.scanned_at)
   const pdfAvailable = healthQuery.data?.weasyprint_available === true
-  const preloadError =
-    healthQuery.error instanceof Error
-      ? healthQuery.error.message
-      : devicesQuery.error instanceof Error
-        ? devicesQuery.error.message
-        : null
+  const running = generate.isPending
+
+  const canGenerate =
+    !running &&
+    (source === "scan" ||
+      (source === "fleet" && fleetHasSaved && !fleetUnsupported) ||
+      (source === "history" && historyIds.length > 0))
+
+  const toggleHistory = (entry: HistorySummary) => {
+    setHistoryIds((ids) =>
+      ids.includes(entry.id)
+        ? ids.filter((id) => id !== entry.id)
+        : [...ids, entry.id]
+    )
+    setHistoryPicks((picks) =>
+      picks.some((pick) => pick.id === entry.id)
+        ? picks.filter((pick) => pick.id !== entry.id)
+        : [...picks, entry]
+    )
+  }
 
   const runReport = async () => {
-    setRunning(true)
     try {
-      const result = await generateReport({
-        format,
-        output_file: outputPath.trim() || undefined,
-        ignore_ata: ignoreAta,
-        ignore_nvme: ignoreNvme,
-        ignore_scsi: ignoreScsi,
-        device: device.trim() || undefined,
-        ...mockDataRequestFields(useMockData, mockDataPath),
-      })
-
-      const entry: ReportHistoryEntry = {
-        ...result,
-        filename: result.filename || reportFilename(result.output_file),
-        id: newReportId(),
+      const result = await generate.mutateAsync(
+        source === "scan"
+          ? {
+              format,
+              source,
+              output_file: outputPath.trim() || undefined,
+              ignore_ata: ignoreAta,
+              ignore_nvme: ignoreNvme,
+              ignore_scsi: ignoreScsi,
+              device: device.trim() || undefined,
+              ...mockDataRequestFields(useMockData, mockDataPath),
+            }
+          : source === "history"
+            ? { format, source, history_ids: historyIds }
+            : { format, source }
+      )
+      setLastReport(result)
+      if (reportIgnoredSource(source, result)) {
+        toast.warning(OLD_API_REPORT_MESSAGE)
+      } else {
+        toast.success(reportReadyMessage(result))
       }
-      const nextHistory = [entry, ...history].slice(0, 20)
-      setHistory(nextHistory)
-      saveReportHistory(nextHistory)
-      await Promise.all([invalidateDevices(), invalidateHealth()])
-      toast.success(`Report generated — ${result.devices_count} device(s)`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Report generation failed")
-    } finally {
-      setRunning(false)
+      toast.error(describeReportError(err))
     }
   }
 
-  const handleOpenReport = async (entry: ReportHistoryEntry) => {
-    const filename = entry.filename || reportFilename(entry.output_file)
-    setReportAction(`${entry.id}-open`)
+  const handleOpen = async (filename: string) => {
+    setReportAction(`${filename}-open`)
     try {
       await openReportFile(filename)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not open report")
+      toast.error(
+        err instanceof Error ? err.message : "Couldn't open the report"
+      )
     } finally {
       setReportAction(null)
     }
   }
 
-  const handleDownloadReport = async (entry: ReportHistoryEntry) => {
-    const filename = entry.filename || reportFilename(entry.output_file)
-    setReportAction(`${entry.id}-download`)
+  const handleDownload = async (filename: string) => {
+    setReportAction(`${filename}-download`)
     try {
       await downloadReportFile(filename)
       toast.success(`Downloaded ${filename}`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not download report")
+      toast.error(
+        err instanceof Error ? err.message : "Couldn't download the report"
+      )
     } finally {
       setReportAction(null)
     }
   }
 
+  const reportButtons = (filename: string) => (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={reportAction === `${filename}-open`}
+        aria-busy={reportAction === `${filename}-open`}
+        onClick={() => void handleOpen(filename)}
+      >
+        {reportAction === `${filename}-open` ? (
+          <Spinner data-icon="inline-start" />
+        ) : (
+          <ExternalLinkIcon data-icon="inline-start" />
+        )}
+        Open
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={reportAction === `${filename}-download`}
+        aria-busy={reportAction === `${filename}-download`}
+        onClick={() => void handleDownload(filename)}
+      >
+        {reportAction === `${filename}-download` ? (
+          <Spinner data-icon="inline-start" />
+        ) : (
+          <DownloadIcon data-icon="inline-start" />
+        )}
+        Download
+      </Button>
+    </>
+  )
+
+  const recent: ReportListEntry[] = reportsQuery.data?.reports ?? []
+  const savedOnServer = reportsQuery.data?.savedOnServer ?? true
+
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-2">
-        <p className="text-muted-foreground font-mono text-xs uppercase tracking-[0.28em]">
-          Reports
-        </p>
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Technician Handoff Exports
-          </h1>
-          <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
-            Generate HTML, PDF, or CSV reports from the current scan data via
-            the CDI backend.
-          </p>
-        </div>
-      </section>
-
-      {preloadError ? (
-        <Alert variant="destructive">
-          <AlertCircleIcon />
-          <AlertTitle>Could not preload report context</AlertTitle>
-          <AlertDescription>{preloadError}</AlertDescription>
-        </Alert>
-      ) : null}
+      <PageHeader
+        eyebrow="Reports"
+        title="Health Reports"
+        description="Make an HTML, CSV, or PDF drive health report to hand off — from the latest scans of every bench, or from a saved scan."
+      />
 
       {format === "pdf" && !pdfAvailable ? (
         <Alert variant="destructive">
-          <AlertTitle>PDF preflight failed</AlertTitle>
+          <AlertCircleIcon />
+          <AlertTitle>PDF isn't available here</AlertTitle>
           <AlertDescription>
-            {healthQuery.isLoading
-              ? "Checking WeasyPrint availability on this grading host…"
-              : "WeasyPrint is not available on this grading host. Install with "}
-            {!healthQuery.isLoading ? (
+            {healthQuery.isLoading ? (
+              "Checking whether this computer can make PDFs…"
+            ) : (
               <>
-                <span className="font-mono">pip install weasyprint</span> before
-                generating PDF reports.
+                This computer's CDI Health can't make PDFs (WeasyPrint is
+                missing). Pick HTML or CSV, or install it with{" "}
+                <span className="font-mono">pip install weasyprint</span>.
               </>
-            ) : null}
+            )}
           </AlertDescription>
         </Alert>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileTextIcon className="text-primary" />
-              Generate Report
-            </CardTitle>
-            <CardDescription>
-              Configure format and filters, then execute against the local API.
-              {selectedHostName
-                ? ` Reports always scan drives attached to the API host; the selected fleet host (${selectedHostName}) is not applied.`
-                : ""}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="report-format">Output format</FieldLabel>
-                <Select
-                  value={format}
-                  onValueChange={(value) =>
-                    setFormat(value as "html" | "pdf" | "csv")
-                  }
-                >
-                  <SelectTrigger id="report-format" className="w-full">
-                    <SelectValue placeholder="Select format" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="html">HTML</SelectItem>
-                      <SelectItem value="pdf">PDF</SelectItem>
-                      <SelectItem value="csv">CSV</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileTextIcon className="text-primary" />
+            Make a report
+          </CardTitle>
+          <CardDescription>
+            Reports use scans that are already saved — nothing is rescanned
+            unless you pick Scan this bench now.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium" id="report-source-label">
+              What to report on
+            </p>
+            <div
+              role="radiogroup"
+              aria-labelledby="report-source-label"
+              className="flex flex-col gap-2"
+            >
+              <div className="grid gap-2 md:grid-cols-2">
+                <SourceOption
+                  selected={source === "fleet"}
+                  onSelect={() => setSource("fleet")}
+                  icon={ServerIcon}
+                  title="Latest scans from all benches"
+                  badge="Recommended"
+                  description="One report with the most recent saved scan of every bench."
+                />
+                <SourceOption
+                  selected={source === "history"}
+                  onSelect={() => setSource("history")}
+                  icon={HistoryIcon}
+                  title="A saved scan…"
+                  description="Pick one or more scans from History."
+                />
+              </div>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={source === "scan"}
+                onClick={() => setSource("scan")}
+                className={cn(
+                  "flex w-fit items-center gap-2 rounded-xl px-2 py-1 text-left text-sm text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30",
+                  source === "scan"
+                    ? "bg-muted font-medium text-foreground"
+                    : "hover:text-foreground"
+                )}
+              >
+                <ScanSearchIcon className="size-4" aria-hidden />
+                Or: Scan this bench now (only drives plugged into this computer)
+              </button>
+            </div>
+          </div>
 
-              <Field>
-                <FieldLabel htmlFor="output-path">Output path (optional)</FieldLabel>
-                <Input
-                  id="output-path"
-                  value={outputPath}
-                  onChange={(e) => setOutputPath(e.target.value)}
-                  placeholder="/tmp/cdi-report.html"
+          <div className="rounded-2xl border bg-muted/30 p-4">
+            {source === "fleet" ? (
+              <FleetPreview
+                hosts={fleetHosts}
+                loading={fleetQuery.isLoading}
+                unsupported={fleetUnsupported}
+                error={
+                  fleetQuery.error instanceof Error
+                    ? fleetQuery.error.message
+                    : null
+                }
+              />
+            ) : source === "history" ? (
+              <div className="flex flex-col gap-3">
+                <SavedScanPicker
+                  selectedIds={historyIds}
+                  onToggle={toggleHistory}
+                  hostName={hostName}
                 />
-                <FieldDescription>
-                  Leave blank to use the API default output location.
-                </FieldDescription>
-              </Field>
+                {historyPicks.length > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Will include:{" "}
+                    {historyPicks
+                      .map(
+                        (pick) =>
+                          `${hostName(pick.machine_id)} (${formatDrives(pick.device_count)}, ${formatWhen(pick.scanned_at)})`
+                      )
+                      .join("; ")}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <p className="text-sm">
+                  Scans the drives plugged into{" "}
+                  <span className="font-medium">this computer</span> right now,
+                  then makes the report. On a technician laptop this is usually
+                  empty — use Latest scans from all benches instead.
+                </p>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="device-filter">
+                      Only one drive (optional)
+                    </FieldLabel>
+                    <Input
+                      id="device-filter"
+                      value={device}
+                      onChange={(e) => setDevice(e.target.value)}
+                      placeholder="/dev/nvme0"
+                      list="device-options"
+                    />
+                    <datalist id="device-options">
+                      {localDevices.map((d) =>
+                        d.dut ? <option key={d.dut} value={d.dut} /> : null
+                      )}
+                    </datalist>
+                  </Field>
+                  <Field orientation="horizontal">
+                    <Switch
+                      id="report-ignore-ata"
+                      checked={ignoreAta}
+                      onCheckedChange={setIgnoreAta}
+                    />
+                    <FieldLabel htmlFor="report-ignore-ata">
+                      Skip ATA/SATA drives
+                    </FieldLabel>
+                  </Field>
+                  <Field orientation="horizontal">
+                    <Switch
+                      id="report-ignore-nvme"
+                      checked={ignoreNvme}
+                      onCheckedChange={setIgnoreNvme}
+                    />
+                    <FieldLabel htmlFor="report-ignore-nvme">
+                      Skip NVMe drives
+                    </FieldLabel>
+                  </Field>
+                  <Field orientation="horizontal">
+                    <Switch
+                      id="report-ignore-scsi"
+                      checked={ignoreScsi}
+                      onCheckedChange={setIgnoreScsi}
+                    />
+                    <FieldLabel htmlFor="report-ignore-scsi">
+                      Skip SCSI/SAS drives
+                    </FieldLabel>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="output-path">
+                      Save to (optional)
+                    </FieldLabel>
+                    <Input
+                      id="output-path"
+                      value={outputPath}
+                      onChange={(e) => setOutputPath(e.target.value)}
+                      placeholder="/tmp/cdi-report.html"
+                    />
+                    <FieldDescription>
+                      Leave blank to use the usual reports folder.
+                    </FieldDescription>
+                  </Field>
+                </FieldGroup>
+              </div>
+            )}
+          </div>
 
-              <Field>
-                <FieldLabel htmlFor="device-filter">
-                  Single device (optional)
-                </FieldLabel>
-                <Input
-                  id="device-filter"
-                  value={device}
-                  onChange={(e) => setDevice(e.target.value)}
-                  placeholder="/dev/nvme0"
-                  list="device-options"
-                />
-                <datalist id="device-options">
-                  {devices.map((d) =>
-                    d.dut ? <option key={d.dut} value={d.dut} /> : null
-                  )}
-                </datalist>
-              </Field>
-
-              <Field orientation="horizontal">
-                <Switch
-                  id="report-ignore-ata"
-                  checked={ignoreAta}
-                  onCheckedChange={setIgnoreAta}
-                />
-                <FieldLabel htmlFor="report-ignore-ata">Ignore ATA/SATA</FieldLabel>
-              </Field>
-              <Field orientation="horizontal">
-                <Switch
-                  id="report-ignore-nvme"
-                  checked={ignoreNvme}
-                  onCheckedChange={setIgnoreNvme}
-                />
-                <FieldLabel htmlFor="report-ignore-nvme">Ignore NVMe</FieldLabel>
-              </Field>
-              <Field orientation="horizontal">
-                <Switch
-                  id="report-ignore-scsi"
-                  checked={ignoreScsi}
-                  onCheckedChange={setIgnoreScsi}
-                />
-                <FieldLabel htmlFor="report-ignore-scsi">Ignore SCSI/SAS</FieldLabel>
-              </Field>
-            </FieldGroup>
-
+          <div className="flex flex-wrap items-end gap-3">
+            <Field className="w-full max-w-48">
+              <FieldLabel htmlFor="report-format">Format</FieldLabel>
+              <Select
+                value={format}
+                onValueChange={(value) => setFormat(value as ReportFormat)}
+              >
+                <SelectTrigger id="report-format" className="w-full">
+                  <SelectValue placeholder="Select format" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="html">HTML</SelectItem>
+                    <SelectItem value="csv">CSV</SelectItem>
+                    <SelectItem value="pdf">PDF</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
             <Button
               onClick={() => void runReport()}
-              disabled={running}
+              disabled={!canGenerate}
               aria-busy={running}
             >
               {running ? (
@@ -335,147 +723,119 @@ export function ReportsPage() {
               ) : (
                 <PlayIcon data-icon="inline-start" />
               )}
-              {running ? "Generating…" : "Execute report"}
+              {running
+                ? source === "scan"
+                  ? "Scanning and making report…"
+                  : "Making report…"
+                : "Make report"}
             </Button>
-            <span className="sr-only" aria-live="polite">
-              {running ? "Generating report" : reportAction ? "Working on report" : ""}
-            </span>
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FolderOutputIcon className="text-primary" />
-              Latest Output
-            </CardTitle>
-            <CardDescription>
-              Most recent report from this session or browser history.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {history[0] ? (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">{history[0].format.toUpperCase()}</Badge>
-                  <Badge variant="outline">
-                    {history[0].devices_count} device(s)
-                  </Badge>
-                </div>
-                <p className="font-mono text-sm break-all">{history[0].output_file}</p>
-                <p className="text-muted-foreground text-sm">
-                  Generated {new Date(history[0].generated_at).toLocaleString()}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={reportAction === `${history[0].id}-open`}
-                    aria-busy={reportAction === `${history[0].id}-open`}
-                    onClick={() => void handleOpenReport(history[0])}
-                  >
-                    {reportAction === `${history[0].id}-open` ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : (
-                      <ExternalLinkIcon data-icon="inline-start" />
-                    )}
-                    Open
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={reportAction === `${history[0].id}-download`}
-                    aria-busy={reportAction === `${history[0].id}-download`}
-                    onClick={() => void handleDownloadReport(history[0])}
-                  >
-                    {reportAction === `${history[0].id}-download` ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : (
-                      <DownloadIcon data-icon="inline-start" />
-                    )}
-                    Download
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <Empty className="border">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <FileTextIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>No reports yet</EmptyTitle>
-                  <EmptyDescription>
-                    Run a report to see output details here.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            )}
-          </CardContent>
-        </Card>
-      </section>
+          {lastReport ? (
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3"
+              role="status"
+            >
+              <span className="flex items-center gap-2 text-sm">
+                <CheckCircle2Icon className="size-4 text-primary" aria-hidden />
+                <span>
+                  <span className="font-medium">Report ready</span> ·{" "}
+                  {lastReport.format.toUpperCase()} ·{" "}
+                  {formatDrives(lastReport.devices_count)}
+                  {lastReport.hosts?.length
+                    ? ` · ${formatReportBenches(lastReport.hosts)}`
+                    : ""}
+                </span>
+              </span>
+              <span className="flex flex-wrap gap-2">
+                {reportButtons(reportFileOf(lastReport))}
+              </span>
+            </div>
+          ) : null}
+          <span className="sr-only" aria-live="polite">
+            {running
+              ? "Making report"
+              : reportAction
+                ? "Working on report"
+                : ""}
+          </span>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Report History</CardTitle>
+          <CardTitle>Recent reports</CardTitle>
           <CardDescription>
-            Last {history.length} report(s) stored in browser local storage.
+            {savedOnServer
+              ? "Newest first. Anyone using this dashboard sees the same list."
+              : "Kept in this browser only — update CDI Health to keep reports for everyone."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {history.length > 0 ? (
+          {reportsQuery.isLoading ? (
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : reportsQuery.error instanceof Error ? (
+            <p className="text-sm text-destructive">
+              Couldn't load recent reports: {reportsQuery.error.message}
+            </p>
+          ) : recent.length === 0 ? (
+            <Empty className="border">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FileTextIcon />
+                </EmptyMedia>
+                <EmptyTitle>No reports yet</EmptyTitle>
+                <EmptyDescription>
+                  Reports you make appear here so you can open or download them
+                  again.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Generated</TableHead>
+                  <TableHead>When</TableHead>
                   <TableHead>Format</TableHead>
-                  <TableHead>Devices</TableHead>
-                  <TableHead>Output file</TableHead>
+                  <TableHead>Benches</TableHead>
+                  <TableHead>Drives</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {history.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>
-                      {new Date(entry.generated_at).toLocaleString()}
+                {recent.map((entry, index) => (
+                  <TableRow key={`${entry.filename}-${index}`}>
+                    <TableCell className="whitespace-nowrap">
+                      {formatWhen(entry.generated_at)}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{entry.format.toUpperCase()}</Badge>
+                      <Badge variant="outline">
+                        {entry.format.toUpperCase()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="flex flex-col">
+                        <span>{formatReportBenches(entry.hosts)}</span>
+                        {reportSourceLabel(entry.source) ? (
+                          <span className="text-xs text-muted-foreground">
+                            {reportSourceLabel(entry.source)}
+                          </span>
+                        ) : null}
+                      </span>
                     </TableCell>
                     <TableCell>{entry.devices_count}</TableCell>
-                    <TableCell className="max-w-md truncate font-mono text-xs">
-                      {entry.output_file}
-                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={reportAction === `${entry.id}-open`}
-                          aria-busy={reportAction === `${entry.id}-open`}
-                          onClick={() => void handleOpenReport(entry)}
-                        >
-                          Open
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={reportAction === `${entry.id}-download`}
-                          aria-busy={reportAction === `${entry.id}-download`}
-                          onClick={() => void handleDownloadReport(entry)}
-                        >
-                          Download
-                        </Button>
+                        {reportButtons(entry.filename)}
                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              Report history will appear here after your first export.
-            </p>
           )}
         </CardContent>
       </Card>
