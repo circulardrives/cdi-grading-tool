@@ -63,6 +63,8 @@ class FakeRemote:
 
     def __init__(self, token: str | None = REMOTE_TOKEN) -> None:
         self.token = token
+        # None mimics an older API whose /health has no hostname.
+        self.hostname: str | None = "pecan09-101h"
         self.scan_status = 200
         self.scan_payload: Any = REMOTE_SCAN
         self.scan_delay = 0.0
@@ -98,13 +100,14 @@ class FakeRemote:
                 self._record()
                 if self.path.startswith("/api/v1/health"):
                     if fake.token and not self._authorized():
-                        self._send(200, {"status": "ok", "version": "9.9.9"})
+                        self._send(200, {"status": "ok", "version": "9.9.9", "hostname": fake.hostname})
                     else:
                         self._send(
                             200,
                             {
                                 "status": "ok",
                                 "version": "9.9.9",
+                                "hostname": fake.hostname,
                                 "is_root": True,
                                 "api_token_enabled": bool(fake.token),
                                 "auth_mode": "token" if fake.token else "none",
@@ -475,7 +478,26 @@ def test_check_auth_failed_with_wrong_or_missing_token(api_client: TestClient, f
         assert body["machine"]["status"] == "auth_failed"
         assert body["machine"]["remote_auth"] == "token"
         assert body["error"] == f"Host 'Bench {token}' rejected the API token"
-        assert body["health"] == {"status": "ok", "version": "9.9.9"}
+        assert body["health"] == {"status": "ok", "version": "9.9.9", "hostname": "pecan09-101h"}
+        # The hostname is public, so it is recorded even when the token is wrong.
+        assert body["machine"]["remote_hostname"] == "pecan09-101h"
+
+
+def test_check_records_remote_hostname(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    machine = _register(api_client, "10.0.0.5", fake_remote.address)
+    assert machine["remote_hostname"] is None
+    body = api_client.post(f"/api/v1/machines/{machine['id']}/check").json()
+    assert body["machine"]["remote_hostname"] == "pecan09-101h"
+    # The user-chosen name is never overwritten; dashboards decide what to show.
+    assert body["machine"]["name"] == "10.0.0.5"
+    listed = api_client.get("/api/v1/machines").json()
+    assert [m["remote_hostname"] for m in listed] == ["pecan09-101h"]
+
+    # An older API without hostname keeps the last known value.
+    fake_remote.hostname = None
+    body = api_client.post(f"/api/v1/machines/{machine['id']}/check").json()
+    assert "hostname" not in body["health"] or body["health"]["hostname"] is None
+    assert body["machine"]["remote_hostname"] == "pecan09-101h"
 
 
 def test_no_auth_remote_is_reachable_without_stored_token(api_client: TestClient) -> None:

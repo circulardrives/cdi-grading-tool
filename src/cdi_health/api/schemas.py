@@ -264,6 +264,7 @@ class SelfTestAbortRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+    hostname: str | None = Field(default=None, description="The bench's own hostname (socket.gethostname()).")
     is_root: bool | None = None
     allow_non_root_mode: bool | None = None
     api_token_enabled: bool | None = None
@@ -343,6 +344,10 @@ class MachineResponse(BaseModel):
     status: MachineStatusValue
     has_api_token: bool = False
     remote_version: str | None = None
+    remote_hostname: str | None = Field(
+        default=None,
+        description="Hostname the remote bench reported in its /health payload (set by /check).",
+    )
     remote_auth: Literal["none", "token"] | None = Field(
         default=None,
         description="Remote host's auth mode from its /health auth_mode (set by /check).",

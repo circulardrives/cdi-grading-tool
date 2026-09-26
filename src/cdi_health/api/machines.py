@@ -63,6 +63,7 @@ def public_machine(entry: dict[str, Any]) -> dict[str, Any]:
     public = {key: value for key, value in entry.items() if key != TOKEN_FIELD}
     public["has_api_token"] = bool(entry.get(TOKEN_FIELD))
     public.setdefault("remote_version", None)
+    public.setdefault("remote_hostname", None)
     public.setdefault("remote_auth", None)
     return public
 
@@ -160,6 +161,7 @@ class MachineStore:
             "notes": payload.get("notes", "").strip(),
             "status": "unknown",
             "remote_version": None,
+            "remote_hostname": None,
             "remote_auth": None,
             "last_seen_at": None,
             "last_scan_at": None,
@@ -208,8 +210,9 @@ class MachineStore:
         seen: bool = False,
         remote_version: str | None = None,
         remote_auth: str | None = None,
+        remote_hostname: str | None = None,
     ) -> dict[str, Any] | None:
-        """Update reachability status (and optionally last_seen/remote_version/remote_auth)."""
+        """Update reachability status (and optionally last_seen/remote_version/remote_auth/remote_hostname)."""
         if status not in MACHINE_STATUSES:
             raise ValueError(f"Invalid machine status: {status}")
         now = utc_now_iso()
@@ -224,6 +227,8 @@ class MachineStore:
                 entry["remote_version"] = remote_version
             if remote_auth in ("none", "token"):
                 entry["remote_auth"] = remote_auth
+            if remote_hostname:
+                entry["remote_hostname"] = remote_hostname
             entry["updated_at"] = now
             self._save()
             return public_machine(entry)

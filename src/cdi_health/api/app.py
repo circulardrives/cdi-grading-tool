@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
 import time
 import urllib.parse
 from collections.abc import Iterator
@@ -163,6 +164,19 @@ class ApiState:
             self.hardware_lock.release()
 
 
+def bench_hostname() -> str | None:
+    """This bench's own hostname (e.g. ``pecan09-101h``), shown by dashboards as the bench name.
+
+    Not sensitive (reverse DNS and discovery already expose it), so it is part
+    of the minimal unauthenticated ``/health`` payload too.
+    """
+    try:
+        name = socket.gethostname().strip()
+    except OSError:
+        return None
+    return name or None
+
+
 def create_app() -> FastAPI:
     """Create and configure the CDI Health API application."""
 
@@ -222,7 +236,7 @@ def create_app() -> FastAPI:
         # get a minimal public payload only.
         if api_token_is_enabled() and not token_ok and not client_is_loopback(request):
             # auth_mode lets discovering clients know a token is required.
-            return HealthResponse(status="ok", version=API_VERSION, auth_mode="token")
+            return HealthResponse(status="ok", version=API_VERSION, auth_mode="token", hostname=bench_hostname())
 
         missing_required_tools = check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False)
         message = None
@@ -231,6 +245,7 @@ def create_app() -> FastAPI:
         return HealthResponse(
             status="ok",
             version=API_VERSION,
+            hostname=bench_hostname(),
             is_root=is_root_user(),
             allow_non_root_mode=allow_non_root_mode(),
             api_token_enabled=api_token_is_enabled(),
@@ -630,6 +645,7 @@ def create_app() -> FastAPI:
             status = exc.machine_status or "unreachable"
 
         version = health.get("version") if health else None
+        remote_hostname = health.get("hostname") if health else None
         remote_auth = "token" if status == "auth_failed" else remote_auth_mode(health)
         updated = store.set_status(
             machine_id,
@@ -637,6 +653,7 @@ def create_app() -> FastAPI:
             seen=health is not None,
             remote_version=str(version) if version else None,
             remote_auth=remote_auth,
+            remote_hostname=remote_hostname.strip() if isinstance(remote_hostname, str) else None,
         )
         return MachineCheckResponse.model_validate({"machine": updated or machine, "health": health, "error": error})
 
