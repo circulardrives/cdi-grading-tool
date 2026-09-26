@@ -1,412 +1,282 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 
+import { describeRequestError } from "@/components/ui-cdi"
+import {
+  buildDriveRows,
+  FAST_POLL_MS,
+  hasLogData,
+  latestResult,
+  resultKind,
+  runningType,
+  RUNNING_POLL_MS,
+  SETTLE_MS,
+  SLOW_POLL_MS,
+  StaleBenchApiError,
+  type TestType,
+} from "@/components/self-tests/self-test-format"
+import {
+  queueSelfTests,
+  useBenchQueue,
+} from "@/components/self-tests/start-queue"
 import {
   abortSelfTest,
   getDevices,
-  getJob,
   getSelfTestStatus,
   isNotFoundError,
-  listJobs,
-  startSelfTest,
 } from "@/lib/api"
-import { describeHostProblem, describeRequestError } from "@/lib/host-utils"
 import { queryKeys } from "@/lib/query-keys"
-import {
-  buildSerialByController,
-  hasLogData,
-  LOG_WAIT_POLL_INTERVAL_MS,
-  MAX_LOG_WAIT_POLLS,
-  mergeControllers,
-  nvmeControllersFromDevices,
-  StaleBenchApiError,
-} from "@/lib/self-test-utils"
-import type { JobResponse, SelfTestDeviceStatus } from "@/lib/types"
+import type { SelfTestStatusResponse } from "@/lib/types"
 
-type UseSelfTestPollingOptions = {
-  /** Registered bench to run on; `null` = the API serving this dashboard. */
+type UseSelfTestBenchOptions = {
+  /** Registered bench to run on; `null` = the bench serving this dashboard. */
   machineId: string | null
   /** Plain name for messages ("pecan09", "this bench"). */
   benchName: string
 }
 
+/** How often to ask the bench for status, or false to stop polling. */
+function pollInterval(
+  data: SelfTestStatusResponse | undefined,
+  busy: boolean,
+  settling: boolean,
+  started: ReadonlyMap<string, TestType>
+): number | false {
+  if (busy) {
+    return FAST_POLL_MS
+  }
+  const running = (data?.devices ?? []).filter((entry) => entry.in_progress)
+  if (running.length > 0) {
+    const onlyExtended = running.every(
+      (entry) =>
+        runningType(entry, started.get(entry.device ?? "")) === "extended"
+    )
+    return onlyExtended ? SLOW_POLL_MS : RUNNING_POLL_MS
+  }
+  if (settling) {
+    // Just started, stopped or finished: the drive's log can lag a little.
+    const waitingForLog = (data?.devices ?? []).some(
+      (entry) => started.has(entry.device ?? "") && !hasLogData(entry)
+    )
+    return waitingForLog || !data ? FAST_POLL_MS : RUNNING_POLL_MS
+  }
+  return false
+}
+
 /**
- * Self-test state for ONE bench. Mount it under a `key` per bench so switching
- * bench starts from a clean slate; every call and cache key carries the
- * bench's machine_id so results from two benches never mix.
+ * Self-test state for ONE bench: its drives (status + saved scan), the start
+ * queue, and stop. Every call and cache key carries the bench's machine_id so
+ * results from two benches never mix. Polls only while something is running.
  */
-export function useSelfTestPolling({
+export function useSelfTestBench({
   machineId,
   benchName,
-}: UseSelfTestPollingOptions) {
+}: UseSelfTestBenchOptions) {
   const queryClient = useQueryClient()
-  const [devices, setDevices] = useState<SelfTestDeviceStatus[]>([])
-  const [scanControllers, setScanControllers] = useState<string[]>([])
-  const [serialByController, setSerialByController] = useState<
-    Map<string, string>
-  >(new Map())
-  const [selectedDevice, setSelectedDevice] = useState<string>("all")
-  const [testType, setTestType] = useState<"short" | "extended">("short")
-  const [loading, setLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [starting, setStarting] = useState(false)
-  const [abortingDevice, setAbortingDevice] = useState<string | null>(null)
-  const [activeJobId, setActiveJobId] = useState<string | null>(null)
-  const [watchingTests, setWatchingTests] = useState(false)
-  const [lastCompletedJob, setLastCompletedJob] = useState<JobResponse | null>(
-    null
-  )
-  const [recentJobs, setRecentJobs] = useState<JobResponse[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const queue = useBenchQueue(machineId)
+  const busy = queue.pending.size > 0
 
-  const pollRef = useRef<number | null>(null)
-  const logWaitPollsRef = useRef(0)
-  const pollGenerationRef = useRef(0)
-  const mountedRef = useRef(true)
-
-  const nvmeControllers = useMemo(
-    () => mergeControllers(scanControllers, devices),
-    [scanControllers, devices]
-  )
-
-  const describe = useCallback(
-    (err: unknown, fallback: string) =>
-      err instanceof StaleBenchApiError
-        ? err.message
-        : describeRequestError(err, benchName, fallback),
-    [benchName]
-  )
-
+  // "Settling" = shortly after a start or a finish; keeps polling for results.
+  const [settleUntil, setSettleUntil] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
+  const settling = now < Math.max(settleUntil, queue.lastStartAt + SETTLE_MS)
   useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-      pollGenerationRef.current += 1
-      if (pollRef.current != null) {
-        window.clearTimeout(pollRef.current)
-      }
-    }
-  }, [])
-
-  const loadScanContext = useCallback(async () => {
-    try {
-      const scanResult = await getDevices(false, machineId)
-      if (!mountedRef.current) {
-        return
-      }
-      setScanControllers(nvmeControllersFromDevices(scanResult.devices))
-      setSerialByController(buildSerialByController(scanResult.devices))
-      void queryClient.setQueryData(queryKeys.devices(machineId), scanResult)
-    } catch (err) {
-      // No saved scan for this bench yet: the self-test status still lists
-      // its controllers, just without serial numbers.
-      if (!isNotFoundError(err)) {
-        throw err
-      }
-    }
-  }, [machineId, queryClient])
-
-  const refreshStatus = useCallback(
-    async (opts?: { background?: boolean }) => {
-      const background = opts?.background ?? false
-      const generation = pollGenerationRef.current
-
-      if (background) {
-        setIsRefreshing(true)
-      } else {
-        setLoading(true)
-      }
-      setError(null)
-
-      try {
-        const [statusResult] = await Promise.all([
-          getSelfTestStatus(undefined, machineId),
-          loadScanContext(),
-        ])
-        // Older APIs ignore machine_id and answer for their own drives.
-        if (machineId && statusResult.machine_id === undefined) {
-          throw new StaleBenchApiError(benchName)
-        }
-        if (!mountedRef.current || generation !== pollGenerationRef.current) {
-          return [] as SelfTestDeviceStatus[]
-        }
-        setDevices(statusResult.devices)
-        void queryClient.setQueryData(
-          queryKeys.selfTestStatus(machineId),
-          statusResult
-        )
-        return statusResult.devices
-      } catch (err) {
-        if (!mountedRef.current || generation !== pollGenerationRef.current) {
-          return [] as SelfTestDeviceStatus[]
-        }
-        if (!background) {
-          // Show the problem instead of an empty or stale table.
-          setDevices([])
-        }
-        setError(describe(err, `Couldn't load self-tests on ${benchName}`))
-        return [] as SelfTestDeviceStatus[]
-      } finally {
-        if (mountedRef.current && generation === pollGenerationRef.current) {
-          if (background) {
-            setIsRefreshing(false)
-          } else {
-            setLoading(false)
-          }
-        }
-      }
-    },
-    [benchName, describe, loadScanContext, machineId, queryClient]
-  )
-
-  const refreshRecentJobs = useCallback(async () => {
-    const generation = pollGenerationRef.current
-    try {
-      const jobs = await listJobs(machineId)
-      if (!mountedRef.current || generation !== pollGenerationRef.current) {
-        return
-      }
-      // Belt and braces: never show another bench's jobs.
-      const onThisBench = machineId
-        ? jobs.filter(
-            (job) => job.machine_id == null || job.machine_id === machineId
-          )
-        : jobs
-      setRecentJobs(
-        onThisBench.filter((job) => job.job_type === "selftest").slice(0, 8)
-      )
-      void queryClient.setQueryData(queryKeys.jobs(machineId), jobs)
-    } catch {
-      /* optional history — ignore failures */
-    }
-  }, [machineId, queryClient])
-
-  const reloadAll = useCallback(async () => {
-    await Promise.all([refreshStatus(), refreshRecentJobs()])
-  }, [refreshStatus, refreshRecentJobs])
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      const statusDevices = await refreshStatus()
-      // Coming back to a bench with a test still running: keep watching it.
-      if (!cancelled && statusDevices.some((entry) => entry.in_progress)) {
-        logWaitPollsRef.current = 0
-        setWatchingTests(true)
-      }
-    })()
-    void refreshRecentJobs()
-    return () => {
-      cancelled = true
-    }
-  }, [refreshStatus, refreshRecentJobs])
-
-  useEffect(() => {
-    if (!activeJobId && !watchingTests) {
+    const until = Math.max(settleUntil, queue.lastStartAt + SETTLE_MS)
+    const wait = until - Date.now()
+    if (wait <= 0) {
       return
     }
+    const timer = window.setTimeout(() => setNow(Date.now()), wait + 50)
+    return () => window.clearTimeout(timer)
+  }, [settleUntil, queue.lastStartAt])
 
-    const generation = ++pollGenerationRef.current
-
-    const poll = async () => {
-      if (!mountedRef.current || generation !== pollGenerationRef.current) {
-        return
-      }
-
-      try {
-        if (activeJobId) {
-          // Remote job ids only make sense to the bench that issued them.
-          const job = await getJob(activeJobId, machineId)
-          if (!mountedRef.current || generation !== pollGenerationRef.current) {
-            return
-          }
-
-          if (job.status === "completed" || job.status === "failed") {
-            setActiveJobId(null)
-            setLastCompletedJob(job)
-            void refreshRecentJobs()
-
-            if (job.status === "failed") {
-              toast.error(
-                describeHostProblem(benchName, job.error) ??
-                  `Self-test on ${benchName} failed`
-              )
-            } else {
-              toast.success(
-                `Self-test started on ${benchName} — waiting for drive results`
-              )
-            }
-
-            const statusDevices = await refreshStatus({ background: true })
-            if (
-              !mountedRef.current ||
-              generation !== pollGenerationRef.current
-            ) {
-              return
-            }
-
-            const stillRunning = statusDevices.some(
-              (entry) => entry.in_progress
-            )
-            if (stillRunning) {
-              logWaitPollsRef.current = 0
-              setWatchingTests(true)
-            } else {
-              const awaitingLogs = statusDevices.some(
-                (entry) => entry.supported && !hasLogData(entry)
-              )
-              if (awaitingLogs) {
-                logWaitPollsRef.current = 0
-                setWatchingTests(true)
-              } else {
-                setWatchingTests(false)
-                toast.success(`Self-test finished on ${benchName}`)
-              }
-            }
-            return
-          }
-        } else if (watchingTests) {
-          const statusDevices = await refreshStatus({ background: true })
-          if (!mountedRef.current || generation !== pollGenerationRef.current) {
-            return
-          }
-
-          const stillRunning = statusDevices.some((entry) => entry.in_progress)
-          const awaitingLogs = statusDevices.some(
-            (entry) =>
-              entry.supported && !entry.in_progress && !hasLogData(entry)
-          )
-
-          if (stillRunning) {
-            logWaitPollsRef.current = 0
-          } else if (
-            awaitingLogs &&
-            logWaitPollsRef.current < MAX_LOG_WAIT_POLLS
-          ) {
-            logWaitPollsRef.current += 1
-          } else {
-            setWatchingTests(false)
-            if (statusDevices.length === 0) {
-              // The status call failed; its message is already on the page.
-              return
-            }
-            if (awaitingLogs) {
-              toast.message(
-                `Self-test finished on ${benchName} — log data not available yet. Use Refresh status.`
-              )
-            } else {
-              toast.success(`Self-test finished on ${benchName}`)
-            }
-            return
-          }
-        }
-
-        if (!mountedRef.current || generation !== pollGenerationRef.current) {
-          return
-        }
-
-        pollRef.current = window.setTimeout(() => {
-          void poll()
-        }, LOG_WAIT_POLL_INTERVAL_MS)
-      } catch (err) {
-        if (!mountedRef.current || generation !== pollGenerationRef.current) {
-          return
-        }
-        setActiveJobId(null)
-        setWatchingTests(false)
-        toast.error(
-          describe(err, `Lost track of the self-test on ${benchName}`)
-        )
-      }
-    }
-
-    void poll()
-
-    return () => {
-      pollGenerationRef.current += 1
-      if (pollRef.current != null) {
-        window.clearTimeout(pollRef.current)
-        pollRef.current = null
-      }
-    }
-  }, [
-    activeJobId,
-    watchingTests,
-    benchName,
-    describe,
-    machineId,
-    refreshStatus,
-    refreshRecentJobs,
-  ])
-
-  const runSelfTest = async () => {
-    pollGenerationRef.current += 1
-    setStarting(true)
-    setLastCompletedJob(null)
-    logWaitPollsRef.current = 0
-    try {
-      const job = await startSelfTest({
-        test_type: testType,
-        wait: false,
-        device: selectedDevice === "all" ? undefined : selectedDevice,
-        ...(machineId ? { machine_id: machineId } : {}),
-      })
-      if (!mountedRef.current) {
-        return
-      }
-      if (machineId && job.machine_id === undefined) {
+  const statusQuery = useQuery({
+    queryKey: queryKeys.selfTestStatus(machineId),
+    queryFn: async () => {
+      const result = await getSelfTestStatus(undefined, machineId)
+      // Older APIs ignore machine_id and answer for their own drives.
+      if (machineId && result.machine_id === undefined) {
         throw new StaleBenchApiError(benchName)
       }
-      setActiveJobId(job.job_id)
-      toast.success(`Starting self-test on ${benchName}…`)
-      await refreshStatus({ background: true })
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.jobs(machineId),
-      })
-    } catch (err) {
-      toast.error(describe(err, `Couldn't start the self-test on ${benchName}`))
-    } finally {
-      if (mountedRef.current) {
-        setStarting(false)
-      }
-    }
-  }
+      return result
+    },
+    staleTime: 0,
+    retry: (count, error) =>
+      !(error instanceof StaleBenchApiError) && count < 1,
+    refetchInterval: (query) =>
+      pollInterval(query.state.data, busy, settling, queue.started),
+  })
 
-  const handleAbort = async (devicePath: string) => {
-    setAbortingDevice(devicePath)
-    try {
-      await abortSelfTest(devicePath, machineId)
-      toast.success(`Stop requested for ${devicePath} on ${benchName}`)
-      await refreshStatus({ background: true })
-    } catch (err) {
-      toast.error(describe(err, `Couldn't stop the self-test on ${benchName}`))
-    } finally {
-      if (mountedRef.current) {
-        setAbortingDevice(null)
+  // The bench's saved scan names the drives (serial, model, capacity).
+  const scanQuery = useQuery({
+    queryKey: queryKeys.devices(machineId),
+    queryFn: async () => {
+      try {
+        return await getDevices(false, machineId)
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          return null // never scanned: rows still list controllers
+        }
+        throw error
       }
+    },
+  })
+
+  const statusDevices = statusQuery.data?.devices ?? null
+  const drives = useMemo(
+    () => buildDriveRows(statusDevices, scanQuery.data?.devices ?? []),
+    [statusDevices, scanQuery.data]
+  )
+
+  // Tell the technician when tests finish (while this page is open).
+  const runningRef = useRef<Set<string> | null>(null)
+  // Drives stopped from this page: "Stopped" already said it, no "finished" toast.
+  const stoppedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!statusDevices) {
+      return
     }
-  }
+    const nowRunning = new Set(
+      statusDevices
+        .filter((entry) => entry.in_progress)
+        .map((entry) => entry.device ?? "")
+    )
+    const before = runningRef.current
+    runningRef.current = nowRunning
+    if (!before) {
+      return
+    }
+    const ended = statusDevices.filter(
+      (entry) => before.has(entry.device ?? "") && !entry.in_progress
+    )
+    if (ended.length === 0) {
+      return
+    }
+    setSettleUntil(Date.now() + SETTLE_MS)
+    setNow(Date.now())
+    const finished = ended.filter(
+      (entry) => !stoppedRef.current.delete(entry.device ?? "")
+    )
+    if (finished.length === 0) {
+      return
+    }
+    const kinds = finished.map((entry) => {
+      const latest = latestResult(entry)
+      return latest ? resultKind(latest) : null
+    })
+    const failed = kinds.filter((kind) => kind === "failed").length
+    const passed = kinds.filter((kind) => kind === "passed").length
+    const n = finished.length
+    const what = n === 1 ? "Self-test" : `${n} self-tests`
+    if (failed > 0) {
+      toast.error(
+        `${what} finished on ${benchName} — ${failed} failed${passed ? `, ${passed} passed` : ""}`
+      )
+    } else if (passed === n) {
+      toast.success(
+        `${what} finished on ${benchName} — ${n === 1 ? "passed" : "all passed"}`
+      )
+    } else {
+      toast.message(`${what} finished on ${benchName}`)
+    }
+  }, [statusDevices, benchName])
+
+  const refreshStatus = useCallback(
+    () =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.selfTestStatus(machineId),
+      }),
+    [machineId, queryClient]
+  )
+
+  const start = useCallback(
+    (devices: string[], testType: TestType) => {
+      if (devices.length === 0) {
+        return
+      }
+      queueSelfTests({
+        machineId,
+        benchName,
+        devices,
+        testType,
+        onProgress: () => {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.selfTestStatus(machineId),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.jobs(machineId),
+          })
+        },
+      })
+    },
+    [benchName, machineId, queryClient]
+  )
+
+  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set())
+  const stop = useCallback(
+    async (devices: string[]) => {
+      setStopping(new Set(devices))
+      let stopped = 0
+      let problem: string | null = null
+      for (const device of devices) {
+        try {
+          await abortSelfTest(device, machineId)
+          stoppedRef.current.add(device)
+          stopped += 1
+        } catch (error) {
+          problem = describeRequestError(
+            error,
+            benchName,
+            `Couldn't stop the test on ${benchName} — try again`
+          )
+        }
+      }
+      setStopping(new Set())
+      setSettleUntil(Date.now() + SETTLE_MS)
+      setNow(Date.now())
+      await refreshStatus()
+      if (problem) {
+        toast.error(
+          stopped > 0
+            ? `Stopped ${stopped} of ${devices.length} tests on ${benchName}. ${problem}`
+            : problem
+        )
+      } else {
+        toast.success(
+          `Stopped the self-test on ${stopped === 1 ? "1 drive" : `${stopped} drives`} on ${benchName}`
+        )
+      }
+    },
+    [benchName, machineId, refreshStatus]
+  )
+
+  const statusError = statusQuery.error
+  const error = statusError
+    ? statusError instanceof StaleBenchApiError
+      ? statusError.message
+      : describeRequestError(
+          statusError,
+          benchName,
+          `Couldn't get self-test status from ${benchName} — try again`
+        )
+    : null
 
   return {
-    devices,
-    nvmeControllers,
-    serialByController,
-    selectedDevice,
-    setSelectedDevice,
-    testType,
-    setTestType,
-    loading,
-    isRefreshing,
-    starting,
-    abortingDevice,
-    activeJobId,
-    watchingTests,
-    lastCompletedJob,
-    recentJobs,
+    drives,
+    statusDevices,
+    /** First load of the status (no rows to show yet). */
+    loading: statusQuery.isPending || scanQuery.isPending,
+    /** The status can't be read; rows (if any) are from an earlier answer. */
     error,
-    reloadAll,
-    runSelfTest,
-    handleAbort,
+    retry: refreshStatus,
+    retrying: statusQuery.isFetching,
+    scanMissing: scanQuery.data === null,
+    /** Drive names (serials) are still loading. */
+    scanLoading: scanQuery.isPending,
+    queue,
+    start,
+    stop,
+    stopping,
   }
 }
