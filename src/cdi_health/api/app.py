@@ -25,7 +25,9 @@ import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
+from datetime import datetime, timezone
 from threading import Lock
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,13 +38,16 @@ from cdi_health.api.discovery import DISCOVER_COOLDOWN_SECONDS, DiscoveryError, 
 from cdi_health.api.history import ScanHistoryStore
 from cdi_health.api.jobs import JobStore
 from cdi_health.api.machines import MachineStore
+from cdi_health.api.remote import RemoteAddressError, RemoteHostClient, RemoteHostError, forwarded_scan_body
 from cdi_health.api.schemas import (
     DiscoverRequest,
     DiscoverResponse,
+    FleetDevicesResponse,
     HealthResponse,
     HistoryDetail,
     HistorySummary,
     JobResponse,
+    MachineCheckResponse,
     MachineCreate,
     MachineResponse,
     MachineUpdate,
@@ -82,6 +87,10 @@ from cdi_health.cli import check_prerequisites
 logger = logging.getLogger(__name__)
 
 SELFTEST_MAX_WORKERS = 2
+# Max remote hosts scanned concurrently by GET /api/v1/fleet/devices?refresh=true.
+FLEET_REFRESH_MAX_WORKERS = 4
+LOCAL_HOST_NAME = "Local API"
+SUMMARY_KEYS = ("total", "healthy", "warning", "failed", "ungraded")
 # Report the installed cdi_health package version (setuptools-scm), same as `cdi-health --version`.
 API_VERSION = PACKAGE_VERSION
 HARDWARE_BUSY_DETAIL = "Drive hardware is busy with another scan, report, or self-test start. Retry when it completes."
@@ -168,6 +177,10 @@ def create_app() -> FastAPI:
     def _hardware_busy(_request: Request, exc: HardwareBusyError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
+    @app.exception_handler(RemoteHostError)
+    def _remote_host_error(_request: Request, exc: RemoteHostError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
     def _raise_mapped(exc: Exception, *, context: str) -> None:
         status_code, detail = http_error_detail(exc, context=context)
         logger.exception("%s failed: %s", context, exc)
@@ -206,6 +219,8 @@ def create_app() -> FastAPI:
         """Cache latest scan, update host registry, and append scan history."""
         normalized = apply_scan_defaults(request)
         mock = bool(normalized.mock_data or normalized.mock_file)
+        result["machine_id"] = request.machine_id
+        result["executed_on"] = "local"
         with runtime.lock:
             runtime.latest_scan = result
             if request.machine_id:
@@ -218,9 +233,63 @@ def create_app() -> FastAPI:
             mock=mock,
         )
 
+    def _get_machine_or_404(machine_id: str) -> dict[str, Any]:
+        machine = app.state.runtime.machine_store.get_machine(machine_id)
+        if not machine:
+            raise HTTPException(status_code=404, detail="Machine not found")
+        return machine
+
+    def _is_remote(machine: dict[str, Any]) -> bool:
+        return bool(str(machine.get("address") or "").strip())
+
+    def _remote_client(machine: dict[str, Any]) -> RemoteHostClient:
+        return RemoteHostClient(
+            name=machine["name"],
+            address=machine["address"],
+            token=app.state.runtime.machine_store.get_api_token(machine["id"]),
+        )
+
+    def _forward_scan(machine: dict[str, Any], request: ScanRequest) -> dict[str, Any]:
+        """Run a scan on a remote host and persist it like a local scan.
+
+        The local hardware lock is not taken: the remote API serializes its
+        own drive access (and answers 409 when busy).
+        """
+        runtime = app.state.runtime
+        try:
+            remote_result = _remote_client(machine).scan(forwarded_scan_body(request))
+            remote_result = {
+                **remote_result,
+                "machine_id": machine["id"],
+                "executed_on": "remote",
+                "remote_address": machine["address"],
+            }
+            try:
+                result = ScanResponse.model_validate(remote_result).model_dump(mode="json")
+            except ValidationError as exc:
+                raise RemoteHostError(
+                    502,
+                    f"Host '{machine['name']}' returned an invalid scan response",
+                    "reachable",
+                ) from exc
+        except RemoteHostError as exc:
+            if exc.machine_status:
+                runtime.machine_store.set_status(machine["id"], exc.machine_status)
+            raise
+
+        # Remote results never replace runtime.latest_scan (this API's own drives).
+        if runtime.machine_store.record_scan(machine["id"], result, success=True) is None:
+            raise HTTPException(status_code=404, detail="Machine not found")
+        runtime.history_store.record_scan(result, machine_id=machine["id"], mock=False)
+        return result
+
     @app.post("/api/v1/scan", response_model=ScanResponse)
     def scan(request: ScanRequest, _: None = Depends(verify_api_token)) -> ScanResponse:
         runtime = app.state.runtime
+        if request.machine_id:
+            machine = _get_machine_or_404(request.machine_id)
+            if _is_remote(machine):
+                return ScanResponse.model_validate(_forward_scan(machine, request))
         try:
             with runtime.hardware_session():
                 result = run_scan(request)
@@ -242,6 +311,9 @@ def create_app() -> FastAPI:
             if machine_id:
                 if refresh:
                     scan_request = ScanRequest(machine_id=machine_id)
+                    machine = _get_machine_or_404(machine_id)
+                    if _is_remote(machine):
+                        return ScanResponse.model_validate(_forward_scan(machine, scan_request))
                     with runtime.hardware_session():
                         result = run_scan(scan_request)
                     _persist_successful_scan(runtime, result, scan_request)
@@ -261,10 +333,117 @@ def create_app() -> FastAPI:
                 _persist_successful_scan(runtime, result, scan_request)
                 return ScanResponse.model_validate(result)
             return ScanResponse.model_validate(cached)
-        except (HTTPException, HardwareBusyError):
+        except (HTTPException, HardwareBusyError, RemoteHostError):
             raise
         except Exception as exc:
             _raise_mapped(exc, context="devices")
+
+    def _scan_summary(scan_result: dict[str, Any]) -> dict[str, int]:
+        summary = scan_result.get("summary") or {}
+        return {key: int(summary.get(key, 0) or 0) for key in SUMMARY_KEYS}
+
+    def _refresh_remote_host(machine: dict[str, Any]) -> str | None:
+        """Scan one remote host for the fleet view; return an error string or None."""
+        try:
+            _forward_scan(machine, ScanRequest(machine_id=machine["id"]))
+            return None
+        except RemoteHostError as exc:
+            return exc.detail
+        except HTTPException as exc:
+            return str(exc.detail)
+        except Exception:
+            logger.exception("Fleet refresh of host %s failed", machine.get("id"))
+            return f"Host '{machine['name']}' scan failed"
+
+    @app.get("/api/v1/fleet/devices", response_model=FleetDevicesResponse)
+    def fleet_devices(
+        refresh: bool = False,
+        _: None = Depends(verify_api_token),
+    ) -> FleetDevicesResponse:
+        """Aggregate the latest scan of every remote host (plus this API's own).
+
+        ``refresh=true`` first rescans all remote hosts (at most
+        FLEET_REFRESH_MAX_WORKERS at a time). Per-host failures are reported
+        in ``hosts[].error`` and never fail the request; a host whose refresh
+        failed still contributes its previous cached scan.
+        """
+        runtime = app.state.runtime
+        remote_machines = [m for m in runtime.machine_store.list_machines() if _is_remote(m)]
+
+        errors: dict[str, str] = {}
+        if refresh and remote_machines:
+            workers = min(FLEET_REFRESH_MAX_WORKERS, len(remote_machines))
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="cdi-fleet") as executor:
+                for machine, error in zip(
+                    remote_machines,
+                    executor.map(_refresh_remote_host, remote_machines),
+                ):
+                    if error:
+                        errors[machine["id"]] = error
+
+        hosts: list[dict[str, Any]] = []
+        devices: list[dict[str, Any]] = []
+        totals = dict.fromkeys(SUMMARY_KEYS, 0)
+
+        def _add_host(host: dict[str, Any], scan_result: dict[str, Any] | None) -> None:
+            if scan_result:
+                summary = _scan_summary(scan_result)
+                host_devices = [d for d in scan_result.get("devices") or [] if isinstance(d, dict)]
+                host.update(
+                    scanned_at=scan_result.get("scanned_at"),
+                    summary=summary,
+                    device_count=len(host_devices),
+                )
+                for key in SUMMARY_KEYS:
+                    totals[key] += summary[key]
+                for device in host_devices:
+                    devices.append(
+                        {
+                            **device,
+                            "machine_id": host["machine_id"],
+                            "machine_name": host["name"],
+                            "host_address": host["address"],
+                        }
+                    )
+            hosts.append(host)
+
+        with runtime.lock:
+            local_scan = runtime.latest_scan
+        if local_scan and local_scan.get("devices"):
+            _add_host(
+                {
+                    "machine_id": None,
+                    "name": LOCAL_HOST_NAME,
+                    "address": None,
+                    "status": "reachable",
+                    "error": None,
+                    "executed_on": "local",
+                },
+                local_scan,
+            )
+
+        for listed in remote_machines:
+            machine = runtime.machine_store.get_machine(listed["id"]) or listed
+            _add_host(
+                {
+                    "machine_id": machine["id"],
+                    "name": machine["name"],
+                    "address": machine["address"],
+                    "status": machine.get("status") or "unknown",
+                    "error": errors.get(machine["id"]),
+                    "executed_on": "remote",
+                },
+                runtime.machine_store.get_scan(machine["id"]),
+            )
+
+        return FleetDevicesResponse.model_validate(
+            {
+                "hosts": hosts,
+                "devices": devices,
+                "summary": totals,
+                "generated_at": datetime.now(timezone.utc),
+            }
+        )
 
     @app.get("/api/v1/history", response_model=list[HistorySummary])
     def list_history(
@@ -343,6 +522,41 @@ def create_app() -> FastAPI:
         if not machine:
             raise HTTPException(status_code=404, detail="Machine not found")
         return MachineResponse.model_validate(machine)
+
+    @app.post("/api/v1/machines/{machine_id}/check", response_model=MachineCheckResponse)
+    def check_machine(machine_id: str, _: None = Depends(verify_api_token)) -> MachineCheckResponse:
+        """Probe a remote host's API with its stored token and update its status.
+
+        Reachability failures are reported in ``error`` (HTTP 200); only a
+        missing machine (404) or an address that is missing / not on a private
+        network (400) fail the request.
+        """
+        store = app.state.runtime.machine_store
+        machine = _get_machine_or_404(machine_id)
+        if not _is_remote(machine):
+            raise HTTPException(status_code=400, detail="Machine has no remote address")
+
+        health: dict[str, Any] | None = None
+        error: str | None = None
+        status = "reachable"
+        try:
+            client = _remote_client(machine)
+            health = client.health()
+            client.verify_token()
+        except RemoteAddressError:
+            raise
+        except RemoteHostError as exc:
+            error = exc.detail
+            status = exc.machine_status or "unreachable"
+
+        version = health.get("version") if health else None
+        updated = store.set_status(
+            machine_id,
+            status,
+            seen=health is not None,
+            remote_version=str(version) if version else None,
+        )
+        return MachineCheckResponse.model_validate({"machine": updated or machine, "health": health, "error": error})
 
     @app.delete("/api/v1/machines/{machine_id}")
     def delete_machine(machine_id: str, _: None = Depends(verify_api_token)) -> dict[str, bool]:
