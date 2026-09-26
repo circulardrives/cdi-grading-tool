@@ -543,3 +543,9 @@ def test_read_selftest_outcome_uses_spec_result_codes(result_code: int, expected
     outcome = _read_selftest_outcome(_FakeSelfTestHandler(result_code))  # type: ignore[arg-type]
 
     assert {k for k in ("passed", "failed", "aborted") if outcome[k]} == {expected}
+
+
+def test_selftest_start_rejects_unknown_fields(api_client: TestClient) -> None:
+    """A typo like "devices" must be rejected, not treated as "all drives"."""
+    response = api_client.post("/api/v1/selftests", json={"devices": ["/dev/nvme4"], "test_type": "short"})
+    assert response.status_code == 422
