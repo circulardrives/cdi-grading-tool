@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { PlusIcon, RadarIcon, ServerIcon } from "lucide-react"
 import { toast } from "sonner"
@@ -23,6 +23,7 @@ import {
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@workspace/ui/components/field"
@@ -37,16 +38,45 @@ import {
   TableRow,
 } from "@workspace/ui/components/table"
 
+import { NewHostTokensDialog } from "@/components/new-host-tokens-dialog"
 import { PageHeader } from "@/components/page-header"
 import { createMachine, discoverHosts } from "@/lib/api"
 import { appConfig } from "@/lib/config"
 import {
+  checkHostConnection,
   defaultDiscoveredHostName,
+  discoveredNeedsNoToken,
   discoveryHealthLabel,
   discoveryHealthVariant,
+  MAX_DISCOVER_SUBNETS,
+  parseSubnetInput,
+  shouldPromptForToken,
 } from "@/lib/host-utils"
 import { useInvalidateCdiQueries } from "@/hooks/use-cdi-queries"
-import type { DiscoveredHost } from "@/lib/types"
+import type { DiscoverRequest, DiscoveredHost, Machine } from "@/lib/types"
+
+type AddedHost = { machine: Machine; discovered: DiscoveredHost }
+
+/**
+ * Which newly added hosts to ask for a token: lab-mode hosts never; hosts
+ * that report token auth always; unknown hosts only when a check is rejected.
+ */
+async function hostsNeedingTokens(added: AddedHost[]): Promise<Machine[]> {
+  const results = await Promise.all(
+    added.map(async ({ machine, discovered }) => {
+      const discoveredAuth = discovered.health?.auth_mode ?? null
+      if (discoveredAuth === "token") {
+        return machine
+      }
+      // Lab-mode and unknown hosts: a check records status (and auth mode).
+      const outcome = await checkHostConnection(machine)
+      return shouldPromptForToken(discoveredAuth, outcome?.machine ?? null)
+        ? machine
+        : null
+    })
+  )
+  return results.filter((machine): machine is Machine => machine != null)
+}
 
 export function DiscoverPage() {
   const { invalidateMachines } = useInvalidateCdiQueries()
@@ -60,15 +90,40 @@ export function DiscoverPage() {
   } | null>(null)
   const [addingDiscovered, setAddingDiscovered] = useState<string | null>(null)
   const [bulkAdding, setBulkAdding] = useState(false)
+  const [tokenPromptHosts, setTokenPromptHosts] = useState<Machine[]>([])
+
+  const parsedSubnets = useMemo(() => parseSubnetInput(discoverSubnet), [discoverSubnet])
+
+  /** After adding hosts, go straight to asking for tokens where needed. */
+  const promptForTokens = async (added: AddedHost[]) => {
+    if (added.length === 0) {
+      return
+    }
+    const needTokens = await hostsNeedingTokens(added)
+    await invalidateMachines()
+    if (needTokens.length > 0) {
+      setTokenPromptHosts(needTokens)
+    }
+  }
 
   const runDiscovery = async () => {
+    if (parsedSubnets.error != null) {
+      toast.error(parsedSubnets.error)
+      return
+    }
+    const subnets = parsedSubnets.subnets
+    const body: DiscoverRequest =
+      subnets.length > 1
+        ? { subnets }
+        : subnets.length === 1
+          ? { subnet: subnets[0] }
+          : {}
+
     setDiscovering(true)
     setDiscoveredHosts([])
     setDiscoverMeta(null)
     try {
-      const result = await discoverHosts({
-        ...(discoverSubnet.trim() ? { subnet: discoverSubnet.trim() } : {}),
-      })
+      const result = await discoverHosts(body)
       setDiscoveredHosts(result.found)
       setDiscoverMeta({
         scannedSubnets: result.scanned_subnets,
@@ -90,7 +145,7 @@ export function DiscoverPage() {
     setAddingDiscovered(host.address)
     try {
       const hostname = defaultDiscoveredHostName(host)
-      await createMachine({
+      const machine = await createMachine({
         name: hostname,
         hostname,
         address: host.address,
@@ -102,6 +157,7 @@ export function DiscoverPage() {
       )
       toast.success(`Added ${hostname} to fleet`)
       await invalidateMachines()
+      await promptForTokens([{ machine, discovered: host }])
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not add host")
     } finally {
@@ -120,15 +176,17 @@ export function DiscoverPage() {
     let added = 0
     let skipped = 0
     let failed = 0
+    const addedHosts: AddedHost[] = []
     try {
       for (const host of pending) {
         const hostname = defaultDiscoveredHostName(host)
         try {
-          await createMachine({
+          const machine = await createMachine({
             name: hostname,
             hostname,
             address: host.address,
           })
+          addedHosts.push({ machine, discovered: host })
           setDiscoveredHosts((current) =>
             current.map((item) =>
               item.address === host.address
@@ -167,6 +225,7 @@ export function DiscoverPage() {
       if (added > 0 || skipped > 0) {
         await invalidateMachines()
       }
+      await promptForTokens(addedHosts)
     } finally {
       setBulkAdding(false)
     }
@@ -179,7 +238,7 @@ export function DiscoverPage() {
       <PageHeader
         eyebrow="Network discovery"
         title="Discover"
-        description="Scan private subnets for CDI Health APIs on port 8844. Discovery runs from the machine hosting cdi-health-api, not from the browser alone."
+        description="Find grading benches on your network (port 8844). The search runs from this bench, not from your browser."
         actions={
           <Button onClick={() => void runDiscovery()} disabled={discovering}>
             {discovering ? <Spinner data-icon="inline-start" /> : <RadarIcon data-icon="inline-start" />}
@@ -192,11 +251,11 @@ export function DiscoverPage() {
         <RadarIcon />
         <AlertTitle>Cross-subnet discovery</AlertTitle>
         <AlertDescription>
-          When your technician laptop is on a different subnet than the grading hosts, set an
-          explicit CIDR below (for example 192.168.0.0/24) or configure{" "}
+          If the grading hosts are on a different subnet than this bench, list their subnets
+          below (for example 192.168.0.0/24, 10.0.1.0/24), or set{" "}
           <span className="font-mono">VITE_CDI_DISCOVER_SUBNET</span> in{" "}
-          <span className="font-mono">.env.local</span>. Leave blank to auto-detect from local
-          network interfaces on the API host.
+          <span className="font-mono">.env.local</span>. Leave blank to search this bench&apos;s
+          own network.
         </AlertDescription>
       </Alert>
 
@@ -204,28 +263,37 @@ export function DiscoverPage() {
         <CardHeader>
           <CardTitle>LAN scan</CardTitle>
           <CardDescription>
-            Probes up to 256 addresses per subnet. Results can be added to your fleet registry on
-            the Hosts page.
+            Checks up to 256 addresses per subnet. Add what it finds to your hosts — you&apos;ll be
+            asked for an access token if a host uses one.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="discover-subnet">Subnet (optional)</FieldLabel>
+              <FieldLabel htmlFor="discover-subnet">Subnets (optional)</FieldLabel>
               <Input
                 id="discover-subnet"
                 value={discoverSubnet}
                 onChange={(e) => setDiscoverSubnet(e.target.value)}
-                placeholder="192.168.0.0/24"
+                placeholder="192.168.0.0/24, 10.0.1.0/24"
                 disabled={discovering}
+                aria-invalid={parsedSubnets.error != null}
               />
-              <FieldDescription>
-                Scans up to 256 addresses per subnet. Discovery is rate-limited on the API server.
-              </FieldDescription>
+              {parsedSubnets.error != null ? (
+                <FieldError>{parsedSubnets.error}</FieldError>
+              ) : (
+                <FieldDescription>
+                  Up to {MAX_DISCOVER_SUBNETS} subnets, separated by commas or spaces, each /24 or
+                  smaller. You can run a search about every 10 seconds.
+                </FieldDescription>
+              )}
             </Field>
           </FieldGroup>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => void runDiscovery()} disabled={discovering}>
+            <Button
+              onClick={() => void runDiscovery()}
+              disabled={discovering || parsedSubnets.error != null}
+            >
               {discovering ? <Spinner data-icon="inline-start" /> : <RadarIcon data-icon="inline-start" />}
               {discovering ? "Scanning LAN…" : "Start discovery"}
             </Button>
@@ -279,9 +347,16 @@ export function DiscoverPage() {
                     <TableCell className="font-mono text-xs">{host.address}</TableCell>
                     <TableCell>{host.hostname ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant={discoveryHealthVariant(host)}>
-                        {discoveryHealthLabel(host)}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={discoveryHealthVariant(host)}>
+                          {discoveryHealthLabel(host)}
+                        </Badge>
+                        {discoveredNeedsNoToken(host) ? (
+                          <span className="text-muted-foreground text-xs">
+                            No token needed
+                          </span>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       {host.already_registered ? (
@@ -314,14 +389,19 @@ export function DiscoverPage() {
                 </EmptyMedia>
                 <EmptyTitle>No CDI APIs found</EmptyTitle>
                 <EmptyDescription>
-                  No hosts responded on port 8844 in the scanned subnet(s). Confirm grading hosts are
-                  online and reachable from this API machine.
+                  No hosts answered on port 8844 in the searched subnet(s). Check the grading hosts are
+                  powered on and on the same network as this bench.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : null}
         </CardContent>
       </Card>
+      <NewHostTokensDialog
+        hosts={tokenPromptHosts}
+        onClose={() => setTokenPromptHosts([])}
+        onSaved={invalidateMachines}
+      />
     </div>
   )
 }
