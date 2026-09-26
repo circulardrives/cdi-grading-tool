@@ -133,6 +133,9 @@ export type HistoryDetail = HistorySummary & {
   devices: DeviceRecord[]
 }
 
+/** How a CDI Health API authenticates callers ("none" = lab no-auth mode). */
+export type AuthMode = "none" | "token"
+
 /**
  * Unauthenticated LAN callers only receive `{status, version}`; the remaining
  * fields are present for loopback or token-authenticated requests.
@@ -143,6 +146,8 @@ export type HealthResponse = {
   is_root?: boolean
   allow_non_root_mode?: boolean
   api_token_enabled?: boolean
+  /** "none" when the API runs in lab no-auth mode. Older APIs omit it. */
+  auth_mode?: AuthMode
   missing_required_tools?: string[]
   weasyprint_available?: boolean
   message?: string | null
@@ -212,6 +217,8 @@ export type Machine = {
   has_api_token?: boolean
   /** CDI Health version reported by the host at the last connection check. */
   remote_version?: string | null
+  /** Whether the host needs an access token, as seen by the last connection check. */
+  remote_auth?: AuthMode | null
   last_seen_at?: string | null
   last_scan_at?: string | null
   last_scan_status?: "success" | "failed" | null

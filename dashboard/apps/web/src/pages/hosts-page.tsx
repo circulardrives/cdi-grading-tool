@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import {
+  AlertCircleIcon,
   HardDriveIcon,
   PencilIcon,
+  PlugZapIcon,
   PlusIcon,
   RefreshCwIcon,
   ScanSearchIcon,
@@ -21,7 +23,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@workspace/ui/components/alert-dialog"
-import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -49,11 +50,13 @@ import {
 } from "@workspace/ui/components/empty"
 import {
   Field,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
 import { Skeleton } from "@workspace/ui/components/skeleton"
+import { Spinner } from "@workspace/ui/components/spinner"
 import {
   Table,
   TableBody,
@@ -64,6 +67,7 @@ import {
 } from "@workspace/ui/components/table"
 import { Textarea } from "@workspace/ui/components/textarea"
 
+import { AccessTokenField } from "@/components/access-token-field"
 import { PageHeader } from "@/components/page-header"
 import {
   useInvalidateCdiQueries,
@@ -75,9 +79,14 @@ import {
   updateMachine,
 } from "@/lib/api"
 import {
+  checkHostConnection,
   emptyHostForm,
   formatScanSummary,
+  hostHasAddress,
+  hostNeedsNoToken,
+  hostProblemMessage,
   machineStatusBadgeVariant,
+  machineStatusLabel,
   type HostFormState,
 } from "@/lib/host-utils"
 import { setSelectedHostId, useSelectedHostId } from "@/lib/selected-host"
@@ -93,6 +102,13 @@ export function HostsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Machine | null>(null)
   const selectedHostId = useSelectedHostId()
   const [form, setForm] = useState<HostFormState>(emptyHostForm)
+  // Write-only: held only until the host is saved, then cleared.
+  const [apiToken, setApiToken] = useState("")
+  const [clearToken, setClearToken] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [checkingIds, setCheckingIds] = useState<Set<string>>(() => new Set())
+  // Problems from the last check that the host's status alone may not explain.
+  const [checkProblems, setCheckProblems] = useState<Record<string, string>>({})
 
   const selectedHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
@@ -110,9 +126,22 @@ export function HostsPage() {
     }
   }
 
+  const resetTokenState = () => {
+    setApiToken("")
+    setClearToken(false)
+  }
+
+  const setDialog = (open: boolean) => {
+    setDialogOpen(open)
+    if (!open) {
+      resetTokenState()
+    }
+  }
+
   const openCreateDialog = () => {
     setEditingHost(null)
     setForm(emptyHostForm)
+    resetTokenState()
     setDialogOpen(true)
   }
 
@@ -125,11 +154,56 @@ export function HostsPage() {
       location: host.location,
       notes: host.notes,
     })
+    resetTokenState()
     setDialogOpen(true)
   }
 
   const selectHost = (hostId: string | null) => {
     setSelectedHostId(hostId)
+  }
+
+  /** Checks one host; returns false when the API cannot run checks. */
+  const checkHost = async (
+    host: Pick<Machine, "id" | "name">,
+    prefix = ""
+  ): Promise<boolean> => {
+    setCheckingIds((current) => new Set(current).add(host.id))
+    try {
+      const outcome = await checkHostConnection(host)
+      if (!outcome) {
+        return false
+      }
+      setCheckProblems((current) => {
+        const next = { ...current }
+        if (outcome.ok) {
+          delete next[host.id]
+        } else {
+          next[host.id] = outcome.text
+        }
+        return next
+      })
+      const text = prefix ? `${prefix} — ${outcome.text}` : outcome.text
+      if (outcome.ok) {
+        toast.success(text)
+      } else {
+        toast.warning(text)
+      }
+      return true
+    } finally {
+      setCheckingIds((current) => {
+        const next = new Set(current)
+        next.delete(host.id)
+        return next
+      })
+      await invalidateMachines()
+    }
+  }
+
+  const runCheck = async (host: Machine) => {
+    const supported = await checkHost(host)
+    if (!supported) {
+      toast.message("Connection checks need a newer CDI Health on this bench")
+    }
   }
 
   const submitHost = async () => {
@@ -145,22 +219,39 @@ export function HostsPage() {
       location: form.location.trim(),
       notes: form.notes.trim(),
     }
+    const token = apiToken.trim()
+    if (editingHost && clearToken) {
+      payload.api_token = ""
+    } else if (token) {
+      payload.api_token = token
+    }
 
+    setSaving(true)
     try {
-      if (editingHost) {
-        const updated = await updateMachine(editingHost.id, payload)
-        toast.success(`Updated host "${updated.name}"`)
-      } else {
-        const created = await createMachine(payload)
-        selectHost(created.id)
-        toast.success(`Added host "${created.name}"`)
+      const saved = editingHost
+        ? await updateMachine(editingHost.id, payload)
+        : await createMachine(payload)
+      if (!editingHost) {
+        selectHost(saved.id)
       }
-      await invalidateMachines()
       setDialogOpen(false)
       setForm(emptyHostForm)
       setEditingHost(null)
+      resetTokenState()
+      await invalidateMachines()
+
+      const verb = editingHost ? "Saved" : "Added"
+      // Confirm the address and token actually work, in the same message.
+      const checked = hostHasAddress(saved)
+        ? await checkHost(saved, `${verb} ${saved.name}`)
+        : false
+      if (!checked) {
+        toast.success(`${verb} ${saved.name}`)
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save host")
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -186,9 +277,9 @@ export function HostsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="Fleet registry"
+        eyebrow="Fleet"
         title="Hosts"
-        description="Register grading hosts in your data center fleet. Select an active host for scan context on Scan and Drive Health."
+        description="The grading benches in your fleet. Scans for a host run on that host itself, so every host needs an address — and its access token, if it uses one."
         actions={
           <>
             <Button variant="outline" onClick={() => void refresh()} disabled={loading}>
@@ -202,16 +293,6 @@ export function HostsPage() {
           </>
         }
       />
-
-      <Alert>
-        <ServerIcon />
-        <AlertTitle>Active host context (registry only)</AlertTitle>
-        <AlertDescription>
-          Selecting a host filters Scan and Drive Health by <span className="font-mono">machine_id</span>{" "}
-          against the single configured API. Host addresses are stored for inventory only — they do not
-          switch the dashboard to a remote backend yet. Use Discover to find CDI APIs on your LAN.
-        </AlertDescription>
-      </Alert>
 
       {selectedHost ? (
         <Card>
@@ -228,7 +309,7 @@ export function HostsPage() {
             <Button asChild>
               <Link to="/scan">
                 <ScanSearchIcon data-icon="inline-start" />
-                Run scan
+                Scan {selectedHost.name}
               </Link>
             </Button>
             <Button variant="outline" asChild>
@@ -245,10 +326,10 @@ export function HostsPage() {
         <CardHeader>
           <CardTitle>Fleet hosts</CardTitle>
           <CardDescription>
-            {hosts.length} host(s) in registry · click a name to set active context
+            {hosts.length} host(s) · click a name to use it on Scan and Drive Health
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
           {loading ? (
             <div className="flex flex-col gap-2">
               <Skeleton className="h-10 w-full" />
@@ -260,9 +341,9 @@ export function HostsPage() {
                 <EmptyMedia variant="icon">
                   <ServerIcon />
                 </EmptyMedia>
-                <EmptyTitle>No hosts registered</EmptyTitle>
+                <EmptyTitle>No hosts yet</EmptyTitle>
                 <EmptyDescription>
-                  Add a grading host manually or use Discover to find CDI APIs on your LAN.
+                  Add a grading bench by hand, or use Discover to find benches on your network.
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="flex flex-wrap gap-2">
@@ -289,6 +370,10 @@ export function HostsPage() {
               <TableBody>
                 {hosts.map((host) => {
                   const isSelected = host.id === selectedHostId
+                  const checking = checkingIds.has(host.id)
+                  const problem =
+                    checkProblems[host.id] ??
+                    hostProblemMessage(host.name, host.status)
                   return (
                     <TableRow
                       key={host.id}
@@ -312,19 +397,47 @@ export function HostsPage() {
                           <span className="text-muted-foreground font-mono text-xs">
                             {host.hostname}
                           </span>
-                          {host.address ? (
+                          {hostHasAddress(host) ? (
                             <span className="text-muted-foreground font-mono text-xs">
                               {host.address}
-                              <span className="ml-1 font-sans">(registry only)</span>
                             </span>
                           ) : null}
                         </div>
                       </TableCell>
                       <TableCell>{host.location || "—"}</TableCell>
                       <TableCell>
-                        <Badge variant={machineStatusBadgeVariant(host.status)}>
-                          {host.status}
-                        </Badge>
+                        <div className="flex max-w-xs flex-col gap-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {hostHasAddress(host) ? (
+                              <Badge variant={machineStatusBadgeVariant(host.status)}>
+                                {machineStatusLabel(host.status)}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">This bench</Badge>
+                            )}
+                            {host.has_api_token ? (
+                              <Badge variant="outline">Token set</Badge>
+                            ) : hostNeedsNoToken(host) ? (
+                              <span className="text-muted-foreground text-xs">
+                                No token needed
+                              </span>
+                            ) : null}
+                          </div>
+                          {host.remote_version ? (
+                            <span className="text-muted-foreground text-xs">
+                              CDI Health v{host.remote_version}
+                            </span>
+                          ) : null}
+                          {problem ? (
+                            <span className="text-destructive flex items-start gap-1 text-xs">
+                              <AlertCircleIcon
+                                className="mt-px size-3.5 shrink-0"
+                                aria-hidden
+                              />
+                              {problem}
+                            </span>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1 text-sm">
@@ -339,7 +452,22 @@ export function HostsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1">
+                          {hostHasAddress(host) ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void runCheck(host)}
+                              disabled={checking}
+                            >
+                              {checking ? (
+                                <Spinner data-icon="inline-start" />
+                              ) : (
+                                <PlugZapIcon data-icon="inline-start" />
+                              )}
+                              {checking ? "Checking…" : "Check connection"}
+                            </Button>
+                          ) : null}
                           <Button
                             variant="ghost"
                             size="icon-sm"
@@ -364,16 +492,18 @@ export function HostsPage() {
               </TableBody>
             </Table>
           )}
+          <p className="text-muted-foreground text-xs">
+            Benches in lab mode don&apos;t use access tokens.
+          </p>
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={setDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingHost ? "Edit host" : "Add host"}</DialogTitle>
             <DialogDescription>
-              Register a grading host in the fleet registry. Address is optional metadata only —
-              the dashboard always talks to the configured local API proxy.
+              Scans for this host run on the host itself, at the address below.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -383,7 +513,7 @@ export function HostsPage() {
                 id="host-name"
                 value={form.name}
                 onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
-                placeholder="Lab Rack A"
+                placeholder="pecan09"
               />
             </Field>
             <Field>
@@ -394,13 +524,11 @@ export function HostsPage() {
                 onChange={(e) =>
                   setForm((current) => ({ ...current, hostname: e.target.value }))
                 }
-                placeholder="grading-01.local"
+                placeholder="pecan09.local"
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="host-address">
-                Address (registry only)
-              </FieldLabel>
+              <FieldLabel htmlFor="host-address">Address</FieldLabel>
               <Input
                 id="host-address"
                 value={form.address}
@@ -408,16 +536,23 @@ export function HostsPage() {
                   setForm((current) => ({ ...current, address: e.target.value }))
                 }
                 placeholder="10.0.0.12:8844"
-                aria-describedby="host-address-hint"
               />
-              <p
-                id="host-address-hint"
-                className="text-muted-foreground text-xs"
-              >
-                Stored for inventory. Does not route API calls — selecting this host only
-                filters data by machine_id on the configured API.
-              </p>
+              <FieldDescription>
+                IP or hostname and port of the host. Leave blank only for the bench running
+                this dashboard.
+              </FieldDescription>
             </Field>
+            <AccessTokenField
+              id="host-api-token"
+              value={apiToken}
+              onChange={setApiToken}
+              hasToken={Boolean(editingHost?.has_api_token)}
+              clearable={Boolean(editingHost)}
+              clear={clearToken}
+              onClearChange={setClearToken}
+              noTokenNeeded={hostNeedsNoToken(editingHost)}
+              disabled={saving}
+            />
             <Field>
               <FieldLabel htmlFor="host-location">Rack / location</FieldLabel>
               <Input
@@ -440,10 +575,11 @@ export function HostsPage() {
             </Field>
           </FieldGroup>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={() => void submitHost()}>
+            <Button onClick={() => void submitHost()} disabled={saving}>
+              {saving ? <Spinner data-icon="inline-start" /> : null}
               {editingHost ? "Save changes" : "Add host"}
             </Button>
           </DialogFooter>
@@ -463,7 +599,7 @@ export function HostsPage() {
             <AlertDialogTitle>Remove host?</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteTarget
-                ? `This removes "${deleteTarget.name}" from the fleet registry and deletes its cached scan snapshot.`
+                ? `This removes "${deleteTarget.name}" from your hosts and deletes its latest saved scan.`
                 : "This action cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>

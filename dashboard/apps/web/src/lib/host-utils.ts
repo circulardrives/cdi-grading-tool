@@ -1,5 +1,6 @@
-import { ApiError } from "@/lib/api"
+import { ApiError, checkMachine, isNotFoundError } from "@/lib/api"
 import type {
+  AuthMode,
   DiscoveredHost,
   FleetDevicesResponse,
   FleetHost,
@@ -45,7 +46,7 @@ export function machineStatusLabel(status: MachineStatus | string): string {
     case "unreachable":
       return "Can't reach"
     case "auth_failed":
-      return "Wrong token"
+      return "Token problem"
     case "unknown":
     case "":
       return "Not checked"
@@ -63,7 +64,36 @@ function unreachableMessage(name: string): string {
 }
 
 function wrongTokenMessage(name: string): string {
-  return `Wrong access token for ${name} — re-enter it in Hosts`
+  return `Wrong or missing access token for ${name} — enter it in Hosts`
+}
+
+/** True when the host is known to run in lab mode without access tokens. */
+export function hostNeedsNoToken(
+  host: Pick<Machine, "remote_auth"> | null | undefined
+): boolean {
+  return host?.remote_auth === "none"
+}
+
+/** True when a discovered API reports lab mode (no access token). */
+export function discoveredNeedsNoToken(host: DiscoveredHost): boolean {
+  return host.health?.auth_mode === "none"
+}
+
+/**
+ * Whether to ask for an access token after adding a host: the host says it
+ * uses tokens, or the auth mode is unknown and a check was rejected.
+ */
+export function shouldPromptForToken(
+  discoveredAuth: AuthMode | null | undefined,
+  checked: Pick<Machine, "status" | "remote_auth" | "has_api_token"> | null
+): boolean {
+  if (discoveredAuth === "none" || checked?.remote_auth === "none") {
+    return false
+  }
+  if (discoveredAuth === "token" || checked?.remote_auth === "token") {
+    return !checked?.has_api_token || checked.status === "auth_failed"
+  }
+  return checked?.status === "auth_failed"
 }
 
 /**
@@ -140,6 +170,42 @@ export function describeRequestError(
   return fallback
 }
 
+export type HostCheckOutcome = {
+  /** Updated host from the API, when the check reached it. */
+  machine: Machine | null
+  ok: boolean
+  /** One line for a toast or next to the host. */
+  text: string
+}
+
+/**
+ * Runs POST /machines/{id}/check and phrases the result in plain language.
+ * Resolves to null when the API is too old to support connection checks.
+ */
+export async function checkHostConnection(
+  host: Pick<Machine, "id" | "name">
+): Promise<HostCheckOutcome | null> {
+  try {
+    const result = await checkMachine(host.id)
+    const machine = result.machine
+    const problem = hostProblemMessage(machine.name, machine.status, result.error)
+    if (problem) {
+      return { machine, ok: false, text: problem }
+    }
+    const version = machine.remote_version ? ` · v${machine.remote_version}` : ""
+    return { machine, ok: true, text: `${machine.name} is online${version}` }
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null
+    }
+    return {
+      machine: null,
+      ok: false,
+      text: describeRequestError(error, host.name, `Couldn't check ${host.name}`),
+    }
+  }
+}
+
 export function fleetHostProblem(host: FleetHost): string | null {
   return hostProblemMessage(host.name, host.status, host.error)
 }
@@ -171,6 +237,32 @@ export function formatElapsed(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${minutes}:${String(seconds).padStart(2, "0")}`
+}
+
+/** "Scanned just now", "Scanned 12 min ago", "Scanned 3 h ago", or a local date. */
+export function formatScannedAgo(
+  iso: string | null | undefined,
+  now = Date.now()
+): string {
+  if (!iso) {
+    return "Not scanned yet"
+  }
+  const time = new Date(iso).getTime()
+  if (Number.isNaN(time)) {
+    return "Not scanned yet"
+  }
+  const minutes = Math.round((now - time) / 60_000)
+  if (minutes < 1) {
+    return "Scanned just now"
+  }
+  if (minutes < 60) {
+    return `Scanned ${minutes} min ago`
+  }
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) {
+    return `Scanned ${hours} h ago`
+  }
+  return `Scanned ${new Date(iso).toLocaleString()}`
 }
 
 export function formatScanSummary(machine: Machine): string {
