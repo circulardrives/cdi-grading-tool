@@ -132,7 +132,7 @@ export function DiscoverPage() {
       })
       const newHosts = result.found.filter((host) => !host.already_registered)
       toast.success(
-        `Discovery complete — ${result.found.length} API(s) on port ${result.port}, ${newHosts.length} new`
+        `Found ${result.found.length} host(s) on port ${result.port}, ${newHosts.length} new`
       )
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "LAN discovery failed")

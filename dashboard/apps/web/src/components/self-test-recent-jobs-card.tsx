@@ -33,7 +33,7 @@ export function SelfTestRecentJobsCard({ jobs }: SelfTestRecentJobsCardProps) {
       <CardHeader>
         <CardTitle>Recent self-test jobs</CardTitle>
         <CardDescription>
-          In-memory job history from GET /api/v1/jobs on this API process.
+          Self-tests started on this bench since it last restarted.
         </CardDescription>
       </CardHeader>
       <CardContent>

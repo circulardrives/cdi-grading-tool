@@ -405,7 +405,7 @@ export function HostsPage() {
                         </div>
                       </TableCell>
                       <TableCell>{host.location || "—"}</TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
                         <div className="flex max-w-xs flex-col gap-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             {hostHasAddress(host) ? (
