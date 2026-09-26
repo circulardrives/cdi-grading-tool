@@ -1,26 +1,21 @@
-import { AlertCircleIcon } from "lucide-react"
-
-import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
-import { Spinner } from "@workspace/ui/components/spinner"
 import { cn } from "@workspace/ui/lib/utils"
 
 import {
-  fleetHostProblem,
-  formatScannedAgo,
-  formatSummaryCounts,
-  machineStatusBadgeVariant,
-  machineStatusLabel,
-} from "@/lib/host-utils"
+  BenchProblemLine,
+  BenchStatusPill,
+  useBenchNames,
+} from "@/components/ui-cdi"
+import { formatScannedAgo, formatSummaryCounts } from "@/lib/host-utils"
 import type { FleetHost } from "@/lib/types"
 
 type FleetHostListProps = {
   hosts: FleetHost[]
-  /** A Scan all hosts run is in flight. */
+  /** A Scan all benches run is in flight. */
   scanning?: boolean
-  /** Show healthy / warn / fail counts per host. */
+  /** Show healthy / warn / fail counts per bench. */
   showSummary?: boolean
-  /** Drill into one host (e.g. filter Drive Health to it). */
+  /** Drill into one bench (e.g. filter Drives to it). */
   onSelectHost?: (host: FleetHost) => void
   selectLabel?: string
   className?: string
@@ -30,15 +25,16 @@ function hostKey(host: FleetHost, index: number): string {
   return host.machine_id ?? `${host.name}-${index}`
 }
 
-/** Per-host status tiles: name, status, drive count, last scan, and any problem. */
+/** Per-bench status tiles: name, status, drive count, last scan, and any problem. */
 export function FleetHostList({
   hosts,
   scanning = false,
   showSummary = false,
   onSelectHost,
-  selectLabel = "Show only this host",
+  selectLabel = "Show only this bench",
   className,
 }: FleetHostListProps) {
+  const nameOf = useBenchNames()
   if (hosts.length === 0) {
     return null
   }
@@ -46,51 +42,41 @@ export function FleetHostList({
   return (
     <ul
       className={cn("grid gap-3 sm:grid-cols-2 xl:grid-cols-3", className)}
-      aria-label="Hosts"
+      aria-label="Benches"
     >
       {hosts.map((host, index) => {
-        const problem = fleetHostProblem(host)
+        const name = nameOf(host.machine_id, host.name)
         return (
           <li
             key={hostKey(host, index)}
-            className={cn(
-              "flex flex-col gap-1.5 rounded-2xl border p-3",
-              problem ? "border-destructive/40" : undefined
-            )}
+            className="flex flex-col gap-1.5 rounded-xl border p-4"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium">{host.name}</span>
-              {scanning ? (
-                <Badge variant="secondary">
-                  <Spinner />
-                  Scanning
-                </Badge>
-              ) : (
-                <Badge variant={machineStatusBadgeVariant(host.status)}>
-                  {machineStatusLabel(host.status)}
-                </Badge>
-              )}
+              <span className="text-[17px] font-bold">{name}</span>
+              <BenchStatusPill status={host.status} scanning={scanning} />
             </div>
-            <span className="text-muted-foreground text-xs">
+            <span className="text-[15px] text-muted-foreground">
               {host.device_count} drive{host.device_count === 1 ? "" : "s"} ·{" "}
               {formatScannedAgo(host.scanned_at)}
             </span>
             {showSummary && host.summary ? (
-              <span className="text-muted-foreground text-xs">
+              <span className="text-[15px] text-muted-foreground">
                 {formatSummaryCounts(host.summary)}
               </span>
             ) : null}
-            {problem && !scanning ? (
-              <p className="text-destructive flex items-start gap-1.5 text-xs">
-                <AlertCircleIcon className="mt-px size-3.5 shrink-0" aria-hidden />
-                <span>{problem}</span>
-              </p>
+            {!scanning ? (
+              <BenchProblemLine
+                name={name}
+                status={host.status}
+                error={host.error}
+                className="text-[15px]"
+              />
             ) : null}
             {onSelectHost && host.machine_id ? (
               <Button
-                variant="ghost"
-                size="xs"
-                className="-ml-2 w-fit"
+                variant="quiet"
+                size="sm"
+                className="-ml-3 w-fit"
                 onClick={() => onSelectHost(host)}
               >
                 {selectLabel}

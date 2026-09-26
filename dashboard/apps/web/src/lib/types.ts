@@ -143,6 +143,8 @@ export type AuthMode = "none" | "token"
 export type HealthResponse = {
   status: string
   version?: string
+  /** The bench's own hostname (e.g. "pecan09-101h"). Older APIs omit it. */
+  hostname?: string | null
   is_root?: boolean
   allow_non_root_mode?: boolean
   api_token_enabled?: boolean
@@ -251,6 +253,11 @@ export type Machine = {
   has_api_token?: boolean
   /** CDI Health version reported by the host at the last connection check. */
   remote_version?: string | null
+  /**
+   * Hostname the bench reported about itself at the last connection check.
+   * Use benchName() from components/ui-cdi to display a bench.
+   */
+  remote_hostname?: string | null
   /** Whether the host needs an access token, as seen by the last connection check. */
   remote_auth?: AuthMode | null
   last_seen_at?: string | null
