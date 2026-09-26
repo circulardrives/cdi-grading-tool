@@ -80,7 +80,7 @@ import {
   machineStatusBadgeVariant,
   type HostFormState,
 } from "@/lib/host-utils"
-import { getSelectedHostId, setSelectedHostId } from "@/lib/selected-host"
+import { setSelectedHostId, useSelectedHostId } from "@/lib/selected-host"
 import type { Machine, MachineCreateRequest } from "@/lib/types"
 
 export function HostsPage() {
@@ -91,9 +91,7 @@ export function HostsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingHost, setEditingHost] = useState<Machine | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Machine | null>(null)
-  const [selectedHostId, setSelectedHostIdState] = useState<string | null>(
-    () => getSelectedHostId()
-  )
+  const selectedHostId = useSelectedHostId()
   const [form, setForm] = useState<HostFormState>(emptyHostForm)
 
   const selectedHost = useMemo(
@@ -131,7 +129,6 @@ export function HostsPage() {
   }
 
   const selectHost = (hostId: string | null) => {
-    setSelectedHostIdState(hostId)
     setSelectedHostId(hostId)
   }
 

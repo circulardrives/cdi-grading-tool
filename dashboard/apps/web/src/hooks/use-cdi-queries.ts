@@ -1,6 +1,11 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 
 import {
+  ApiError,
   getDevices,
   getHealth,
   getHistory,
@@ -33,10 +38,20 @@ export function useMachinesQuery() {
   })
 }
 
-export function useHistoryQuery(machineId?: string | null) {
-  return useQuery({
-    queryKey: queryKeys.history(machineId),
-    queryFn: () => listHistory(machineId),
+/** API page size for scan history (server allows up to 500). */
+export const HISTORY_PAGE_SIZE = 50
+
+/** Paginated scan history; a short page means there is nothing more to load. */
+export function useHistoryPagesQuery(machineId?: string | null) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.historyPages(machineId),
+    queryFn: ({ pageParam }) =>
+      listHistory(machineId, { limit: HISTORY_PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < HISTORY_PAGE_SIZE
+        ? undefined
+        : allPages.reduce((count, page) => count + page.length, 0),
   })
 }
 
@@ -45,6 +60,9 @@ export function useHistoryDetailQuery(scanId: string, enabled = true) {
     queryKey: queryKeys.historyDetail(scanId),
     queryFn: () => getHistory(scanId),
     enabled: Boolean(scanId) && enabled,
+    // A deleted snapshot will not reappear; surface the 404 immediately.
+    retry: (failureCount, error) =>
+      !(error instanceof ApiError && error.status === 404) && failureCount < 1,
   })
 }
 

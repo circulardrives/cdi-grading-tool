@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   AlertCircleIcon,
   HardDriveIcon,
@@ -52,7 +52,8 @@ import {
   formatHealthLabel,
   formatHealthScore,
 } from "@/lib/health-badges"
-import { getSelectedHostId } from "@/lib/selected-host"
+import { deviceRowKeys } from "@/lib/drive-labels"
+import { useSelectedHostId } from "@/lib/selected-host"
 
 const AUTO_REFRESH_MS = 30_000
 
@@ -64,10 +65,12 @@ export function DashboardPage() {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
 
   const healthQuery = useHealthQuery()
-  const devicesQuery = useDevicesQuery(getSelectedHostId())
+  const selectedHostId = useSelectedHostId()
+  const devicesQuery = useDevicesQuery(selectedHostId)
 
   const health = healthQuery.data ?? null
   const scan = devicesQuery.data ?? null
+  const rowKeys = useMemo(() => deviceRowKeys(scan?.devices ?? []), [scan])
   const loading = healthQuery.isLoading || devicesQuery.isLoading
   const error =
     healthQuery.error instanceof Error
@@ -115,7 +118,7 @@ export function DashboardPage() {
   const runScan = async () => {
     setScanning(true)
     try {
-      const machineId = getSelectedHostId()
+      const machineId = selectedHostId
       const result = await scanDevices({
         ignore_ata: false,
         ignore_nvme: false,
@@ -289,8 +292,8 @@ export function DashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {scan.devices.slice(0, 8).map((device) => (
-                  <TableRow key={String(device.dut ?? device.serial_number)}>
+                {scan.devices.slice(0, 8).map((device, index) => (
+                  <TableRow key={rowKeys.get(device) ?? `row-${index}`}>
                     <TableCell className="font-mono text-xs">
                       {device.dut ?? "—"}
                     </TableCell>

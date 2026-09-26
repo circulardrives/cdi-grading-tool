@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useId, useMemo, useState } from "react"
 import { ArrowDownIcon, ArrowUpIcon, SearchIcon } from "lucide-react"
 
 import { Badge } from "@workspace/ui/components/badge"
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@workspace/ui/components/table"
 
+import { deviceRowKeys } from "@/lib/drive-labels"
 import {
   deviceBadgeVariant,
   isUngradedDevice,
@@ -27,6 +28,12 @@ type DriveHealthTableProps = {
 }
 
 type GradeSort = "none" | "asc" | "desc"
+
+const ARIA_SORT: Record<GradeSort, "none" | "ascending" | "descending"> = {
+  none: "none",
+  asc: "ascending",
+  desc: "descending",
+}
 
 const GRADE_ORDER = ["A", "B", "C", "D", "F", "UNGRADED", ""]
 
@@ -78,6 +85,8 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
   const [search, setSearch] = useState("")
   const [failuresOnly, setFailuresOnly] = useState(false)
   const [gradeSort, setGradeSort] = useState<GradeSort>("none")
+  const failuresOnlyId = useId()
+  const rowKeys = useMemo(() => deviceRowKeys(devices), [devices])
 
   const filteredDevices = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -127,14 +136,14 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
             <ArrowDownIcon data-icon="inline-end" />
           ) : null}
         </Button>
-        <label className="text-muted-foreground flex items-center gap-2 text-sm">
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
           <Switch
+            id={failuresOnlyId}
             checked={failuresOnly}
             onCheckedChange={setFailuresOnly}
-            aria-label="Show failures only"
           />
-          Failures only
-        </label>
+          <label htmlFor={failuresOnlyId}>Failures only</label>
+        </div>
         <span className="text-muted-foreground text-xs">
           {filteredDevices.length} of {devices.length}
         </span>
@@ -144,11 +153,32 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              {columns.map((column) => (
-                <TableHead key={column.id} className="whitespace-nowrap">
-                  {column.label}
-                </TableHead>
-              ))}
+              {columns.map((column) =>
+                column.id === "health_grade" ? (
+                  <TableHead
+                    key={column.id}
+                    className="whitespace-nowrap"
+                    aria-sort={ARIA_SORT[gradeSort]}
+                  >
+                    <button
+                      type="button"
+                      onClick={cycleGradeSort}
+                      className="inline-flex items-center gap-1 hover:underline"
+                    >
+                      {column.label}
+                      {gradeSort === "asc" ? (
+                        <ArrowUpIcon className="size-3" aria-hidden />
+                      ) : gradeSort === "desc" ? (
+                        <ArrowDownIcon className="size-3" aria-hidden />
+                      ) : null}
+                    </button>
+                  </TableHead>
+                ) : (
+                  <TableHead key={column.id} className="whitespace-nowrap">
+                    {column.label}
+                  </TableHead>
+                )
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -163,7 +193,7 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
               </TableRow>
             ) : (
               filteredDevices.map((device, index) => (
-                <TableRow key={serialKey(device, index)}>
+                <TableRow key={rowKeys.get(device) ?? `row-${index}`}>
                   {columns.map((column) => {
                     const value = column.getValue(device)
                     const isGradeColumn = column.id === "health_grade"
@@ -213,8 +243,4 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
       </div>
     </div>
   )
-}
-
-function serialKey(device: DeviceRecord, index: number): string {
-  return String(device.serial_number ?? device.dut ?? `row-${index}`)
 }

@@ -202,11 +202,18 @@ export function listMachines(): Promise<Machine[]> {
 }
 
 export function listHistory(
-  machineId?: string | null
+  machineId?: string | null,
+  page: { limit?: number; offset?: number } = {}
 ): Promise<HistorySummary[]> {
   const params = new URLSearchParams()
   if (machineId) {
     params.set("machine_id", machineId)
+  }
+  if (page.limit != null) {
+    params.set("limit", String(page.limit))
+  }
+  if (page.offset) {
+    params.set("offset", String(page.offset))
   }
   const query = params.toString() ? `?${params.toString()}` : ""
   return request<HistorySummary[]>(`/api/v1/history${query}`)
@@ -303,7 +310,8 @@ export async function downloadReportFile(filename: string): Promise<void> {
   anchor.href = url
   anchor.download = filename
   anchor.click()
-  URL.revokeObjectURL(url)
+  // Revoking synchronously can cancel the download in some browsers.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 export { ApiError }
