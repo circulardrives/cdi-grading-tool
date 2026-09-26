@@ -6,7 +6,7 @@
 - One dashboard can also drive a fleet: registered machines with an `address` are other benches running their own `cdi-health-api`; scans for them are forwarded over the LAN (see [Remote Hosts](#remote-hosts)).
 - Backend binds to `127.0.0.1` by default and is not intended for public hosting.
 - Backend process runs as root for real device access (`smartctl`, `nvme`, `sg3-utils`).
-- Static token auth via `CDI_HEALTH_API_TOKEN` (or `--api-token`) is **required** whenever `--host` is not loopback; the process fails fast at startup otherwise.
+- Static token auth via `CDI_HEALTH_API_TOKEN` (or `--api-token`) is **required** whenever `--host` is not loopback, unless lab mode (`--no-auth` / `CDI_HEALTH_API_NO_AUTH=1`) is on; the process fails fast at startup otherwise.
 - Host registry, scan snapshots, and generated reports persist under a configurable data directory (default: `./.cdi-health`, env `CDI_HEALTH_DATA_DIR`, or `--data-dir`). Reports are constrained to `{data_dir}/reports/`. Scan history is stored as one JSON file per scan under `{data_dir}/scan-history/`.
 
 ## Components
@@ -106,7 +106,9 @@ Persistence file: `{data_dir}/machines.json` with `machines` and `latest_scans` 
 
 ## Remote Hosts
 
-A machine with an `address` is another grading bench running its own `cdi-health-api` (with its own `CDI_HEALTH_API_TOKEN`). A technician laptop can run one dashboard + local API and see drives from every bench.
+A machine with an `address` is another grading bench running its own `cdi-health-api` (with its own `CDI_HEALTH_API_TOKEN`, or in lab no-auth mode). A technician laptop can run one dashboard + local API and see drives from every bench.
+
+**Auth mode.** `GET /api/v1/health` always includes `auth_mode`: `"token"` (requests need `X-API-Token`; unauthenticated callers get only `{status, version, auth_mode}`) or `"none"` (lab mode via `--no-auth` / `CDI_HEALTH_API_NO_AUTH=1`; the full payload is public and `api_token_enabled` is `false`). Discovery results carry each host's health payload, and `/machines/{id}/check` records it as the machine's `remote_auth`. No token needs to be stored for a `remote_auth: "none"` host.
 
 **Scan forwarding** (`POST /api/v1/scan` with that `machine_id`, or `GET /api/v1/devices?machine_id=…&refresh=true`):
 

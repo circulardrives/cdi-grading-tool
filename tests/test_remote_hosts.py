@@ -106,6 +106,7 @@ class FakeRemote:
                                 "version": "9.9.9",
                                 "is_root": True,
                                 "api_token_enabled": bool(fake.token),
+                                "auth_mode": "token" if fake.token else "none",
                             },
                         )
                 elif self.path.startswith("/api/v1/jobs"):
@@ -460,6 +461,7 @@ def test_check_reachable_sets_remote_version(api_client: TestClient, fake_remote
     assert body["health"]["is_root"] is True
     assert body["machine"]["status"] == "reachable"
     assert body["machine"]["remote_version"] == "9.9.9"
+    assert body["machine"]["remote_auth"] == "token"
     assert body["machine"]["last_seen_at"] is not None
     assert "api_token" not in body["machine"]
     assert all(r["headers"].get("x-api-token") == REMOTE_TOKEN for r in fake_remote.requests)
@@ -470,8 +472,40 @@ def test_check_auth_failed_with_wrong_or_missing_token(api_client: TestClient, f
         machine_id = _register(api_client, f"Bench {token}", fake_remote.address, token=token)["id"]
         body = api_client.post(f"/api/v1/machines/{machine_id}/check").json()
         assert body["machine"]["status"] == "auth_failed"
+        assert body["machine"]["remote_auth"] == "token"
         assert body["error"] == f"Host 'Bench {token}' rejected the API token"
         assert body["health"] == {"status": "ok", "version": "9.9.9"}
+
+
+def test_no_auth_remote_is_reachable_without_stored_token(api_client: TestClient) -> None:
+    remote = FakeRemote(token=None).start()
+    try:
+        machine_id = _register(api_client, "Lab Bench", remote.address, token=None)["id"]
+        body = api_client.post(f"/api/v1/machines/{machine_id}/check").json()
+        assert body["error"] is None
+        assert body["machine"]["status"] == "reachable"
+        assert body["machine"]["remote_auth"] == "none"
+        assert body["machine"]["has_api_token"] is False
+
+        scanned = api_client.post("/api/v1/scan", json={"machine_id": machine_id})
+        assert scanned.status_code == 200
+        assert scanned.json()["executed_on"] == "remote"
+        # No stored token: no X-API-Token header is sent at all.
+        assert all("x-api-token" not in r["headers"] for r in remote.requests)
+    finally:
+        remote.stop()
+
+
+def test_remote_auth_mode_inference() -> None:
+    from cdi_health.api.remote import remote_auth_mode
+
+    assert remote_auth_mode(None) is None
+    assert remote_auth_mode({"status": "ok", "auth_mode": "none"}) == "none"
+    assert remote_auth_mode({"status": "ok", "version": "1", "auth_mode": "token"}) == "token"
+    # Older remotes without auth_mode.
+    assert remote_auth_mode({"status": "ok", "api_token_enabled": False}) == "none"
+    assert remote_auth_mode({"status": "ok", "api_token_enabled": True}) == "token"
+    assert remote_auth_mode({"status": "ok", "version": "1"}) == "token"
 
 
 def test_check_unreachable_and_no_address(api_client: TestClient) -> None:

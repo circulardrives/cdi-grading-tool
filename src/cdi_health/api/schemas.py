@@ -221,6 +221,7 @@ class HealthResponse(BaseModel):
     is_root: bool | None = None
     allow_non_root_mode: bool | None = None
     api_token_enabled: bool | None = None
+    auth_mode: Literal["none", "token"] | None = None
     missing_required_tools: list[str] | None = None
     weasyprint_available: bool | None = None
     message: str | None = None
@@ -292,6 +293,10 @@ class MachineResponse(BaseModel):
     status: MachineStatusValue
     has_api_token: bool = False
     remote_version: str | None = None
+    remote_auth: Literal["none", "token"] | None = Field(
+        default=None,
+        description="Remote host's auth mode from its /health auth_mode (set by /check).",
+    )
     last_seen_at: datetime | None = None
     last_scan_at: datetime | None = None
     last_scan_status: Literal["success", "failed"] | None = None
@@ -359,6 +364,7 @@ class DiscoveredHost(BaseModel):
     ip: str
     port: int
     hostname: str | None = None
+    # Remote /health payload as returned (includes auth_mode on newer APIs).
     health: dict[str, Any] | None = None
     cdi_api: bool = False
     already_registered: bool = False

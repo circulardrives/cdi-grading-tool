@@ -180,6 +180,23 @@ def sanitize_detail(detail: Any) -> str | None:
     return text[:MAX_DETAIL_CHARS]
 
 
+def remote_auth_mode(health: dict[str, Any] | None) -> str | None:
+    """Return a remote host's auth mode (``"none"`` / ``"token"``) from its /health payload.
+
+    Newer APIs report ``auth_mode`` directly. Older ones are inferred: the
+    full payload carries ``api_token_enabled``; the minimal ``{status,
+    version}`` payload is only served when a token is enforced.
+    """
+    if not isinstance(health, dict):
+        return None
+    mode = health.get("auth_mode")
+    if mode in ("none", "token"):
+        return mode
+    if "api_token_enabled" in health:
+        return "token" if health.get("api_token_enabled") else "none"
+    return "token" if health.get("status") == "ok" else None
+
+
 def forwarded_scan_body(request: Any) -> dict[str, Any]:
     """ScanRequest -> JSON body for the remote host (no ids or local paths)."""
     payload = request.model_dump(mode="json", exclude_none=True)
@@ -236,6 +253,7 @@ class RemoteHostClient:
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
+        # No stored token (e.g. a --no-auth lab bench): send no header at all.
         if self.token:
             headers["X-API-Token"] = self.token
         request = urllib.request.Request(self.endpoint.url(path), data=data, method=method, headers=headers)

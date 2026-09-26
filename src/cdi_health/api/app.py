@@ -38,7 +38,13 @@ from cdi_health.api.discovery import DISCOVER_COOLDOWN_SECONDS, DiscoveryError, 
 from cdi_health.api.history import ScanHistoryStore
 from cdi_health.api.jobs import JobStore
 from cdi_health.api.machines import MachineStore
-from cdi_health.api.remote import RemoteAddressError, RemoteHostClient, RemoteHostError, forwarded_scan_body
+from cdi_health.api.remote import (
+    RemoteAddressError,
+    RemoteHostClient,
+    RemoteHostError,
+    forwarded_scan_body,
+    remote_auth_mode,
+)
 from cdi_health.api.schemas import (
     DiscoverRequest,
     DiscoverResponse,
@@ -64,10 +70,12 @@ from cdi_health.api.security import (
     api_token_is_enabled,
     assert_root_access,
     assert_token_required_for_bind,
+    auth_mode,
     client_is_loopback,
     is_root_user,
     optional_api_token,
     verify_api_token,
+    warn_if_auth_disabled,
 )
 from cdi_health.api.services import (
     abort_selftest,
@@ -143,6 +151,7 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         assert_root_access()
+        warn_if_auth_disabled()
         # Defense in depth when launched outside server.main (e.g. uvicorn factory).
         bind_host = os.getenv(BIND_HOST_ENV)
         if bind_host:
@@ -194,7 +203,8 @@ def create_app() -> FastAPI:
         # When token auth is enabled, unauthenticated (non-loopback) callers
         # get a minimal public payload only.
         if api_token_is_enabled() and not token_ok and not client_is_loopback(request):
-            return HealthResponse(status="ok", version=API_VERSION)
+            # auth_mode lets discovering clients know a token is required.
+            return HealthResponse(status="ok", version=API_VERSION, auth_mode="token")
 
         missing_required_tools = check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False)
         message = None
@@ -206,6 +216,7 @@ def create_app() -> FastAPI:
             is_root=is_root_user(),
             allow_non_root_mode=allow_non_root_mode(),
             api_token_enabled=api_token_is_enabled(),
+            auth_mode=auth_mode(),
             missing_required_tools=missing_required_tools,
             weasyprint_available=weasyprint_available(),
             message=message,
@@ -542,6 +553,8 @@ def create_app() -> FastAPI:
         try:
             client = _remote_client(machine)
             health = client.health()
+            # A no-auth remote never answers 401, so auth_failed is only
+            # possible when it enforces a token and ours is missing/wrong.
             client.verify_token()
         except RemoteAddressError:
             raise
@@ -550,11 +563,13 @@ def create_app() -> FastAPI:
             status = exc.machine_status or "unreachable"
 
         version = health.get("version") if health else None
+        remote_auth = "token" if status == "auth_failed" else remote_auth_mode(health)
         updated = store.set_status(
             machine_id,
             status,
             seen=health is not None,
             remote_version=str(version) if version else None,
+            remote_auth=remote_auth,
         )
         return MachineCheckResponse.model_validate({"machine": updated or machine, "health": health, "error": error})
 

@@ -283,7 +283,8 @@ def test_api_health_minimal_when_unauthenticated_non_loopback(
     response = token_client.get("/api/v1/health")
     assert response.status_code == 200
     body = response.json()
-    assert body == {"status": "ok", "version": PACKAGE_VERSION}
+    # auth_mode tells discovering clients a token is needed, without leaking anything else
+    assert body == {"status": "ok", "version": PACKAGE_VERSION, "auth_mode": "token"}
 
 
 def test_api_health_full_with_valid_token_non_loopback(
