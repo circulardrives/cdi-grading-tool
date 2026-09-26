@@ -51,6 +51,9 @@ from cdi_health.cli import (
 )
 
 DEFAULT_MOCK_DATA_ENV = "CDI_HEALTH_API_MOCK_DATA"
+ALLOWED_DATA_PATHS_ENV = "CDI_HEALTH_API_ALLOWED_DATA_PATHS"
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
+SYSTEM_CONFIG_DIR = Path("/etc/cdi-health")
 
 # Guards the brief window in which the process-global ThresholdConfig
 # singleton is swapped so a scoring engine can bind a per-request config.
@@ -207,22 +210,68 @@ def _decode(value: bytes | str | None) -> str:
     return value.strip()
 
 
+def allowed_data_roots() -> list[Path]:
+    """
+    Directories that request-supplied ``mock_data`` / ``mock_file`` / ``config``
+    paths may resolve into.
+
+    The API runs as root, so arbitrary readable paths (e.g. ``/root``) must not
+    be accepted. Allowed: the packaged mock data and config directories, the
+    API data directory, ``/etc/cdi-health``, the operator's ``--mock-data``
+    default, and any extra roots listed in ``CDI_HEALTH_API_ALLOWED_DATA_PATHS``
+    (``os.pathsep``-separated).
+    """
+    roots: list[Path] = [
+        PACKAGE_DIR / "mock_data",
+        PACKAGE_DIR / "config",
+        resolve_data_dir(),
+        SYSTEM_CONFIG_DIR,
+    ]
+    default_mock = os.getenv(DEFAULT_MOCK_DATA_ENV)
+    if default_mock:
+        roots.append(Path(default_mock).expanduser())
+    for extra in (os.getenv(ALLOWED_DATA_PATHS_ENV) or "").split(os.pathsep):
+        if extra.strip():
+            roots.append(Path(extra.strip()).expanduser())
+
+    resolved: list[Path] = []
+    for root in roots:
+        try:
+            resolved.append(root.resolve())
+        except OSError:
+            continue
+    return resolved
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 def resolve_data_path(path: str) -> str:
-    """Resolve mock/config paths relative to cwd or repository root."""
+    """
+    Resolve a mock/config path (absolute, cwd-relative, or repo-relative) and
+    require it to fall inside :func:`allowed_data_roots` after symlink resolution.
+    """
     candidate = Path(path).expanduser()
     if any(part == ".." for part in candidate.parts):
         raise ValueError("Path traversal is not allowed")
-    if candidate.exists():
-        return str(candidate.resolve())
 
-    repo_root = Path(__file__).resolve().parents[3]
-    repo_relative = repo_root / path
-    if any(part == ".." for part in Path(path).parts):
-        raise ValueError("Path traversal is not allowed")
-    if repo_relative.exists():
-        return str(repo_relative.resolve())
+    if candidate.is_absolute():
+        options = [candidate]
+    else:
+        repo_root = PACKAGE_DIR.parents[1]
+        options = [Path.cwd() / candidate, repo_root / candidate]
 
-    return str(candidate)
+    chosen = next((option for option in options if option.exists()), options[0])
+    resolved = chosen.resolve()
+
+    if not any(_is_within(resolved, root) for root in allowed_data_roots()):
+        raise ValueError("Path is outside the allowed data directories")
+    return str(resolved)
 
 
 def apply_scan_defaults(request: ScanRequest) -> ScanRequest:

@@ -42,6 +42,8 @@
 
 **Scan payload.** Scan responses (and `GET /api/v1/devices`) include `grading_profile` (profile actually applied) and `summary: {total, healthy, warning, failed, ungraded}`. Devices carry the same Revert §13/§15 fields as CLI JSON and reports (`grading_status`, `final_grade`, `fail_reason_codes`, `warning_flags`, `ungraded_reasons`, `recommended_use`, ...). UNGRADED drives (e.g. security-locked, unreadable SMART) have `grading_status: "UNGRADED"`, `final_grade`/`health_grade: "UNGRADED"`, `health_score: null`, and are counted in `summary.ungraded`, **not** `failed`. `POST /api/v1/reports` also accepts `grading_profile`.
 
+**Path allowlist.** Request `mock_data`, `mock_file`, and `config` paths must resolve (after symlinks) inside the packaged `mock_data/` or `config/` directories, the API data directory, `/etc/cdi-health`, the server's `--mock-data` default, or an extra root listed in `CDI_HEALTH_API_ALLOWED_DATA_PATHS` (`:`-separated). Anything else returns **400** `Path is outside the allowed data directories`.
+
 **Per-request thresholds.** A scan/report `config` path is applied only to that request (the process-global thresholds are never replaced). Without `config`, the packaged `thresholds.yaml` defaults apply, matching the CLI.
 
 ### Self-test status payload
@@ -175,19 +177,11 @@ cdi-health-api --allow-non-root --mock-data src/cdi_health/mock_data
 
 ## Optional systemd Unit
 
-```ini
-[Unit]
-Description=CDI Health Local API
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/var/lib/cdi-health
-ExecStart=/usr/local/bin/cdi-health-api --host 127.0.0.1 --port 8844 --data-dir /var/lib/cdi-health
-Restart=on-failure
-Environment=CDI_HEALTH_API_TOKEN=replace-me
-
-[Install]
-WantedBy=multi-user.target
-```
+Use the shipped unit `deploy/systemd/cdi-health-api.service` (installed by the
+`.deb` as `/usr/lib/systemd/system/cdi-health-api.service`). It runs as root
+(raw device ioctls) but is sandboxed: `ProtectSystem=strict` with
+`ReadWritePaths=/var/lib/cdi-health /var/cache/cdi-health`, `ProtectHome=true`,
+`PrivateTmp=true`, `NoNewPrivileges=true`, and no `PrivateDevices=` so `/dev`
+stays reachable. Put the token in `/etc/default/cdi-health-api`
+(`deploy/systemd/cdi-health-api.env.example`), not in the unit. If you change
+`--data-dir`, add the new path to `ReadWritePaths=` with a drop-in.

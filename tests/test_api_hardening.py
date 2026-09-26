@@ -367,3 +367,141 @@ def test_discover_endpoint_without_probe_token_sends_no_header(
     )
     assert response.status_code == 200, response.text
     assert captured and all("x-api-token" not in h for h in captured)
+
+
+# ---------------------------------------------------------------------------
+# #138: constant-time token compare, data-path allowlist, deploy hardening
+# ---------------------------------------------------------------------------
+
+
+def test_tokens_match_uses_constant_time_compare(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import security
+
+    calls: list[tuple[bytes, bytes]] = []
+    real = security.hmac.compare_digest
+
+    def spy(a, b):
+        calls.append((a, b))
+        return real(a, b)
+
+    monkeypatch.setattr(security.hmac, "compare_digest", spy)
+    assert security.tokens_match("s3cret", "s3cret") is True
+    assert security.tokens_match("s3cret-x", "s3cret") is False
+    assert security.tokens_match(None, "s3cret") is False
+    # Non-ASCII input must not raise (str compare_digest would TypeError).
+    assert security.tokens_match("tökén", "s3cret") is False
+    assert len(calls) == 3
+
+
+def test_token_auth_accepts_valid_and_rejects_invalid(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CDI_HEALTH_API_ALLOW_NON_ROOT", "1")
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("CDI_HEALTH_API_TOKEN", "correct-horse")
+    monkeypatch.delenv("CDI_HEALTH_API_BIND_HOST", raising=False)
+    from cdi_health.api.app import create_app
+
+    client = TestClient(create_app())
+    assert client.get("/api/v1/history").status_code == 401
+    assert client.get("/api/v1/history", headers={"X-API-Token": "correct-hors"}).status_code == 401
+    assert client.get("/api/v1/history", headers={"X-API-Token": "correct-horse"}).status_code == 200
+
+
+def test_resolve_data_path_allows_known_roots(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api.services import resolve_data_path
+
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(data_dir))
+    assert resolve_data_path(str(MOCK_NVME_FILE)) == str(MOCK_NVME_FILE.resolve())
+    assert Path(resolve_data_path("src/cdi_health/mock_data")) == MOCK_DATA_PATH.resolve()
+
+    in_data_dir = data_dir / "custom.yaml"
+    in_data_dir.write_text("grading:\n  profile: binary\n", encoding="utf-8")
+    assert resolve_data_path(str(in_data_dir)) == str(in_data_dir.resolve())
+
+
+def test_resolve_data_path_rejects_paths_outside_allowlist(
+    tmp_path: Path, data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cdi_health.api.services import resolve_data_path
+
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(data_dir))
+    monkeypatch.delenv("CDI_HEALTH_API_ALLOWED_DATA_PATHS", raising=False)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = outside / "secret.yaml"
+    secret.write_text("x: 1\n", encoding="utf-8")
+
+    for bad in (str(secret), str(outside), "/root/.ssh/id_rsa", "/etc/shadow"):
+        with pytest.raises(ValueError, match="outside the allowed"):
+            resolve_data_path(bad)
+
+    # A symlink inside an allowed root that points outside is rejected too.
+    link = data_dir / "escape.yaml"
+    link.symlink_to(secret)
+    with pytest.raises(ValueError, match="outside the allowed"):
+        resolve_data_path(str(link))
+
+    with pytest.raises(ValueError, match="traversal"):
+        resolve_data_path(str(data_dir / ".." / "outside" / "secret.yaml"))
+
+
+def test_resolve_data_path_extra_roots_env(tmp_path: Path, data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api.services import resolve_data_path
+
+    extra = tmp_path / "datasets"
+    extra.mkdir()
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("CDI_HEALTH_API_ALLOWED_DATA_PATHS", str(extra))
+    assert resolve_data_path(str(extra)) == str(extra.resolve())
+
+
+def test_scan_rejects_mock_and_config_outside_allowlist(api_client: TestClient, tmp_path: Path) -> None:
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    cfg = outside / "thresholds.yaml"
+    cfg.write_text("grading:\n  profile: binary\n", encoding="utf-8")
+
+    for payload in (
+        {"mock_data": str(outside)},
+        {"mock_file": str(cfg)},
+        {"mock_file": str(MOCK_NVME_FILE), "config": str(cfg)},
+    ):
+        response = api_client.post("/api/v1/scan", json=payload)
+        assert response.status_code == 400, (payload, response.text)
+        assert response.json()["detail"] == "Path is outside the allowed data directories"
+
+    report = api_client.post("/api/v1/reports", json={"format": "csv", "config": str(cfg)})
+    assert report.status_code == 400
+    assert not _runtime(api_client).hardware_lock.locked()
+
+
+def _read_repo_file(*parts: str) -> str:
+    return (REPO_ROOT.joinpath(*parts)).read_text(encoding="utf-8")
+
+
+def test_systemd_unit_is_sandboxed() -> None:
+    unit = _read_repo_file("deploy", "systemd", "cdi-health-api.service")
+    directives = {
+        line.split("=", 1)[0].strip(): line.split("=", 1)[1].strip()
+        for line in unit.splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    }
+    assert directives["ProtectSystem"] == "strict"
+    assert directives["ProtectHome"] == "true"
+    assert directives["PrivateTmp"] == "true"
+    assert directives["NoNewPrivileges"] == "true"
+    assert "/var/lib/cdi-health" in directives["ReadWritePaths"]
+    # The service must reach raw block devices.
+    assert "PrivateDevices" not in directives
+    # Data dir passed to the API must be writable under ProtectSystem=strict.
+    assert "--data-dir /var/lib/cdi-health" in directives["ExecStart"]
+
+
+def test_sudoers_profile_has_no_wildcard_tool_access() -> None:
+    policy = _read_repo_file("deploy", "sudoers", "cdi-health-technician")
+    rules = [line for line in policy.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    joined = "\n".join(rules)
+    for tool in ("smartctl", "nvme"):
+        assert f"/{tool} *" not in joined
+    for dangerous in ("format", "sanitize", "security-send", "--set", "fw-download", "write"):
+        assert dangerous not in joined
+    assert "openSeaChest" not in joined
