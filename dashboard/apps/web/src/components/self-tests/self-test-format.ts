@@ -8,6 +8,7 @@ import type {
   SelfTestDeviceStatus,
   SelfTestResultEntry,
 } from "@/lib/types"
+import { friendlyModel } from "@/lib/drive-names"
 
 export type TestType = "short" | "extended"
 
@@ -33,26 +34,9 @@ export function slotOf(controller: string): string {
   return controller.replace(/^\/dev\//, "")
 }
 
-/** "Intel SSDPE2KE032T8" style name from the saved scan. */
+/** Friendly drive name from the saved scan ("KIOXIA CM5", "Intel D7-P5520"). */
 export function driveTitle(device: DeviceRecord | null | undefined): string {
-  const model = String(device?.model_number ?? "").trim()
-  const vendor = String(device?.vendor ?? "").trim()
-  const usefulVendor =
-    vendor && !/^(unknown|not reported|n\/a)$/i.test(vendor) ? vendor : ""
-  if (!model || /^not reported$/i.test(model)) {
-    return usefulVendor ? `${usefulVendor} NVMe drive` : "NVMe drive"
-  }
-  if (
-    usefulVendor &&
-    !model.toLowerCase().includes(usefulVendor.toLowerCase())
-  ) {
-    const nice =
-      usefulVendor.length > 3 && usefulVendor === usefulVendor.toUpperCase()
-        ? usefulVendor[0] + usefulVendor.slice(1).toLowerCase()
-        : usefulVendor
-    return `${nice} ${model}`
-  }
-  return model
+  return device ? friendlyModel(device) : "NVMe drive"
 }
 
 function toBytes(device: DeviceRecord): number | null {
