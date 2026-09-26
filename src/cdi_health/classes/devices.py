@@ -1637,6 +1637,10 @@ class NVMeProtocol:
             device.logical_sector_size = int(smartctl.get("logical_block_size", 0))
             device.physical_sector_size = int(smartctl.get("physical_block_size", 0))
 
+        # Offline (mock/export) data: never shell out to real hardware tools
+        elif _uses_offline_data(device):
+            pass
+
         # Else
         else:
             # Prepare Command (PATH-resolved tools; bare sudo strips when root)
@@ -1701,7 +1705,7 @@ class NVMeProtocol:
         # If Namespaces are 0
         if device.nvme_namespaces == 0:
             # Exports / some JSON only have nvme_number_of_namespaces; avoid extra smartctl call
-            if smartctl.get("nvme_number_of_namespaces"):
+            if smartctl.get("nvme_number_of_namespaces") or _uses_offline_data(device):
                 device.nvme_namespaces = {}
             else:
                 # Get Namespaces
@@ -1840,7 +1844,7 @@ class NVMeProtocol:
         ocp_embedded = smartctl.get("ocp_smart_log")
         if isinstance(ocp_embedded, dict) and ocp_embedded:
             device.ocp_smart_log = ocp_embedded
-        else:
+        elif not _uses_offline_data(device):
             try:
                 ns_path = NVMeProtocol.nvme_namespace_block_path(device.dut)
                 nvme_path = resolve_tool_path("nvme", fallback="/usr/sbin/nvme")
@@ -1858,6 +1862,16 @@ class NVMeProtocol:
 
         # Grading is applied centrally via Device.apply_health_grade() so the
         # scan-time grade can never disagree with the health score.
+
+
+def _uses_offline_data(device: Device) -> bool:
+    """
+    True when the device was built from injected (mock / exported) smartctl data.
+
+    Such scans must never run real ``sudo nvme ...`` commands: on a dev laptop
+    that pops a sudo password / Touch ID prompt and blocks tests and agents.
+    """
+    return getattr(device, "_smartctl_provider", None) is not None
 
 
 @dataclass

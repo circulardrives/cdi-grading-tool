@@ -29,7 +29,11 @@ from typing import Any, Literal
 
 DEFAULT_DATA_DIR_ENV = "CDI_HEALTH_DATA_DIR"
 
-MachineStatus = Literal["unknown", "reachable", "unreachable"]
+MachineStatus = Literal["unknown", "reachable", "unreachable", "auth_failed"]
+MACHINE_STATUSES = ("unknown", "reachable", "unreachable", "auth_failed")
+# Write-only secret: persisted in machines.json, never returned by the API.
+TOKEN_FIELD = "api_token"
+STORE_FILE_MODE = 0o600
 ScanStatus = Literal["success", "failed"]
 
 
@@ -46,8 +50,30 @@ def resolve_data_dir() -> Path:
     return (Path.cwd() / ".cdi-health").resolve()
 
 
+def _normalize_token(value: Any) -> str | None:
+    """Return a stripped token, or None when empty (empty string clears it)."""
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def public_machine(entry: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of a machine record that is safe to expose (no token)."""
+    public = {key: value for key, value in entry.items() if key != TOKEN_FIELD}
+    public["has_api_token"] = bool(entry.get(TOKEN_FIELD))
+    public.setdefault("remote_version", None)
+    public.setdefault("remote_auth", None)
+    return public
+
+
 class MachineStore:
-    """JSON-backed registry of grading hosts and their latest scan snapshots."""
+    """JSON-backed registry of grading hosts and their latest scan snapshots.
+
+    Remote host API tokens are stored in plaintext in ``machines.json`` (file
+    mode 0600). Every public accessor strips the token and exposes only
+    ``has_api_token``; use :meth:`get_api_token` to read it for forwarding.
+    """
 
     def __init__(self, data_dir: Path | None = None) -> None:
         self.data_dir = (data_dir or resolve_data_dir()).resolve()
@@ -61,6 +87,12 @@ class MachineStore:
     def _load(self) -> None:
         if not self.store_path.is_file():
             return
+
+        # Tighten stores written by older versions (before tokens were stored).
+        try:
+            os.chmod(self.store_path, STORE_FILE_MODE)
+        except OSError:
+            pass
 
         try:
             payload = json.loads(self.store_path.read_text(encoding="utf-8"))
@@ -86,13 +118,18 @@ class MachineStore:
             "latest_scans": self._latest_scans,
         }
         temp_path = self.store_path.with_suffix(".tmp")
-        temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        # The store holds remote API tokens: create it owner-read/write only.
+        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, STORE_FILE_MODE)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2))
+        # O_CREAT's mode is ignored for a pre-existing temp file; enforce it.
+        os.chmod(temp_path, STORE_FILE_MODE)
         temp_path.replace(self.store_path)
 
     def list_machines(self) -> list[dict[str, Any]]:
         with self.lock:
             return [
-                dict(entry)
+                public_machine(entry)
                 for entry in sorted(
                     self._machines.values(),
                     key=lambda item: item.get("name", "").lower(),
@@ -102,7 +139,15 @@ class MachineStore:
     def get_machine(self, machine_id: str) -> dict[str, Any] | None:
         with self.lock:
             entry = self._machines.get(machine_id)
-            return dict(entry) if entry else None
+            return public_machine(entry) if entry else None
+
+    def get_api_token(self, machine_id: str) -> str | None:
+        """Return the stored remote API token for a machine (internal use only)."""
+        with self.lock:
+            entry = self._machines.get(machine_id)
+            if not entry:
+                return None
+            return _normalize_token(entry.get(TOKEN_FIELD))
 
     def create_machine(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = utc_now_iso()
@@ -114,6 +159,8 @@ class MachineStore:
             "location": payload.get("location", "").strip(),
             "notes": payload.get("notes", "").strip(),
             "status": "unknown",
+            "remote_version": None,
+            "remote_auth": None,
             "last_seen_at": None,
             "last_scan_at": None,
             "last_scan_status": None,
@@ -121,10 +168,13 @@ class MachineStore:
             "created_at": now,
             "updated_at": now,
         }
+        token = _normalize_token(payload.get(TOKEN_FIELD))
+        if token:
+            entry[TOKEN_FIELD] = token
         with self.lock:
             self._machines[entry["id"]] = entry
             self._save()
-        return dict(entry)
+        return public_machine(entry)
 
     def update_machine(self, machine_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         with self.lock:
@@ -137,10 +187,46 @@ class MachineStore:
                     value = payload[field]
                     entry[field] = value.strip() if isinstance(value, str) else value
 
+            # Omitted (or null) = unchanged; "" clears; any other string replaces.
+            if payload.get(TOKEN_FIELD) is not None:
+                token = _normalize_token(payload[TOKEN_FIELD])
+                if token:
+                    entry[TOKEN_FIELD] = token
+                else:
+                    entry.pop(TOKEN_FIELD, None)
+
             entry["updated_at"] = utc_now_iso()
             self._machines[machine_id] = entry
             self._save()
-            return dict(entry)
+            return public_machine(entry)
+
+    def set_status(
+        self,
+        machine_id: str,
+        status: str,
+        *,
+        seen: bool = False,
+        remote_version: str | None = None,
+        remote_auth: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Update reachability status (and optionally last_seen/remote_version/remote_auth)."""
+        if status not in MACHINE_STATUSES:
+            raise ValueError(f"Invalid machine status: {status}")
+        now = utc_now_iso()
+        with self.lock:
+            entry = self._machines.get(machine_id)
+            if not entry:
+                return None
+            entry["status"] = status
+            if seen:
+                entry["last_seen_at"] = now
+            if remote_version is not None:
+                entry["remote_version"] = remote_version
+            if remote_auth in ("none", "token"):
+                entry["remote_auth"] = remote_auth
+            entry["updated_at"] = now
+            self._save()
+            return public_machine(entry)
 
     def delete_machine(self, machine_id: str) -> bool:
         with self.lock:
@@ -180,7 +266,7 @@ class MachineStore:
             self._machines[machine_id] = entry
             self._latest_scans[machine_id] = dict(scan_result)
             self._save()
-            return dict(entry)
+            return public_machine(entry)
 
     def get_scan(self, machine_id: str) -> dict[str, Any] | None:
         with self.lock:

@@ -12,6 +12,9 @@
 #
 # Proxy the UI at a remote grading bench:
 #   ./scripts/docker-up.sh --bench 192.168.0.74
+#
+# Lab benches without a token (anyone on the LAN can scan):
+#   ./scripts/docker-up.sh --no-auth
 
 name: cdi-health
 
@@ -39,7 +42,10 @@ services:
       ]
     environment:
       CDI_HEALTH_API_ALLOW_NON_ROOT: "1"
-      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:?Set CDI_HEALTH_API_TOKEN in .env}
+      # Token is required unless lab no-auth mode is on; the API (and the
+      # entrypoint) refuse to start on 0.0.0.0 with neither set.
+      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:-}
+      CDI_HEALTH_API_NO_AUTH: ${CDI_HEALTH_API_NO_AUTH:-0}
       CDI_HEALTH_DATA_DIR: /var/lib/cdi-health
     volumes:
       - cdi-api-data:/var/lib/cdi-health
@@ -71,7 +77,8 @@ services:
     profiles: ["local"]
     container_name: cdi-health-dashboard
     environment:
-      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:?Set CDI_HEALTH_API_TOKEN in .env}
+      # Empty in no-auth mode: nginx then sends no X-API-Token header.
+      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:-}
     ports:
       - "${DASHBOARD_PORT:-3000}:80"
     depends_on:
@@ -89,7 +96,8 @@ services:
     profiles: ["remote"]
     container_name: cdi-health-dashboard
     environment:
-      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:?Set CDI_HEALTH_API_TOKEN in .env}
+      # Empty in no-auth mode: nginx then sends no X-API-Token header.
+      CDI_HEALTH_API_TOKEN: ${CDI_HEALTH_API_TOKEN:-}
     ports:
       - "${DASHBOARD_PORT:-3000}:3000"
     volumes:

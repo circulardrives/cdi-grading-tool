@@ -60,7 +60,7 @@ class TestNVMeSelfTest:
         mock_result.output = b'{"oacs": 16}'  # Bit 4 set (0x10 = 16)
         mock_run.return_value = mock_result
 
-        with patch("cdi_health.classes.tools.Command") as mock_command:
+        with patch("cdi_health.classes.nvme_selftest.Command") as mock_command:
             mock_cmd = MagicMock()
             mock_cmd.return_code = 0
             mock_cmd.output = b'{"oacs": 16}'
@@ -70,8 +70,8 @@ class TestNVMeSelfTest:
             # Mock the command run
             mock_cmd.run = MagicMock()
             result = selftest.is_supported()
-            # Should return True if OACS bit 4 is set
-            assert isinstance(result, bool)
+            # OACS bit 4 set -> self-test supported
+            assert result is True
 
     @patch("cdi_health.classes.nvme_selftest.Command")
     @patch("cdi_health.classes.nvme_selftest.shutil.which")
