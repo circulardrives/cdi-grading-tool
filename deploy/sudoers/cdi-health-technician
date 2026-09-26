@@ -26,12 +26,15 @@
 
 User_Alias CDI_API_USER = cdiapi
 
-# smartctl: device enumeration and full SMART/health read only.
+# smartctl: device enumeration and full SMART/health read only. The `-d sat`
+# lines cover Synology DSM /dev/sataN disks, which the scan does not list.
 Cmnd_Alias CDI_SMARTCTL = \
     /usr/sbin/smartctl --scan-open -j, \
     /usr/bin/smartctl --scan-open -j, \
     /usr/sbin/smartctl ^--xall /dev/[A-Za-z0-9_/-]+ --json\=ov$, \
     /usr/bin/smartctl ^--xall /dev/[A-Za-z0-9_/-]+ --json\=ov$, \
+    /usr/sbin/smartctl ^-d sat --xall /dev/sata[0-9]+ --json\=ov$, \
+    /usr/bin/smartctl ^-d sat --xall /dev/sata[0-9]+ --json\=ov$, \
     /usr/sbin/smartctl ^-x -j /dev/nvme[0-9n]+$, \
     /usr/bin/smartctl ^-x -j /dev/nvme[0-9n]+$
 

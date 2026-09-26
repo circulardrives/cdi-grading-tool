@@ -563,7 +563,117 @@ class TestDevicesScanWithoutDrives:
         monkeypatch.setattr(devices_module, "Command", FakeCommand)
         monkeypatch.setattr(devices_module.Smartctl, "get_smartctl_path", lambda self: "/usr/sbin/smartctl")
 
-        devices = Devices()
+        devices = Devices(dev_root="/nonexistent-cdi-test-dev")
 
         assert devices.devices == []
         assert devices.failures == []
+
+
+class TestSynologySataDevices:
+    """Synology DSM 7.x exposes SATA disks only as /dev/sataN (not in --scan-open)."""
+
+    @staticmethod
+    def _fake_dev(tmp_path: Path, *names: str) -> Path:
+        dev = tmp_path / "dev"
+        dev.mkdir()
+        for name in names:
+            (dev / name).touch()
+        return dev
+
+    @staticmethod
+    def _install_fake_commands(
+        monkeypatch: pytest.MonkeyPatch, scan_devices: list[dict], smart_json: dict
+    ) -> list[str]:
+        from cdi_health.classes import devices as devices_module
+        from cdi_health.classes import tools as tools_module
+
+        issued: list[str] = []
+
+        class FakeCommand:
+            def __init__(self, command: str, **_kwargs) -> None:
+                self.command = command
+                issued.append(command)
+
+            def run(self) -> None:
+                pass
+
+            def get_return_code(self) -> int:
+                # sg_map26 fails (no sg node) so the block path is used; TUR/smartctl succeed
+                return 1 if "sg_map26" in self.command else 0
+
+            def has_errors(self) -> bool:
+                return False
+
+            def get_errors(self) -> bytes:
+                return b""
+
+            def get_output(self) -> bytes:
+                if "--scan-open" in self.command:
+                    return json.dumps({"devices": scan_devices}).encode()
+                if "--xall" in self.command:
+                    return json.dumps(smart_json).encode()
+                return b""
+
+        monkeypatch.setattr(devices_module, "Command", FakeCommand)
+        monkeypatch.setattr(tools_module, "Command", FakeCommand)
+        monkeypatch.setattr(tools_module, "resolve_tool_path", lambda name, fallback=None: f"/usr/sbin/{name}")
+        monkeypatch.setattr(tools_module.SG3Utils, "_path_cache", {})
+        return issued
+
+    def test_sata_disks_added_as_ata_with_d_sat(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mock_data_dir: Path
+    ) -> None:
+        dev = self._fake_dev(tmp_path, "sata1", "sata2", "sata10", "sata1p1", "sata2p5", "satax", "sda")
+        smart = _load_mock(mock_data_dir, "ata", "healthy_hdd.json")
+        issued = self._install_fake_commands(monkeypatch, [], smart)
+
+        devices = Devices(dev_root=str(dev))
+
+        expected = [str(dev / "sata1"), str(dev / "sata2"), str(dev / "sata10")]
+        assert [d["name"] for d in devices.scanned] == expected
+        assert all(d["protocol"] == "ATA" and d["type"] == "sat" for d in devices.scanned)
+        assert [d["name"] for d in devices.ata_devices] == expected
+        assert len(devices.devices) == 3
+        assert devices.failures == []
+
+        smart_cmds = sorted(c for c in issued if "--xall" in c)
+        assert smart_cmds == sorted(f"sudo /usr/sbin/smartctl -d sat --xall {path} --json=ov" for path in expected)
+
+    def test_sata_disk_already_in_scan_not_duplicated(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mock_data_dir: Path
+    ) -> None:
+        dev = self._fake_dev(tmp_path, "sata1")
+        smart = _load_mock(mock_data_dir, "ata", "healthy_hdd.json")
+        scan = [
+            {"name": str(dev / "sata1"), "info_name": "x", "type": "sat", "protocol": "ATA"},
+            {"name": "/dev/sda", "info_name": "/dev/sda", "type": "sat", "protocol": "ATA"},
+        ]
+        issued = self._install_fake_commands(monkeypatch, scan, smart)
+
+        devices = Devices(dev_root=str(dev))
+
+        assert [d["name"] for d in devices.scanned] == [str(dev / "sata1"), "/dev/sda"]
+        smart_cmds = sorted(c for c in issued if "--xall" in c)
+        # Normal devices keep smartctl autodetection (no -d); only /dev/sataN is forced.
+        assert smart_cmds == sorted(
+            [
+                "sudo /usr/sbin/smartctl --xall /dev/sda --json=ov",
+                f"sudo /usr/sbin/smartctl -d sat --xall {dev / 'sata1'} --json=ov",
+            ]
+        )
+
+    def test_ignore_ata_skips_sata_disks(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        dev = self._fake_dev(tmp_path, "sata1")
+        self._install_fake_commands(monkeypatch, [], {})
+
+        devices = Devices(ignore_ata=True, dev_root=str(dev))
+
+        assert devices.scanned == []
+        assert devices.devices == []
+
+    def test_missing_dev_root_is_zero_extra_devices(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._install_fake_commands(monkeypatch, [], {})
+
+        devices = Devices(dev_root=str(tmp_path / "does-not-exist"))
+
+        assert devices.scanned == []

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 # Modules
 import json
+import os
 import re
 
 # Concurrent Futures
@@ -264,12 +265,16 @@ class Device:
         device_id: str = None,
         smartctl_provider=None,
         sg3utils_provider=None,
+        smartctl_device_type: str | None = None,
     ):
         """
         Constructor
         :param device_id: Device ID ("/dev/sda")
         :param smartctl_provider: Optional Smartctl instance (for testing/mocking)
         :param sg3utils_provider: Optional SG3Utils instance (for testing/mocking)
+        :param smartctl_device_type: Optional smartctl ``-d`` type (e.g. "sat"
+            for Synology DSM /dev/sataN disks). When set, smartctl is opened on
+            the block device path itself rather than the sg-mapped node.
         """
 
         # Properties
@@ -405,6 +410,8 @@ class Device:
         # Tools - use provided providers or create new instances
         if self._smartctl_provider:
             self.smartctl = self._smartctl_provider
+        elif smartctl_device_type:
+            self.smartctl = Smartctl(device_id=self.dut, device_type=smartctl_device_type)
         else:
             self.smartctl = Smartctl(device_id=self.dut_sg)
 
@@ -900,17 +907,27 @@ class Devices:
     Devices Class
     """
 
+    # Synology DSM 7.x exposes internal SATA disks only as /dev/sata1..N (no
+    # /dev/sdX) and `smartctl --scan-open` does not list them. Whole disks
+    # match /dev/sata<N>; partitions are /dev/sata<N>p<M>.
+    SYNOLOGY_SATA_RE = re.compile(r"^sata[0-9]+$")
+    SYNOLOGY_SATA_DEVICE_TYPE = "sat"
+
     def __init__(
         self,
         ignore_ata: bool = False,
         ignore_nvme: bool = False,
         ignore_scsi: bool = False,
+        dev_root: str = "/dev",
     ):
         """
         Constructor
+        :param dev_root: directory searched for Synology /dev/sataN disks
+            (injectable for tests)
         """
 
         # Lists
+        self.dev_root: str = dev_root
         self.scanned: list = list()
         self.devices: list = list()
         self.failures: list = list()
@@ -1039,8 +1056,45 @@ class Devices:
             # Append Scanned Device
             self.scanned.append(device)
 
+        # Synology DSM: add /dev/sataN disks smartctl's scan cannot see
+        self._add_synology_sata_devices()
+
         # Return
         return True
+
+    def _add_synology_sata_devices(self) -> None:
+        """
+        Add Synology DSM /dev/sataN whole disks missing from the smartctl scan.
+
+        They are opened as ATA with ``-d sat``. Partitions (/dev/sataNpM) are
+        skipped, as is any path the scan already reported.
+        """
+        if self.ignore_ata:
+            return
+
+        try:
+            entries = os.listdir(self.dev_root)
+        except OSError:
+            return
+
+        known = {device.get("name") for device in self.scanned}
+        known.update(failure.get("name") for failure in self.failures)
+
+        def _disk_number(entry: str) -> int:
+            return int(entry[len("sata") :])
+
+        for entry in sorted((e for e in entries if self.SYNOLOGY_SATA_RE.match(e)), key=_disk_number):
+            path = os.path.join(self.dev_root, entry)
+            if path in known:
+                continue
+            device = {
+                "name": path,
+                "info_name": f"{path} [SAT]",
+                "type": self.SYNOLOGY_SATA_DEVICE_TYPE,
+                "protocol": "ATA",
+            }
+            self.ata_devices.append(device)
+            self.scanned.append(device)
 
     def analyse_devices(self) -> bool:
         """
@@ -1058,7 +1112,11 @@ class Devices:
             # Devices List
             devices_list = list(
                 # Map List Comprehension
-                analysis.map(self.analyse_device, [drive["name"] for drive in self.scanned])
+                analysis.map(
+                    self.analyse_device,
+                    [drive["name"] for drive in self.scanned],
+                    [self._explicit_device_type(drive) for drive in self.scanned],
+                )
             )
             # Filter out False values (failed device analyses)
             self.devices = [device for device in devices_list if device is not False]
@@ -1070,6 +1128,20 @@ class Devices:
 
         # Return
         return True
+
+    def _explicit_device_type(self, drive: dict) -> str | None:
+        """
+        smartctl ``-d`` type to force for a scanned drive.
+
+        Only the Synology /dev/sataN disks get one: every other drive keeps
+        smartctl autodetection (and the sg-mapped path), so the commands issued
+        for them are unchanged.
+        """
+        name = str(drive.get("name") or "")
+        in_dev_root = os.path.dirname(name) == os.path.normpath(self.dev_root)
+        if in_dev_root and self.SYNOLOGY_SATA_RE.match(os.path.basename(name)):
+            return self.SYNOLOGY_SATA_DEVICE_TYPE
+        return None
 
     @staticmethod
     def _ungraded_placeholder(failure: dict) -> dict:
@@ -1122,17 +1194,18 @@ class Devices:
             "scan_timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
 
-    def analyse_device(self, device_id: str):
+    def analyse_device(self, device_id: str, device_type: str | None = None):
         """
         Analyse Device
         :param device_id: Device ID
+        :param device_type: optional smartctl ``-d`` type to force
         :return: a Device dictionary | False on failure (recorded in self.failures)
         """
 
         # Try
         try:
             # Get Device
-            device = Device(device_id=device_id).to_dict(pop=True)
+            device = Device(device_id=device_id, smartctl_device_type=device_type).to_dict(pop=True)
 
         # If CommandException
         except CommandException as exception:

@@ -507,6 +507,28 @@ def test_sudoers_profile_has_no_wildcard_tool_access() -> None:
     assert "openSeaChest" not in joined
 
 
+def test_sudoers_profile_allows_synology_sata_command() -> None:
+    """The -d sat rule must match exactly what Smartctl issues for /dev/sataN."""
+    import re
+
+    from cdi_health.classes.tools import Smartctl
+
+    policy = _read_repo_file("deploy", "sudoers", "cdi-health-technician")
+    patterns = [
+        re.search(r"\^(.*)\$", line).group(1).replace("\\=", "=")
+        for line in policy.splitlines()
+        if "smartctl ^-d sat" in line
+    ]
+    assert len(patterns) == 2  # /usr/sbin and /usr/bin
+
+    smartctl = Smartctl("/dev/sata3", device_type="sat")
+    issued = f"{smartctl.get_all_device_information_command} {smartctl.dut} --json=ov"
+    args = issued.split(" ", 2)[2]  # drop "sudo <path>"
+    for pattern in patterns:
+        assert re.fullmatch(pattern, args)
+        assert not re.fullmatch(pattern, "-d sat --xall /dev/sata3p1 --json=ov")
+
+
 # ---------------------------------------------------------------------------
 # #139: API reports the real package version
 # ---------------------------------------------------------------------------

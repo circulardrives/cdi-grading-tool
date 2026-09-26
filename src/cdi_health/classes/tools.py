@@ -29,6 +29,7 @@ from __future__ import annotations
 # Modules
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -427,15 +428,22 @@ class SG3Utils:
         return TUR_NOT_READY if retry == TUR_NOT_READY else TUR_UNKNOWN
 
 
+# smartctl -d values we pass through (e.g. "sat", "nvme", "scsi", "sat,12").
+# Anything else is rejected so a device type can never smuggle in extra args.
+SMARTCTL_DEVICE_TYPE_RE = re.compile(r"^[a-z][a-z0-9_+,]*$")
+
+
 class Smartctl:
     """
     Smartctl Class
     """
 
-    def __init__(self, device_id: str = None):
+    def __init__(self, device_id: str = None, device_type: str | None = None):
         """
         Smartctl
         :param device_id:
+        :param device_type: optional smartctl ``-d`` device type (e.g. "sat"
+            for Synology DSM /dev/sataN disks); None lets smartctl autodetect
         """
 
         # Get the full path of smartctl
@@ -456,7 +464,12 @@ class Smartctl:
             7: "S.M.A.R.T Self-test Log contains 1 or more record of failed self-tests",
         }
 
-        self.get_all_device_information_command = f"sudo {self.smartctl_path} --xall"
+        if device_type is not None and not SMARTCTL_DEVICE_TYPE_RE.match(device_type):
+            raise ValueError(f"Invalid smartctl device type: {device_type!r}")
+        self.device_type = device_type
+
+        type_args = f" -d {device_type}" if device_type else ""
+        self.get_all_device_information_command = f"sudo {self.smartctl_path}{type_args} --xall"
 
     def get_smartctl_path(self) -> str:
         """
