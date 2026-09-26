@@ -1427,6 +1427,17 @@ class ATAProtocol:
                             # Reserved space remaining, so used = 100 - reserved
                             device.ssd_percentage_used_endurance = 100 - normalized_value
 
+        # Available reserved space (SSD attribute 232 Available_Reservd_Space),
+        # graded with the NVMe spare bands (#133). Only trusted when smartctl
+        # names it as reserved space; 232 means other things on some drives.
+        device.available_reserved_space = None
+        device.available_reserved_space_threshold = None
+        if device.is_ssd:
+            attr_232 = next((a for a in device.smart_attributes if a.get("id") == 232), None)
+            if attr_232 and "reserv" in str(attr_232.get("name", "")).lower():
+                device.available_reserved_space = int_or_none(attr_232.get("value"))
+                device.available_reserved_space_threshold = int_or_none(attr_232.get("thresh"))
+
         # Get ATA Device Statistics Pages
         device_statistics_pages = smartctl.get("ata_device_statistics", {}).get("pages", [])
 
@@ -1888,6 +1899,10 @@ class SCSIProtocol:
             device.interface_link = "Not Reported"
         device.form_factor: str = smartctl.get("form_factor", {}).get("name", "Not Reported")
         device.rotation_rate: str = smartctl.get("rotation_rate", "Not Reported")
+        # SAS SSD endurance indicator (percentage used), scored with the SSD
+        # wear tiers (#133)
+        if device.media_type != "HDD":
+            device.ssd_percentage_used_endurance = int_or_none(smartctl.get("scsi_percentage_used_endurance_indicator"))
         # Unknown POH stays "Not Reported" rather than 0 (#129)
         device.power_on_hours = power_on_hours_from_smartctl(smartctl)
 

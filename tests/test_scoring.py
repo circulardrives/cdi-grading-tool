@@ -317,8 +317,11 @@ class TestHealthScoreCalculator:
 
         result = calculator.calculate(device)
 
-        assert result.score == 100
+        # Above AVSPT, so not a fail-gate; in the spare D band (< 40%) the
+        # binary profile adds a warning deduction (#133).
+        assert result.score == 90
         assert result.grade == "A"
+        assert any(d.field == "available_spare" and d.severity == "warning" for d in result.deductions)
 
         device["available_spare"] = 9
         result = calculator.calculate(device)

@@ -106,6 +106,7 @@ _FAIL_CODE_BY_FIELD = {
     "ssd_percentage_used_endurance": "F-ENDURANCE",
     "percentage_used": "F-ENDURANCE",
     "available_spare": "F-SPARE-BLOCKS",
+    "available_reserved_space": "F-SPARE-BLOCKS",
 }
 
 

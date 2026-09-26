@@ -40,7 +40,17 @@ nvme:
   # Real drive AVSPT values are typically 0–12%; prefer the drive value always.
   minimum_available_spare: 10
 
-  # Wear warning tiers (percentage used). Critical still uses maximum_percentage_used.
+  # Available spare bands (#133): MINIMUM spare % for each grade (abcdf; feeds
+  # attribute_grades / worst-attribute-wins). Below C's minimum but still >=
+  # the drive AVSPT (fallback minimum_available_spare) is D; below AVSPT is F.
+  # Also applied to ATA SSD attribute 232 (Available_Reservd_Space).
+  available_spare_bands: {A: 80, B: 60, C: 40}
+  # Binary profile: warning deduction when spare is in the D range.
+  available_spare_low_deduction: 10
+
+  # Wear warning tiers (percentage used): below moderate no effect; at/above
+  # moderate / high a minor point deduction only; wear below 100% never
+  # changes the letter grade (#133). Critical still uses maximum_percentage_used.
   wear_warning_moderate: 80
   wear_warning_high: 90
   wear_moderate_deduction: 5

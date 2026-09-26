@@ -58,6 +58,13 @@ DEFAULT_THRESHOLDS = {
     "nvme": {
         "maximum_percentage_used": 100,
         "minimum_available_spare": 10,
+        # Available spare bands (#133): minimum spare % for each grade. Below
+        # C's minimum but >= the drive AVSPT (fallback minimum_available_spare)
+        # is D; below AVSPT is the F-SPARE-BLOCKS fail-gate. Also applied to
+        # ATA SSD attribute 232 (Available_Reservd_Space) normalized values.
+        "available_spare_bands": {"A": 80, "B": 60, "C": 40},
+        # Binary profile: warning deduction when spare is in the D range.
+        "available_spare_low_deduction": 10,
         # Wear warning tiers (percentage used); critical still uses maximum_percentage_used
         "wear_warning_moderate": 80,
         "wear_warning_high": 90,
@@ -166,6 +173,7 @@ _GRADE_KEYS = ("A", "B", "C", "D", "F")
 # Grade-keyed maps whose keys may be any subset of A-F (value = numeric limit).
 # Paths are relative to the config root.
 _GRADE_MAP_PATHS = {
+    ("nvme", "available_spare_bands"),
     ("ata", "reallocated_sectors_bands"),
     ("ata", "pending_sectors_bands"),
     ("ata", "uncorrectable_errors_bands"),
@@ -189,6 +197,7 @@ _ASCENDING_GRADE_MAPS = {
     ("grading", "age_cap", "consumer"),
 }
 _DESCENDING_GRADE_MAPS = {
+    ("nvme", "available_spare_bands"),
     ("grading", "grade_bands"),
     ("grading", "grade_band_base_scores"),
 }
@@ -490,6 +499,16 @@ class ThresholdConfig:
     def minimum_ssd_available_spare(self) -> int:
         """Fallback AVSPT (%) when the drive omits available_spare_threshold."""
         return self.get("nvme", "minimum_available_spare", default=10)
+
+    @property
+    def available_spare_bands(self) -> dict:
+        """Minimum available-spare % per grade (A/B/C); below C (>= AVSPT) is D (#133)."""
+        return self._bands("nvme", "available_spare_bands", {"A": 80, "B": 60, "C": 40})
+
+    @property
+    def available_spare_low_deduction(self) -> int:
+        """Binary-profile points deducted when spare is in the D band (#133)."""
+        return self.get("nvme", "available_spare_low_deduction", default=10)
 
     @property
     def ssd_wear_warning_moderate(self) -> int:
