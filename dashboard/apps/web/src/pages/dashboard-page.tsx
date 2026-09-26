@@ -47,7 +47,11 @@ import {
   useInvalidateCdiQueries,
 } from "@/hooks/use-cdi-queries"
 import { scanDevices } from "@/lib/api"
-import { healthBadgeVariant } from "@/lib/health-badges"
+import {
+  deviceBadgeVariant,
+  formatHealthLabel,
+  formatHealthScore,
+} from "@/lib/health-badges"
 import { getSelectedHostId } from "@/lib/selected-host"
 
 const AUTO_REFRESH_MS = 30_000
@@ -202,7 +206,12 @@ export function DashboardPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-muted-foreground text-sm">
-                {health?.is_root ? "Running as root" : "Non-root dev mode"}
+                {health?.version ? `v${health.version} · ` : ""}
+                {health?.is_root == null
+                  ? "Limited status (not authenticated)"
+                  : health.is_root
+                    ? "Running as root"
+                    : "Non-root dev mode"}
                 {health?.api_token_enabled ? " · Token auth on" : ""}
                 {health?.weasyprint_available === false
                   ? " · PDF export unavailable"
@@ -244,6 +253,9 @@ export function DashboardPage() {
               <CardContent className="text-muted-foreground text-sm">
                 {scan?.summary.warning ?? 0} warning · {scan?.summary.failed ?? 0}{" "}
                 failed
+                {scan?.summary.ungraded
+                  ? ` · ${scan.summary.ungraded} ungraded`
+                  : ""}
               </CardContent>
             </Card>
           </>
@@ -285,16 +297,11 @@ export function DashboardPage() {
                     <TableCell>{device.model_number ?? "—"}</TableCell>
                     <TableCell>{device.transport_protocol ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant={healthBadgeVariant(
-                          device.health_status,
-                          device.health_grade
-                        )}
-                      >
-                        {device.health_grade ?? device.health_status ?? "—"}
+                      <Badge variant={deviceBadgeVariant(device)}>
+                        {formatHealthLabel(device)}
                       </Badge>
                     </TableCell>
-                    <TableCell>{device.health_score ?? "—"}</TableCell>
+                    <TableCell>{formatHealthScore(device)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

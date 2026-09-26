@@ -163,7 +163,7 @@ export function ScanPage() {
         </Alert>
       ) : null}
 
-      {health && !health.is_root ? (
+      {health?.is_root === false ? (
         <Alert>
           <AlertCircleIcon />
           <AlertTitle>Non-root API</AlertTitle>
@@ -302,6 +302,9 @@ export function ScanPage() {
                   <Badge variant="outline">{lastResult.summary.healthy} healthy</Badge>
                   <Badge variant="secondary">{lastResult.summary.warning} warning</Badge>
                   <Badge variant="destructive">{lastResult.summary.failed} failed</Badge>
+                  {lastResult.summary.ungraded ? (
+                    <Badge variant="outline">{lastResult.summary.ungraded} ungraded</Badge>
+                  ) : null}
                 </div>
                 {scanTarget !== LOCAL_SCAN_TARGET ? (
                   <Button variant="outline" className="w-fit" asChild>

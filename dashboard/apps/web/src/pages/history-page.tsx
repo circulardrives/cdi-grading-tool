@@ -57,7 +57,8 @@ import {
 } from "@/hooks/use-cdi-queries"
 import { clearHistory, deleteHistory } from "@/lib/api"
 import { getSimpleColumns } from "@/lib/drive-columns"
-import type { HistorySummary, ScanSummary } from "@/lib/types"
+import { formatSummaryCounts } from "@/lib/host-utils"
+import type { HistorySummary } from "@/lib/types"
 
 function formatTimestamp(value?: string | null): string {
   if (!value) {
@@ -68,10 +69,6 @@ function formatTimestamp(value?: string | null): string {
     return value
   }
   return date.toLocaleString()
-}
-
-function formatSummaryCounts(summary: ScanSummary): string {
-  return `${summary.total} drives · ${summary.healthy} healthy · ${summary.warning} warn · ${summary.failed} fail`
 }
 
 function formatGrades(grades: Record<string, number> | undefined): string {

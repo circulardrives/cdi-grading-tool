@@ -14,7 +14,11 @@ import {
   TableRow,
 } from "@workspace/ui/components/table"
 
-import { healthBadgeVariant } from "@/lib/health-badges"
+import {
+  deviceBadgeVariant,
+  isUngradedDevice,
+  warningFlags,
+} from "@/lib/health-badges"
 import type { DeviceRecord, DriveColumn } from "@/lib/types"
 
 type DriveHealthTableProps = {
@@ -24,15 +28,26 @@ type DriveHealthTableProps = {
 
 type GradeSort = "none" | "asc" | "desc"
 
-const GRADE_ORDER = ["A", "B", "C", "D", "F", ""]
+const GRADE_ORDER = ["A", "B", "C", "D", "F", "UNGRADED", ""]
+
+const WIDE_TEXT_COLUMNS = new Set([
+  "deductions",
+  "certification_rationale",
+  "fail_reason_codes",
+])
 
 function gradeRank(device: DeviceRecord): number {
-  const grade = (device.health_grade ?? "").toUpperCase()
+  const grade = isUngradedDevice(device)
+    ? "UNGRADED"
+    : (device.health_grade ?? "").toUpperCase()
   const index = GRADE_ORDER.indexOf(grade)
   return index === -1 ? GRADE_ORDER.length : index
 }
 
 function isFailureDevice(device: DeviceRecord): boolean {
+  if (isUngradedDevice(device)) {
+    return false
+  }
   const status = (device.health_status ?? "").toLowerCase()
   const grade = (device.health_grade ?? "").toUpperCase()
   return (
@@ -153,6 +168,8 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
                     const value = column.getValue(device)
                     const isGradeColumn = column.id === "health_grade"
                     const isStatusColumn = column.id === "health_status"
+                    const flags =
+                      column.id === "warning_flags" ? warningFlags(device) : []
 
                     return (
                       <TableCell
@@ -160,21 +177,28 @@ export function DriveHealthTable({ devices, columns }: DriveHealthTableProps) {
                         className={
                           column.mono
                             ? "max-w-48 truncate font-mono text-xs"
-                            : column.id === "deductions"
+                            : WIDE_TEXT_COLUMNS.has(column.id)
                               ? "max-w-md text-xs"
                               : "whitespace-nowrap text-sm"
                         }
                         title={String(value)}
                       >
                         {isGradeColumn || isStatusColumn ? (
-                          <Badge
-                            variant={healthBadgeVariant(
-                              device.health_status,
-                              device.health_grade
-                            )}
-                          >
+                          <Badge variant={deviceBadgeVariant(device)}>
                             {value}
                           </Badge>
+                        ) : flags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {flags.map((flag) => (
+                              <Badge
+                                key={flag}
+                                variant="secondary"
+                                className="font-mono text-[10px]"
+                              >
+                                {flag}
+                              </Badge>
+                            ))}
+                          </div>
                         ) : (
                           value
                         )}
