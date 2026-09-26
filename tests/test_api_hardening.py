@@ -1,0 +1,199 @@
+#
+# Copyright (c) 2026 Circular Drive Initiative.
+#
+# This file is part of CDI Health.
+# See https://github.com/circulardrives/cdi-grading-tool/ for further info.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+"""API hardening tests: per-request thresholds, hardware lock, auth, path allowlist."""
+
+from __future__ import annotations
+
+import os
+import time
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MOCK_DATA_PATH = REPO_ROOT / "src" / "cdi_health" / "mock_data"
+MOCK_NVME_FILE = MOCK_DATA_PATH / "nvme" / "SSDPEK1A118GA_healthy.json"
+
+
+@pytest.fixture
+def data_dir(tmp_path: Path) -> Path:
+    path = tmp_path / "api-data"
+    path.mkdir()
+    return path
+
+
+@pytest.fixture
+def api_client(data_dir: Path) -> TestClient:
+    os.environ["CDI_HEALTH_API_ALLOW_NON_ROOT"] = "1"
+    os.environ["CDI_HEALTH_API_MOCK_DATA"] = str(MOCK_DATA_PATH)
+    os.environ["CDI_HEALTH_DATA_DIR"] = str(data_dir)
+    os.environ.pop("CDI_HEALTH_API_TOKEN", None)
+    os.environ.pop("CDI_HEALTH_API_BIND_HOST", None)
+
+    from cdi_health.api.app import create_app
+
+    return TestClient(create_app())
+
+
+def _runtime(client: TestClient):
+    return client.app.state.runtime
+
+
+# ---------------------------------------------------------------------------
+# #136: per-request thresholds never leak into the process-global config
+# ---------------------------------------------------------------------------
+
+
+def test_request_config_does_not_mutate_global_thresholds(api_client: TestClient, data_dir: Path) -> None:
+    from cdi_health.classes.config import ThresholdConfig, get_config
+
+    before = get_config()
+    custom = data_dir / "binary.yaml"
+    custom.write_text("grading:\n  profile: binary\n", encoding="utf-8")
+
+    scoped = api_client.post("/api/v1/scan", json={"mock_file": str(MOCK_NVME_FILE), "config": str(custom)})
+    assert scoped.status_code == 200, scoped.text
+    assert {d["grading_profile"] for d in scoped.json()["devices"]} == {"binary"}
+
+    # Global singleton is the same object and still on the default profile.
+    assert ThresholdConfig._instance is before
+    assert get_config().grading_profile == "abcdf"
+
+    default = api_client.post("/api/v1/scan", json={"mock_file": str(MOCK_NVME_FILE)})
+    assert default.status_code == 200
+    assert {d["grading_profile"] for d in default.json()["devices"]} == {"abcdf"}
+
+
+def test_scoped_thresholds_restores_previous_instance_on_error() -> None:
+    from cdi_health.api.services import scoped_thresholds
+    from cdi_health.classes.config import ThresholdConfig
+
+    previous = ThresholdConfig.get_instance()
+    replacement = ThresholdConfig()
+    with pytest.raises(RuntimeError):
+        with scoped_thresholds(replacement):
+            assert ThresholdConfig._instance is replacement
+            raise RuntimeError("boom")
+    assert ThresholdConfig._instance is previous
+
+
+# ---------------------------------------------------------------------------
+# #136: hardware lock -> HTTP 409 while another operation touches drives
+# ---------------------------------------------------------------------------
+
+
+def test_hardware_busy_returns_409_for_device_operations(api_client: TestClient) -> None:
+    runtime = _runtime(api_client)
+    assert runtime.hardware_lock.acquire(blocking=False)
+    try:
+        responses = [
+            api_client.post("/api/v1/scan", json={"mock_data": str(MOCK_DATA_PATH)}),
+            api_client.get("/api/v1/devices?refresh=true"),
+            api_client.post("/api/v1/reports", json={"format": "csv", "mock_data": str(MOCK_DATA_PATH)}),
+            api_client.post("/api/v1/selftests", json={"test_type": "short"}),
+        ]
+        for response in responses:
+            assert response.status_code == 409, response.text
+            assert "busy" in response.json()["detail"].lower()
+        assert runtime.selftest_inflight == 0
+    finally:
+        runtime.hardware_lock.release()
+
+    ok = api_client.post("/api/v1/scan", json={"mock_data": str(MOCK_DATA_PATH)})
+    assert ok.status_code == 200
+
+
+def test_hardware_lock_released_after_failed_scan(api_client: TestClient) -> None:
+    missing = MOCK_DATA_PATH / "nvme" / "does-not-exist.json"
+    failed = api_client.post("/api/v1/scan", json={"mock_file": str(missing)})
+    assert failed.status_code >= 400
+    assert not _runtime(api_client).hardware_lock.locked()
+
+
+def test_selftest_job_releases_hardware_lock(api_client: TestClient) -> None:
+    started = api_client.post("/api/v1/selftests", json={"test_type": "short"})
+    assert started.status_code == 200
+    job_id = started.json()["job_id"]
+    for _ in range(40):
+        status = api_client.get(f"/api/v1/jobs/{job_id}").json()["status"]
+        if status in {"completed", "failed"}:
+            break
+        time.sleep(0.05)
+    runtime = _runtime(api_client)
+    for _ in range(40):
+        if not runtime.hardware_lock.locked():
+            break
+        time.sleep(0.05)
+    assert not runtime.hardware_lock.locked()
+
+
+def test_selftest_start_releases_lock_before_wait_polling(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import services
+    from cdi_health.api.schemas import SelfTestStartRequest
+
+    events: list[str] = []
+
+    class FakeCmd:
+        return_code = 0
+        errors = b""
+
+    class FakeHandler:
+        def execute_short(self):
+            events.append("start")
+            return FakeCmd()
+
+        def get_current_status(self):
+            events.append("poll")
+            return {"status": "completed", "in_progress": False}
+
+        def get_results(self):
+            return {"entries": []}
+
+        def get_last_test_date(self):
+            return None
+
+    monkeypatch.setattr(
+        services,
+        "_supported_nvme_targets",
+        lambda device=None: [{"device": "/dev/nvme0", "supported": True, "handler": FakeHandler()}],
+    )
+    monkeypatch.setattr(services.time, "sleep", lambda _s: None)
+
+    request = SelfTestStartRequest(test_type="short", wait=True, poll_interval_seconds=5, timeout_seconds=60)
+    services.run_selftest_start(request, on_started=lambda: events.append("released"))
+    assert events == ["start", "released", "poll"]
+
+
+def test_selftest_saturation_does_not_take_hardware_lock(api_client: TestClient) -> None:
+    from cdi_health.api.app import SELFTEST_MAX_WORKERS
+
+    runtime = _runtime(api_client)
+    runtime.selftest_inflight = SELFTEST_MAX_WORKERS
+    try:
+        response = api_client.post("/api/v1/selftests", json={"test_type": "short"})
+        assert response.status_code == 503
+        assert not runtime.hardware_lock.locked()
+    finally:
+        runtime.selftest_inflight = 0
+
+
+def test_api_state_has_no_unused_executor(api_client: TestClient) -> None:
+    assert not hasattr(_runtime(api_client), "executor")

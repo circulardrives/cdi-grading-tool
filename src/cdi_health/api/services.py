@@ -20,7 +20,10 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,7 +37,7 @@ from cdi_health.api.schemas import (
     ScanRequest,
     SelfTestStartRequest,
 )
-from cdi_health.classes.config import configure_thresholds
+from cdi_health.classes.config import ThresholdConfig, get_default_config_path
 from cdi_health.classes.explain import attach_explanation
 from cdi_health.classes.nvme_selftest import NVMeSelfTest, validate_nvme_device_path
 from cdi_health.classes.reporter import ReportGenerator
@@ -48,6 +51,10 @@ from cdi_health.cli import (
 )
 
 DEFAULT_MOCK_DATA_ENV = "CDI_HEALTH_API_MOCK_DATA"
+
+# Guards the brief window in which the process-global ThresholdConfig
+# singleton is swapped so a scoring engine can bind a per-request config.
+_THRESHOLDS_LOCK = threading.RLock()
 
 
 def utc_now() -> datetime:
@@ -236,9 +243,49 @@ def apply_scan_defaults(request: ScanRequest) -> ScanRequest:
     return request.model_copy(update=updates)
 
 
-def _enrich_devices_with_scores(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_threshold_config(config_path: str | None = None) -> ThresholdConfig:
+    """
+    Build a request-local threshold configuration (never touches the global).
+
+    Mirrors the CLI's ``load_threshold_config``: an explicit ``config`` path
+    wins, otherwise the packaged ``thresholds.yaml`` defaults apply.
+    """
+    path: str | Path | None = resolve_data_path(config_path) if config_path else get_default_config_path()
+    return ThresholdConfig(path) if path else ThresholdConfig()
+
+
+@contextmanager
+def scoped_thresholds(threshold_config: ThresholdConfig) -> Iterator[ThresholdConfig]:
+    """
+    Temporarily install ``threshold_config`` as the global thresholds singleton.
+
+    Scoring classes bind ``get_config()`` once at construction, so only
+    construct them inside this block; the previous global is always restored
+    and the swap is serialized so concurrent requests cannot observe each
+    other's thresholds.
+    """
+    with _THRESHOLDS_LOCK:
+        previous = ThresholdConfig._instance
+        ThresholdConfig._instance = threshold_config
+        try:
+            yield threshold_config
+        finally:
+            ThresholdConfig._instance = previous
+
+
+def report_generator_for(threshold_config: ThresholdConfig) -> ReportGenerator:
+    """Return a ReportGenerator whose scoring engine uses ``threshold_config``."""
+    with scoped_thresholds(threshold_config):
+        return ReportGenerator()
+
+
+def _enrich_devices_with_scores(
+    devices: list[dict[str, Any]],
+    threshold_config: ThresholdConfig,
+) -> list[dict[str, Any]]:
     """Attach health scoring and grading explainability fields to device dictionaries."""
-    calculator = HealthScoreCalculator()
+    with scoped_thresholds(threshold_config):
+        calculator = HealthScoreCalculator()
     enriched: list[dict[str, Any]] = []
     for device in devices:
         score = calculator.calculate(device)
@@ -248,13 +295,8 @@ def _enrich_devices_with_scores(devices: list[dict[str, Any]]) -> list[dict[str,
     return enriched
 
 
-def run_scan(request: ScanRequest) -> dict[str, Any]:
-    """Execute a device scan and return structured JSON data."""
-    request = apply_scan_defaults(request)
-
-    if request.config:
-        configure_thresholds(resolve_data_path(request.config))
-
+def _collect_devices(request: ScanRequest) -> list[dict[str, Any]]:
+    """Collect raw (unscored) device dictionaries for a normalized scan request."""
     mock_mode = bool(request.mock_data or request.mock_file)
     if mock_mode:
         if request.mock_file:
@@ -285,8 +327,16 @@ def run_scan(request: ScanRequest) -> dict[str, Any]:
 
     if request.device:
         devices = _filter_devices_by_path(devices, request.device)
+    return devices
 
-    enriched = _enrich_devices_with_scores(devices)
+
+def run_scan(request: ScanRequest) -> dict[str, Any]:
+    """Execute a device scan and return structured JSON data."""
+    request = apply_scan_defaults(request)
+    threshold_config = build_threshold_config(request.config)
+
+    devices = _collect_devices(request)
+    enriched = _enrich_devices_with_scores(devices, threshold_config)
     healthy = sum(1 for d in enriched if d.get("health_score", 0) >= 75)
     warning = sum(1 for d in enriched if 40 <= d.get("health_score", 0) < 75)
     failed = sum(1 for d in enriched if d.get("health_score", 0) < 40)
@@ -387,11 +437,22 @@ def _read_selftest_outcome(handler: NVMeSelfTest) -> dict[str, Any]:
     return outcome
 
 
-def run_selftest_start(request: SelfTestStartRequest) -> dict[str, Any]:
-    """Start NVMe self-tests and optionally wait for completion."""
+def run_selftest_start(
+    request: SelfTestStartRequest,
+    *,
+    on_started: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    """
+    Start NVMe self-tests and optionally wait for completion.
+
+    ``on_started`` is invoked once the start commands have been issued (before
+    any ``wait`` polling) so callers can release the hardware lock early.
+    """
     _assert_nvme_device(request.device)
     targets = _supported_nvme_targets(request.device)
     if not targets:
+        if on_started is not None:
+            on_started()
         return {"devices": [], "summary": {"total": 0, "started": 0, "completed": 0, "failed_to_start": 0}}
 
     results: list[dict[str, Any]] = []
@@ -443,6 +504,9 @@ def run_selftest_start(request: SelfTestStartRequest) -> dict[str, Any]:
             entry["error"] = str(exc)
 
         results.append(entry)
+
+    if on_started is not None:
+        on_started()
 
     if request.wait:
         deadline = time.monotonic() + request.timeout_seconds
@@ -569,23 +633,26 @@ def abort_selftest(device: str) -> dict[str, Any]:
 
 
 def generate_report(request: ReportRequest) -> dict[str, Any]:
-    """Generate HTML/PDF report from the latest scan request options."""
-    scan_request = ScanRequest(
-        ignore_ata=request.ignore_ata,
-        ignore_nvme=request.ignore_nvme,
-        ignore_scsi=request.ignore_scsi,
-        device=request.device,
-        config=request.config,
-        mock_data=request.mock_data,
-        mock_file=request.mock_file,
+    """Generate an HTML/PDF/CSV report from a fresh scan with the request options."""
+    scan_request = apply_scan_defaults(
+        ScanRequest(
+            ignore_ata=request.ignore_ata,
+            ignore_nvme=request.ignore_nvme,
+            ignore_scsi=request.ignore_scsi,
+            device=request.device,
+            config=request.config,
+            mock_data=request.mock_data,
+            mock_file=request.mock_file,
+        )
     )
-    scan_result = run_scan(scan_request)
-    devices = scan_result["devices"]
-
     output_path = resolve_report_output_path(request.output_file, request.format)
+    threshold_config = build_threshold_config(scan_request.config)
+    devices = _collect_devices(scan_request)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    reporter = ReportGenerator()
+    # Same path as `cdi-health report`: the reporter scores raw devices itself.
+    reporter = report_generator_for(threshold_config)
     if request.format == "html":
         reporter.generate_html(devices, str(output_path))
     elif request.format == "csv":

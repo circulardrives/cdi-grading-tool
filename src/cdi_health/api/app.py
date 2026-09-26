@@ -22,12 +22,14 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager, contextmanager
 from threading import Lock
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import ValidationError
 
 from cdi_health.api.discovery import DISCOVER_COOLDOWN_SECONDS, DiscoveryError, discover_hosts
@@ -79,8 +81,12 @@ from cdi_health.cli import check_prerequisites
 logger = logging.getLogger(__name__)
 
 SELFTEST_MAX_WORKERS = 2
-SELFTEST_MAX_QUEUED = 4
 API_VERSION = "1.0.0"
+HARDWARE_BUSY_DETAIL = "Drive hardware is busy with another scan, report, or self-test start. Retry when it completes."
+
+
+class HardwareBusyError(Exception):
+    """Raised when another operation already holds the drive hardware lock."""
 
 
 class ApiState:
@@ -90,8 +96,9 @@ class ApiState:
         self.job_store = JobStore()
         self.machine_store = MachineStore()
         self.history_store = ScanHistoryStore()
-        # General work (scan/report) — keep separate from long-running self-tests.
-        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cdi-api")
+        # Only one scan / report / self-test start may touch drives at a time.
+        # Busy callers get HTTP 409 instead of queueing (see hardware_session).
+        self.hardware_lock = Lock()
         self.selftest_executor = ThreadPoolExecutor(
             max_workers=SELFTEST_MAX_WORKERS,
             thread_name_prefix="cdi-selftest",
@@ -104,13 +111,41 @@ class ApiState:
         self.latest_discover: dict | None = None
         self.selftest_inflight = 0
 
+    def try_acquire_hardware(self) -> bool:
+        """Non-blocking acquire of the drive hardware lock."""
+        return self.hardware_lock.acquire(blocking=False)
+
+    @contextmanager
+    def hardware_session(self) -> Iterator[None]:
+        """Hold the hardware lock for the duration of the block, or raise HardwareBusyError."""
+        if not self.try_acquire_hardware():
+            raise HardwareBusyError(HARDWARE_BUSY_DETAIL)
+        try:
+            yield
+        finally:
+            self.hardware_lock.release()
+
 
 def create_app() -> FastAPI:
     """Create and configure the CDI Health API application."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        assert_root_access()
+        # Defense in depth when launched outside server.main (e.g. uvicorn factory).
+        bind_host = os.getenv(BIND_HOST_ENV)
+        if bind_host:
+            assert_token_required_for_bind(bind_host)
+        try:
+            yield
+        finally:
+            app.state.runtime.selftest_executor.shutdown(wait=False, cancel_futures=False)
+
     app = FastAPI(
         title="CDI Health API",
         version=API_VERSION,
         description="Local backend API for CDI drive scan, self-test, and reporting workflows.",
+        lifespan=lifespan,
     )
     app.state.runtime = ApiState()
 
@@ -127,18 +162,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.on_event("startup")
-    def _startup() -> None:
-        assert_root_access()
-        # Defense in depth when launched outside server.main (e.g. uvicorn factory).
-        bind_host = os.getenv(BIND_HOST_ENV)
-        if bind_host:
-            assert_token_required_for_bind(bind_host)
-
-    @app.on_event("shutdown")
-    def _shutdown() -> None:
-        app.state.runtime.executor.shutdown(wait=False, cancel_futures=False)
-        app.state.runtime.selftest_executor.shutdown(wait=False, cancel_futures=False)
+    @app.exception_handler(HardwareBusyError)
+    def _hardware_busy(_request: Request, exc: HardwareBusyError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
 
     def _raise_mapped(exc: Exception, *, context: str) -> None:
         status_code, detail = http_error_detail(exc, context=context)
@@ -194,10 +220,11 @@ def create_app() -> FastAPI:
     def scan(request: ScanRequest, _: None = Depends(verify_api_token)) -> ScanResponse:
         runtime = app.state.runtime
         try:
-            result = run_scan(request)
+            with runtime.hardware_session():
+                result = run_scan(request)
             _persist_successful_scan(runtime, result, request)
             return ScanResponse.model_validate(result)
-        except HTTPException:
+        except (HTTPException, HardwareBusyError):
             raise
         except Exception as exc:
             _raise_mapped(exc, context="scan")
@@ -213,7 +240,8 @@ def create_app() -> FastAPI:
             if machine_id:
                 if refresh:
                     scan_request = ScanRequest(machine_id=machine_id)
-                    result = run_scan(scan_request)
+                    with runtime.hardware_session():
+                        result = run_scan(scan_request)
                     _persist_successful_scan(runtime, result, scan_request)
                     return ScanResponse.model_validate(result)
 
@@ -226,11 +254,12 @@ def create_app() -> FastAPI:
                 cached = runtime.latest_scan
             if refresh or cached is None:
                 scan_request = ScanRequest()
-                result = run_scan(scan_request)
+                with runtime.hardware_session():
+                    result = run_scan(scan_request)
                 _persist_successful_scan(runtime, result, scan_request)
                 return ScanResponse.model_validate(result)
             return ScanResponse.model_validate(cached)
-        except HTTPException:
+        except (HTTPException, HardwareBusyError):
             raise
         except Exception as exc:
             _raise_mapped(exc, context="devices")
@@ -385,30 +414,53 @@ def create_app() -> FastAPI:
     def start_selftests(request: SelfTestStartRequest, _: None = Depends(verify_api_token)) -> JobResponse:
         runtime = app.state.runtime
         with runtime.lock:
-            if runtime.selftest_inflight >= SELFTEST_MAX_QUEUED:
+            # Only accept a job when a worker is free: a job queued behind
+            # long wait-mode jobs would otherwise sit holding the hardware lock.
+            if runtime.selftest_inflight >= SELFTEST_MAX_WORKERS:
                 raise HTTPException(
                     status_code=503,
                     detail="Self-test worker pool is saturated. Retry later.",
                 )
+            # Hold the hardware lock from request acceptance until the job has
+            # issued its start commands; wait-mode polling runs unlocked.
+            if not runtime.try_acquire_hardware():
+                raise HardwareBusyError(HARDWARE_BUSY_DETAIL)
             runtime.selftest_inflight += 1
 
+        release_lock = Lock()
+        released = False
+
+        def _release_hardware() -> None:
+            nonlocal released
+            with release_lock:
+                if not released:
+                    released = True
+                    runtime.hardware_lock.release()
+
         payload = request.model_dump(mode="python")
-        job = runtime.job_store.create("selftest", payload=payload)
 
         def _run_job(job_id: str, request_payload: dict) -> None:
             runtime.job_store.start(job_id)
             try:
                 parsed_request = SelfTestStartRequest.model_validate(request_payload)
-                result = run_selftest_start(parsed_request)
+                result = run_selftest_start(parsed_request, on_started=_release_hardware)
                 runtime.job_store.complete(job_id, result)
-            except Exception as exc:
+            except Exception:
                 logger.exception("Self-test job %s failed", job_id)
                 runtime.job_store.fail(job_id, "Self-test job failed")
             finally:
+                _release_hardware()
                 with runtime.lock:
                     runtime.selftest_inflight = max(0, runtime.selftest_inflight - 1)
 
-        runtime.selftest_executor.submit(_run_job, job.job_id, payload)
+        try:
+            job = runtime.job_store.create("selftest", payload=payload)
+            runtime.selftest_executor.submit(_run_job, job.job_id, payload)
+        except BaseException:
+            _release_hardware()
+            with runtime.lock:
+                runtime.selftest_inflight = max(0, runtime.selftest_inflight - 1)
+            raise
         return JobResponse.model_validate(job.to_dict())
 
     @app.get("/api/v1/selftests/status")
@@ -448,11 +500,15 @@ def create_app() -> FastAPI:
 
     @app.post("/api/v1/reports", response_model=ReportResponse)
     def report(request: ReportRequest, _: None = Depends(verify_api_token)) -> ReportResponse:
+        runtime = app.state.runtime
         try:
-            result = generate_report(request)
-            with app.state.runtime.lock:
-                app.state.runtime.report_paths.add(result["output_file"])
+            with runtime.hardware_session():
+                result = generate_report(request)
+            with runtime.lock:
+                runtime.report_paths.add(result["output_file"])
             return ReportResponse.model_validate(result)
+        except HardwareBusyError:
+            raise
         except Exception as exc:
             _raise_mapped(exc, context="report")
 

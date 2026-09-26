@@ -38,6 +38,10 @@
 - `GET /api/v1/selftests/status`
 - `POST /api/v1/selftests/abort`
 
+**Hardware lock.** Only one drive-touching operation runs at a time: `POST /api/v1/scan`, `GET /api/v1/devices` when it rescans (`refresh=true` or empty cache), `POST /api/v1/reports`, and the start phase of `POST /api/v1/selftests`. A request that arrives while another holds the lock gets **HTTP 409** (`{"detail": "Drive hardware is busy ..."}`) instead of queueing; retry after the running operation completes. Self-test `wait` polling, status, and abort do not take the lock.
+
+**Per-request thresholds.** A scan/report `config` path is applied only to that request (the process-global thresholds are never replaced). Without `config`, the packaged `thresholds.yaml` defaults apply, matching the CLI.
+
 ### Self-test status payload
 
 `GET /api/v1/selftests/status` returns one row per NVMe controller with live
