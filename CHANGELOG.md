@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-26
+
 ### Changed
 - **Dashboard redesign** for bench technicians. Five pages: Overview · Drives · Benches · Self-tests · Reports, plus Settings.
   - "Scan all benches" is on every page.
@@ -101,7 +103,8 @@ See git history and [v0.9.0 release notes](https://github.com/circulardrives/cdi
 ### Added
 - Initial beta release (pre-dashboard CLI line).
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.13.0
 [0.12.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.12.0
 [0.11.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.11.0
 [0.10.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.10.0
