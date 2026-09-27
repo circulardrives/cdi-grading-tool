@@ -102,7 +102,7 @@ is plain static files, so it can be hosted anywhere (Cloudflare Pages below).
 
 bunx serve -s dashboard/apps/web/dist-demo    # preview with SPA fallback
 
-npx wrangler pages deploy dashboard/apps/web/dist-demo --project-name cdi-health-demo
+npx wrangler deploy -c dashboard/apps/web/wrangler.demo.jsonc
 ```
 
 - **Data.** `scripts/generate_demo_data.py` takes smartctl fixtures from
@@ -119,5 +119,5 @@ npx wrangler pages deploy dashboard/apps/web/dist-demo --project-name cdi-health
   so the demo resets when the tab closes.
 - **Build.** Normal builds are unaffected: `__CDI_DEMO__` is a build-time
   constant, so the demo backend and data are never bundled. The demo build
-  writes `dist-demo/` with a `_redirects` SPA fallback and the page title
+  writes `dist-demo/` (SPA fallback comes from `wrangler.demo.jsonc`) and the page title
   "CDI Health — Demo".

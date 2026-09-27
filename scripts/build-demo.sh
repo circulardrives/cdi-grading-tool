@@ -5,9 +5,9 @@
 #   ./scripts/build-demo.sh --no-data  # build from the committed sample data
 #
 # Output: dashboard/apps/web/dist-demo/ — plain static files (SPA fallback in
-# _redirects), ready for Cloudflare Pages:
+# SPA fallback via wrangler.demo.jsonc), ready for Cloudflare:
 #
-#   npx wrangler pages deploy dashboard/apps/web/dist-demo --project-name cdi-health-demo
+#   npx wrangler deploy -c dashboard/apps/web/wrangler.demo.jsonc
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -53,4 +53,4 @@ VITE_DEMO=1 bun run build
 echo
 echo "Static demo ready: ${WEB_DIR#"$ROOT_DIR"/}/dist-demo"
 echo "Preview:  bunx serve -s dashboard/apps/web/dist-demo"
-echo "Deploy:   npx wrangler pages deploy dashboard/apps/web/dist-demo --project-name cdi-health-demo"
+echo "Deploy:   npx wrangler deploy -c dashboard/apps/web/wrangler.demo.jsonc"

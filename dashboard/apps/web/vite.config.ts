@@ -5,21 +5,15 @@ import react from "@vitejs/plugin-react"
 import { defineConfig, loadEnv, type Plugin } from "vite"
 
 /**
- * Demo build only: "CDI Health — Demo" page title, and a Cloudflare Pages
- * `_redirects` SPA fallback so deep links (/drives/…) load index.html.
+ * Demo build only: "CDI Health — Demo" page title. Deep links (/drives/…) are
+ * served by the host's SPA fallback (wrangler.demo.jsonc:
+ * not_found_handling = "single-page-application").
  */
 function staticDemo(): Plugin {
   return {
     name: "cdi-static-demo",
     transformIndexHtml: (html) =>
       html.replace(/<title>[^<]*<\/title>/, "<title>CDI Health — Demo</title>"),
-    generateBundle() {
-      this.emitFile({
-        type: "asset",
-        fileName: "_redirects",
-        source: "/* /index.html 200\n",
-      })
-    },
   }
 }
 
