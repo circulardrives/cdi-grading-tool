@@ -46,7 +46,7 @@ cdi-health --version
 sudo systemctl enable --now cdi-health-api
 
 # Expose API on the lab network (requires token — see lan.conf drop-in)
-sudo cp /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
+sudo install -m 600 -o root -g root /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
 # edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN (e.g. openssl rand -hex 32)
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
 sudo cp /usr/share/cdi-health/examples/systemd/cdi-health-api.service.d/lan.conf \

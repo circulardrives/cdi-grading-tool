@@ -166,7 +166,7 @@ curl -s http://127.0.0.1:8844/api/v1/health
 To appear in **Discover** from a technician laptop running Docker, bind the API on the lab network with the shipped drop-in (the API refuses non-loopback binds without a token):
 
 ```shell
-sudo cp /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
+sudo install -m 600 -o root -g root /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
 # edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN (e.g. openssl rand -hex 32)
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
 sudo cp /usr/share/cdi-health/examples/systemd/cdi-health-api.service.d/lan.conf \
