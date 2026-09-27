@@ -158,6 +158,8 @@ export type HealthResponse = {
   version?: string
   /** The bench's own hostname (e.g. "bench-01"). Older APIs omit it. */
   hostname?: string | null
+  /** Random per-install id; lets a dashboard recognise its own bench. */
+  instance_id?: string | null
   is_root?: boolean
   allow_non_root_mode?: boolean
   api_token_enabled?: boolean
@@ -165,6 +167,8 @@ export type HealthResponse = {
   auth_mode?: AuthMode
   missing_required_tools?: string[]
   weasyprint_available?: boolean
+  /** The API runs in Docker: a blank network search can't find benches. */
+  running_in_container?: boolean
   message?: string | null
 }
 
@@ -423,6 +427,8 @@ export type DiscoveredHost = {
   health?: HealthResponse | null
   cdi_api: boolean
   already_registered: boolean
+  /** The API this dashboard talks to answered here. Older APIs omit it. */
+  is_this_bench?: boolean
 }
 
 export type DiscoverResponse = {

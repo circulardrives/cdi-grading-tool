@@ -408,6 +408,10 @@ smartctl -x -j /dev/sg0    # SCSI device
 
 **Output Format:** JSON (`-j` flag)
 
+**Device discovery:** drives are enumerated with `smartctl --scan-open -j`. smartctl autodetects the device type for every drive the scan lists.
+
+**Synology DSM:** DSM 7.x names internal SATA disks `/dev/sata1` … `/dev/sataN` (there is no `/dev/sdX`), and `smartctl --scan-open` does not list them. After the scan, CDI also looks for whole disks named `/dev/sata<N>` (partitions such as `/dev/sata1p1` are skipped) that the scan did not already report. It reads each one as an ATA drive with `smartctl -d sat --xall /dev/sataN --json=ov`. Grading rules are the same as for any other SATA drive. NVMe drives on DSM (`/dev/nvme0n1`) are found by the normal scan.
+
 ### nvme-cli
 
 Used for NVMe-specific operations, capacity information, and **OCP** log page **C0h** when the drive and plugin support it.

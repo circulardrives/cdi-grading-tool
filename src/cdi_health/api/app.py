@@ -37,10 +37,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import ValidationError
 
-from cdi_health.api.discovery import DISCOVER_COOLDOWN_SECONDS, DiscoveryError, discover_hosts
+from cdi_health.api.discovery import (
+    CONTAINER_NEEDS_SUBNET_DETAIL,
+    DISCOVER_COOLDOWN_SECONDS,
+    DiscoveryError,
+    discover_hosts,
+    has_explicit_subnet,
+    is_same_instance,
+    running_in_container,
+)
 from cdi_health.api.history import ScanHistoryStore
 from cdi_health.api.jobs import JobStore
-from cdi_health.api.machines import MachineStore
+from cdi_health.api.machines import MachineStore, load_or_create_instance_id
 from cdi_health.api.remote import (
     RemoteAddressError,
     RemoteHostClient,
@@ -111,6 +119,9 @@ SUMMARY_KEYS = ("total", "healthy", "warning", "failed", "ungraded")
 # Report the installed cdi_health package version (setuptools-scm), same as `cdi-health --version`.
 API_VERSION = PACKAGE_VERSION
 HARDWARE_BUSY_DETAIL = "Drive hardware is busy with another scan, report, or self-test start. Retry when it completes."
+SELF_ADDRESS_DETAIL = "That address is this bench itself"
+# Adding/editing a bench probes its /health once to catch our own address.
+SELF_PROBE_TIMEOUT_SECONDS = 3.0
 
 
 class HardwareBusyError(Exception):
@@ -131,6 +142,7 @@ class ApiState:
     def __init__(self):
         self.job_store = JobStore()
         self.machine_store = MachineStore()
+        self.instance_id = load_or_create_instance_id(self.machine_store.data_dir)
         self.history_store = ScanHistoryStore()
         # Only one scan / report / self-test start may touch drives at a time.
         # Busy callers get HTTP 409 instead of queueing (see hardware_session).
@@ -238,7 +250,13 @@ def create_app() -> FastAPI:
         # get a minimal public payload only.
         if api_token_is_enabled() and not token_ok and not client_is_loopback(request):
             # auth_mode lets discovering clients know a token is required.
-            return HealthResponse(status="ok", version=API_VERSION, auth_mode="token", hostname=bench_hostname())
+            return HealthResponse(
+                status="ok",
+                version=API_VERSION,
+                auth_mode="token",
+                hostname=bench_hostname(),
+                instance_id=app.state.runtime.instance_id,
+            )
 
         missing_required_tools = check_prerequisites(ignore_ata=False, ignore_nvme=False, ignore_scsi=False)
         message = None
@@ -248,12 +266,14 @@ def create_app() -> FastAPI:
             status="ok",
             version=API_VERSION,
             hostname=bench_hostname(),
+            instance_id=app.state.runtime.instance_id,
             is_root=is_root_user(),
             allow_non_root_mode=allow_non_root_mode(),
             api_token_enabled=api_token_is_enabled(),
             auth_mode=auth_mode(),
             missing_required_tools=missing_required_tools,
             weasyprint_available=weasyprint_available(),
+            running_in_container=running_in_container(),
             message=message,
         )
 
@@ -288,7 +308,37 @@ def create_app() -> FastAPI:
     def _is_remote(machine: dict[str, Any]) -> bool:
         return bool(str(machine.get("address") or "").strip())
 
-    def _remote_client(machine: dict[str, Any]) -> RemoteHostClient:
+    def _is_self_machine(machine: dict[str, Any]) -> bool:
+        """The bench's last /check showed it is this API itself."""
+        return bool(machine.get("remote_instance_id")) and (
+            machine.get("remote_instance_id") == app.state.runtime.instance_id
+        )
+
+    def _refuse_self_address(name: str, address: str, token: str | None) -> None:
+        """400 when ``address`` answers with this API's own instance id.
+
+        Best effort: an unreachable or invalid address is left for /check and
+        scans to report, so adding an offline bench still works.
+        """
+        if not address.strip():
+            return
+        try:
+            health = RemoteHostClient(
+                name=name,
+                address=address,
+                token=token,
+                health_timeout=SELF_PROBE_TIMEOUT_SECONDS,
+            ).health()
+        except RemoteHostError:
+            return
+        if is_same_instance(health, app.state.runtime.instance_id):
+            raise HTTPException(status_code=400, detail=SELF_ADDRESS_DETAIL)
+
+    def _remote_client(machine: dict[str, Any], *, allow_self: bool = False) -> RemoteHostClient:
+        # Forwarding to ourselves would scan this bench twice (or deadlock on
+        # the hardware lock); only /check may probe such an address.
+        if not allow_self and _is_self_machine(machine):
+            raise RemoteHostError(400, SELF_ADDRESS_DETAIL, None)
         return RemoteHostClient(
             name=machine["name"],
             address=machine["address"],
@@ -415,11 +465,13 @@ def create_app() -> FastAPI:
 
         errors: dict[str, str] = {}
         try:
-            workers = min(FLEET_REFRESH_MAX_WORKERS, len(remote_machines))
+            # A registered entry that is really this bench is never forwarded to.
+            targets = [m for m in remote_machines if not _is_self_machine(m)]
+            workers = max(1, min(FLEET_REFRESH_MAX_WORKERS, len(targets)))
             with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="cdi-fleet") as executor:
                 for machine, error in zip(
-                    remote_machines,
-                    executor.map(_refresh_remote_host, remote_machines),
+                    targets,
+                    executor.map(_refresh_remote_host, targets),
                 ):
                     if error:
                         errors[machine["id"]] = error
@@ -520,6 +572,7 @@ def create_app() -> FastAPI:
             )
         for listed in remote_machines:
             machine = runtime.machine_store.get_machine(listed["id"]) or listed
+            is_self = _is_self_machine(machine)
             pairs.append(
                 (
                     {
@@ -527,10 +580,11 @@ def create_app() -> FastAPI:
                         "name": machine["name"],
                         "address": machine["address"],
                         "status": machine.get("status") or "unknown",
-                        "error": errors.get(machine["id"]),
+                        "error": SELF_ADDRESS_DETAIL if is_self else errors.get(machine["id"]),
                         "executed_on": "remote",
                     },
-                    runtime.machine_store.get_scan(machine["id"]),
+                    # Its drives are already listed as this bench's own.
+                    None if is_self else runtime.machine_store.get_scan(machine["id"]),
                 )
             )
         return pairs
@@ -634,6 +688,7 @@ def create_app() -> FastAPI:
         request: MachineCreate,
         _: None = Depends(verify_api_token),
     ) -> MachineResponse:
+        _refuse_self_address(request.name, request.address, request.api_token)
         machine = app.state.runtime.machine_store.create_machine(request.model_dump())
         return MachineResponse.model_validate(machine)
 
@@ -651,7 +706,14 @@ def create_app() -> FastAPI:
         _: None = Depends(verify_api_token),
     ) -> MachineResponse:
         updates = request.model_dump(exclude_unset=True)
-        machine = app.state.runtime.machine_store.update_machine(machine_id, updates)
+        store = app.state.runtime.machine_store
+        if updates.get("address"):
+            current = _get_machine_or_404(machine_id)
+            token = updates.get("api_token")
+            if token is None:
+                token = store.get_api_token(machine_id)
+            _refuse_self_address(updates.get("name") or current["name"], updates["address"], token)
+        machine = store.update_machine(machine_id, updates)
         if not machine:
             raise HTTPException(status_code=404, detail="Machine not found")
         return MachineResponse.model_validate(machine)
@@ -673,8 +735,17 @@ def create_app() -> FastAPI:
         error: str | None = None
         status = "reachable"
         try:
-            client = _remote_client(machine)
+            client = _remote_client(machine, allow_self=True)
             health = client.health()
+            if is_same_instance(health, app.state.runtime.instance_id):
+                # Remember it so fleet scans skip this entry, then refuse.
+                store.set_status(
+                    machine_id,
+                    "reachable",
+                    seen=True,
+                    remote_instance_id=app.state.runtime.instance_id,
+                )
+                raise HTTPException(status_code=400, detail=SELF_ADDRESS_DETAIL)
             # A no-auth remote never answers 401, so auth_failed is only
             # possible when it enforces a token and ours is missing/wrong.
             client.verify_token()
@@ -687,6 +758,7 @@ def create_app() -> FastAPI:
         version = health.get("version") if health else None
         remote_hostname = health.get("hostname") if health else None
         remote_auth = "token" if status == "auth_failed" else remote_auth_mode(health)
+        remote_instance_id = health.get("instance_id") if health else None
         updated = store.set_status(
             machine_id,
             status,
@@ -694,6 +766,7 @@ def create_app() -> FastAPI:
             remote_version=str(version) if version else None,
             remote_auth=remote_auth,
             remote_hostname=remote_hostname.strip() if isinstance(remote_hostname, str) else None,
+            remote_instance_id=remote_instance_id if isinstance(remote_instance_id, str) else None,
         )
         return MachineCheckResponse.model_validate({"machine": updated or machine, "health": health, "error": error})
 
@@ -706,6 +779,11 @@ def create_app() -> FastAPI:
 
     def _run_discovery(request: DiscoverRequest) -> DiscoverResponse:
         runtime = app.state.runtime
+        # In a bridged container the "local network" is Docker's, so a blank
+        # search would only probe the container subnet. Checked before the
+        # cooldown so the user can retry with a network straight away.
+        if not has_explicit_subnet(request.subnet, request.subnets) and running_in_container():
+            raise HTTPException(status_code=400, detail=CONTAINER_NEEDS_SUBNET_DETAIL)
         now = time.monotonic()
         with runtime.lock:
             if runtime.discover_in_progress:
@@ -733,6 +811,7 @@ def create_app() -> FastAPI:
                 timeout_seconds=request.timeout_seconds,
                 probe_token=request.probe_token,
                 registered_machines=machines,
+                self_instance_id=runtime.instance_id,
             )
             with runtime.lock:
                 runtime.latest_discover = result

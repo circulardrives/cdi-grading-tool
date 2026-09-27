@@ -11,9 +11,13 @@ export default defineConfig(({ mode }) => {
   // browser. VITE_CDI_API_TOKEN is still accepted for older .env.local files.
   const apiToken = env.CDI_HEALTH_API_TOKEN || env.VITE_CDI_API_TOKEN || ""
 
-  const { version: appVersion } = JSON.parse(
+  const { version: packageVersion } = JSON.parse(
     readFileSync(path.resolve(__dirname, "package.json"), "utf8")
   ) as { version: string }
+  // Release builds stamp the tag version (VITE_APP_VERSION build arg in
+  // Dockerfile.dashboard, set by release.yml); otherwise use package.json.
+  const appVersion =
+    (env.VITE_APP_VERSION ?? "").trim().replace(/^v/, "") || packageVersion
 
   return {
     plugins: [react(), tailwindcss()],

@@ -51,6 +51,28 @@ def _no_real_sudo(tmp_path_factory: pytest.TempPathFactory) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Refuse outbound HTTP connections to anything but loopback.
+
+    Adding a bench probes its address once (to catch "this bench itself"), so
+    tests that register made-up LAN addresses must fail fast instead of
+    reaching (or waiting on) a real network. Fake benches listen on 127.0.0.1.
+    """
+    import socket
+
+    real_create_connection = socket.create_connection
+
+    def guarded(address, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN202
+        host = str(address[0])
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            raise ConnectionRefusedError(f"tests: outbound connection to {host} is disabled")
+        return real_create_connection(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "create_connection", guarded)
+
+
+@pytest.fixture(autouse=True)
 def _reset_threshold_config() -> None:
     """Isolate grading.profile mutations across tests (binary vs abcdf)."""
     ThresholdConfig.reset_instance()

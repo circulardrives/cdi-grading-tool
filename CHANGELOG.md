@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-09-26
+
+### Fixed
+- **Synology DSM disks:** DSM 7 exposes SATA disks only as `/dev/sata1…N`, which `smartctl --scan-open` doesn't list, so scans found no drives. Whole `/dev/sataN` disks are now added and read with `smartctl -d sat` (spec and non-root sudoers profile updated).
+- **Dashboard finding itself:** each API has a persistent `instance_id` in `/health`. Discovery labels the dashboard's own API "This bench", and adding, checking or scanning it as a remote bench is refused.
+- **Discovery inside Docker:** with no network entered, the API explains that it can't see the LAN from a container and asks for one (e.g. `192.168.0.0/24`) instead of searching Docker's internal network. `/health` reports `running_in_container`.
+- **Dashboard version** in Settings › About is stamped from the release tag (was 0.9.5).
+- **Docker bench name:** the API container's hostname is `${CDI_BENCH_HOSTNAME:-cdi-health}` instead of its container ID. A Synology NAS (Container Manager) section was added to the deployment docs.
+
+### Changed
+- Release workflow: tags containing `-` (e.g. `v0.13.2-rc1`) publish GitHub pre-releases and don't move the `latest` image tag.
+
 ## [0.13.0] - 2026-09-26
 
 ### Changed
@@ -103,7 +115,8 @@ See git history and [v0.9.0 release notes](https://github.com/circulardrives/cdi
 ### Added
 - Initial beta release (pre-dashboard CLI line).
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.13.1
 [0.13.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.13.0
 [0.12.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.12.0
 [0.11.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.11.0

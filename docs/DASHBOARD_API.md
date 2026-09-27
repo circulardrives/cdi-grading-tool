@@ -23,7 +23,7 @@
 
 ## HTTP Endpoints
 
-- `GET /api/v1/health` — always returns `{status, version, hostname}` (`hostname` is the bench's own `socket.gethostname()`, e.g. `bench-01`; not sensitive, so it is in the minimal payload too); full diagnostics when auth is disabled, or with a valid token / loopback client when auth is enabled
+- `GET /api/v1/health` — always returns `{status, version, hostname, instance_id}` (`hostname` is the bench's own `socket.gethostname()`, e.g. `bench-01`; `instance_id` is a random id created once in the data directory (`{data_dir}/instance_id`, mode 0600) so a dashboard can recognise its own bench; neither is sensitive, so both are in the minimal payload too); full diagnostics when auth is disabled, or with a valid token / loopback client when auth is enabled
 - `POST /api/v1/scan` — optional `machine_id` associates the scan with a registered host (unknown id → 404); when that machine has an `address` the scan **runs on the remote host** (see [Remote Hosts](#remote-hosts)); optional `grading_profile` (`binary` | `abcdf`, like `--grading-profile`); successful scans are appended to scan history. Responses carry `machine_id`, `executed_on` (`"local"` | `"remote"`), and `remote_address` (remote only)
 - `GET /api/v1/devices` — optional `machine_id` returns cached scan for that host; `refresh=true` rescans (forwarded to the remote host when the machine has an `address`) and appends history
 - `GET /api/v1/fleet/devices` — aggregated drives across all remote hosts plus this API's own latest scan; `refresh=true` rescans every remote host first
@@ -36,6 +36,8 @@
 - `GET /api/v1/machines/{id}` — host detail
 - `PATCH /api/v1/machines/{id}` — update host metadata (`api_token`: omit = unchanged, `""` = clear)
 - `POST /api/v1/machines/{id}/check` — probe the remote host with its token; updates `status` / `remote_version` / `remote_hostname`
+
+**This bench is never its own remote.** `POST /machines` and a `PATCH /machines/{id}` that changes `address` probe the address's `/health` once (3 s, best effort: an offline bench can still be added); `/machines/{id}/check` does the same. When the answer carries this API's own `instance_id` they return **400** `That address is this bench itself`. A machine found to be this bench is remembered as such: fleet scans skip it (its host entry shows that error and contributes no drives, since they are already listed as this bench's own) and forwarded scans / self-tests to it return the same 400.
 - `DELETE /api/v1/machines/{id}` — remove host and cached scan snapshot
 - `GET /api/v1/discover` — return cached last discovery result (no side effects; 404 if none)
 - `POST /api/v1/discover` — run LAN scan (`subnet`, `subnets`, `port`, `timeout_seconds`, `probe_token`); 429 while a scan is in progress or within cooldown
@@ -246,10 +248,10 @@ at that API; the **Hosts & Scans** page triggers discovery through the backend.
 
 **Flow**
 
-1. Derive subnet(s) from local IPv4 interfaces when `subnet` is omitted (defaults to /24 per interface).
+1. Derive subnet(s) from local IPv4 interfaces when `subnet` is omitted (defaults to /24 per interface). When the API runs in a container (`/.dockerenv`, `/run/.containerenv`, or a container cgroup; reported as `running_in_container` in the full `/health`), its interfaces are the container network, so a request with no subnet returns **400** `This dashboard runs in Docker, so it can't see your network on its own. Enter your network, for example 192.168.0.0/24.` (not counted against the cooldown). The dashboard shows the same text under the Networks field while it is empty.
 2. TCP-probe each address on port **8844** (configurable) with parallel workers (~1–2s timeout per host).
 3. For open ports, `GET http://{ip}:{port}/api/v1/health` (`X-API-Token` is sent **only** when the request supplies an explicit `probe_token`; the bench's own `CDI_HEALTH_API_TOKEN` is never sent, since probes are plain HTTP to every open host. The unauthenticated `{status, version}` payload is enough to identify a CDI bench).
-4. Return discovered hosts with health payload (newer benches include their own `hostname` there, even unauthenticated; the top-level `hostname` is reverse DNS) and `already_registered` when the address matches the fleet registry.
+4. Return discovered hosts with health payload (newer benches include their own `hostname` there, even unauthenticated; the top-level `hostname` is reverse DNS) and `already_registered` when the address matches the fleet registry. `is_this_bench` is `true` for the address where this API itself answered (same `instance_id`); the dashboard lists it as "This bench" with no Add button.
 
 **Security / limits**
 

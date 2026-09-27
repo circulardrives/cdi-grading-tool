@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +36,10 @@ MACHINE_STATUSES = ("unknown", "reachable", "unreachable", "auth_failed")
 TOKEN_FIELD = "api_token"
 STORE_FILE_MODE = 0o600
 ScanStatus = Literal["success", "failed"]
+# Random per-install id (uuid4 hex) reported in /health so a dashboard can
+# recognise itself among discovered or registered benches.
+INSTANCE_ID_FILE = "instance_id"
+_INSTANCE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 def utc_now_iso() -> str:
@@ -48,6 +53,34 @@ def resolve_data_dir() -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     return (Path.cwd() / ".cdi-health").resolve()
+
+
+def load_or_create_instance_id(data_dir: Path) -> str:
+    """Return this install's persistent instance id, creating it once (mode 0600).
+
+    If the data directory is not writable the id still works for the life of
+    the process; it just changes on the next restart.
+    """
+    path = data_dir / INSTANCE_ID_FILE
+    try:
+        existing = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        existing = ""
+    if _INSTANCE_ID_RE.match(existing):
+        return existing
+
+    instance_id = uuid.uuid4().hex
+    temp_path = path.with_suffix(".tmp")
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, STORE_FILE_MODE)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(instance_id + "\n")
+        os.chmod(temp_path, STORE_FILE_MODE)
+        temp_path.replace(path)
+    except OSError:
+        pass
+    return instance_id
 
 
 def _normalize_token(value: Any) -> str | None:
@@ -65,6 +98,7 @@ def public_machine(entry: dict[str, Any]) -> dict[str, Any]:
     public.setdefault("remote_version", None)
     public.setdefault("remote_hostname", None)
     public.setdefault("remote_auth", None)
+    public.setdefault("remote_instance_id", None)
     return public
 
 
@@ -184,10 +218,14 @@ class MachineStore:
             if not entry:
                 return None
 
+            old_address = entry.get("address")
             for field in ("name", "hostname", "address", "location", "notes", "status"):
                 if field in payload and payload[field] is not None:
                     value = payload[field]
                     entry[field] = value.strip() if isinstance(value, str) else value
+            if entry.get("address") != old_address:
+                # A new address may be a different bench; re-learn it on the next check.
+                entry.pop("remote_instance_id", None)
 
             # Omitted (or null) = unchanged; "" clears; any other string replaces.
             if payload.get(TOKEN_FIELD) is not None:
@@ -211,8 +249,9 @@ class MachineStore:
         remote_version: str | None = None,
         remote_auth: str | None = None,
         remote_hostname: str | None = None,
+        remote_instance_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """Update reachability status (and optionally last_seen/remote_version/remote_auth/remote_hostname)."""
+        """Update reachability status (and optionally last_seen/remote_version/remote_auth/remote_hostname/remote_instance_id)."""
         if status not in MACHINE_STATUSES:
             raise ValueError(f"Invalid machine status: {status}")
         now = utc_now_iso()
@@ -229,6 +268,8 @@ class MachineStore:
                 entry["remote_auth"] = remote_auth
             if remote_hostname:
                 entry["remote_hostname"] = remote_hostname
+            if remote_instance_id:
+                entry["remote_instance_id"] = remote_instance_id
             entry["updated_at"] = now
             self._save()
             return public_machine(entry)

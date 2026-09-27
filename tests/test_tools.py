@@ -25,6 +25,8 @@ import shlex
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from cdi_health.classes.exceptions import CommandException
 from cdi_health.classes.tools import Command, SG3Utils, Smartctl
 
@@ -93,6 +95,23 @@ class TestSmartctl:
         smartctl = Smartctl("/dev/sda")
         path = smartctl.get_smartctl_path()
         assert path == "smartctl"
+
+    @patch("shutil.which", return_value="/usr/sbin/smartctl")
+    def test_default_command_has_no_device_type(self, _mock_which: MagicMock) -> None:
+        smartctl = Smartctl("/dev/sda")
+        assert smartctl.device_type is None
+        assert smartctl.get_all_device_information_command == "sudo /usr/sbin/smartctl --xall"
+
+    @patch("shutil.which", return_value="/usr/sbin/smartctl")
+    def test_device_type_adds_d_flag(self, _mock_which: MagicMock) -> None:
+        """Synology /dev/sataN disks are opened with -d sat."""
+        smartctl = Smartctl("/dev/sata1", device_type="sat")
+        assert smartctl.get_all_device_information_command == "sudo /usr/sbin/smartctl -d sat --xall"
+
+    @pytest.mark.parametrize("bad", ["sat --set=standby,now", "-d", "SAT", "sat;reboot", ""])
+    def test_invalid_device_type_rejected(self, bad: str) -> None:
+        with pytest.raises(ValueError):
+            Smartctl("/dev/sata1", device_type=bad)
 
 
 class TestSG3Utils:

@@ -42,6 +42,54 @@ Images (`linux/amd64`, `linux/arm64`): `ghcr.io/circulardrives/cdi-health-api:la
 
 For live drive scanning **on the bench itself**, use the `.deb` (Option B) — do not expect Docker-on-laptop to see USB/SAS drives attached to another machine.
 
+**Bench name in Docker.** The dashboard names "This bench" after the API container's hostname. The compose file sets it to `cdi-health`; put `CDI_BENCH_HOSTNAME=bench-01` (your machine's name) in `deploy/docker/.env` to change it. Without a `hostname:` Docker uses the random container ID.
+
+**Finding benches from Docker.** Inside a container the API only sees Docker's network, so type your lab network (e.g. `192.168.0.0/24`) in **Networks to search**; a blank search is refused with a hint.
+
+### Synology NAS (Container Manager)
+
+CDI Health can grade the drives in a Synology NAS's own bays (DSM 7.2+ on a model that supports Container Manager). DSM names SATA disks `/dev/sata1`, `/dev/sata2`, … and CDI Health 0.13.1+ finds them automatically.
+
+1. **Container Manager › Project › Create.** Name it `cdi-health`, pick a folder (e.g. `/volume1/docker/cdi-health`), choose **Create docker-compose.yml**, and paste:
+
+   ```yaml
+   services:
+     api:
+       image: ghcr.io/circulardrives/cdi-health-api:latest
+       container_name: cdi-health-api
+       hostname: nas-01 # shown as "This bench" in the dashboard
+       privileged: true # needed to read SMART data from the NAS's drives
+       volumes:
+         - /dev:/dev
+         - cdi-api-data:/var/lib/cdi-health
+       environment:
+         CDI_HEALTH_API_NO_AUTH: "1" # lab mode, see below
+         CDI_HEALTH_DATA_DIR: /var/lib/cdi-health
+       restart: unless-stopped
+
+     dashboard:
+       image: ghcr.io/circulardrives/cdi-health-dashboard:latest
+       container_name: cdi-health-dashboard
+       environment:
+         CDI_HEALTH_API_TOKEN: ""
+       ports:
+         - "3000:80"
+       depends_on:
+         - api
+       restart: unless-stopped
+
+   volumes:
+     cdi-api-data:
+   ```
+
+   Keep the service name `api`: the dashboard's proxy sends API calls to `http://api:8844`.
+
+2. Build and start the project, then open **http://&lt;nas-ip&gt;:3000**. The NAS's drives appear under **This bench**.
+
+- **Lab mode.** This example runs without an access token, so anyone who can open port 3000 can scan drives and start self-tests. Use it only on a trusted lab network. For token mode, remove `CDI_HEALTH_API_NO_AUTH` and set the same `CDI_HEALTH_API_TOKEN` (e.g. `openssl rand -hex 32`) on both services.
+- **Other benches.** To use this dashboard for benches elsewhere on the network, enter your network (e.g. `192.168.0.0/24`) in **Find benches**. To let another dashboard use the NAS as a bench, add `ports: ["8844:8844"]` to the `api` service.
+- **Don't add the NAS as a bench** in its own dashboard: its drives already show as **This bench**. The dashboard lists it as "This bench" in search results and refuses to add its own address.
+
 ---
 
 ## Required tools (bare metal, real hardware)

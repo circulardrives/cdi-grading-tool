@@ -27,6 +27,10 @@ services:
     pull_policy: ${CDI_PULL_POLICY:-always}
     profiles: ["local"]
     container_name: cdi-health-api
+    # The API reports its hostname as the bench name ("This bench"). Without
+    # this, Docker uses the random container ID. Set CDI_BENCH_HOSTNAME in
+    # deploy/docker/.env to the machine's name (e.g. bench-01).
+    hostname: ${CDI_BENCH_HOSTNAME:-cdi-health}
     command:
       [
         "python",

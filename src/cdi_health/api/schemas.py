@@ -271,12 +271,20 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     hostname: str | None = Field(default=None, description="The bench's own hostname (socket.gethostname()).")
+    instance_id: str | None = Field(
+        default=None,
+        description="Random per-install id (persisted in the data dir); lets a dashboard recognise itself.",
+    )
     is_root: bool | None = None
     allow_non_root_mode: bool | None = None
     api_token_enabled: bool | None = None
     auth_mode: Literal["none", "token"] | None = None
     missing_required_tools: list[str] | None = None
     weasyprint_available: bool | None = None
+    running_in_container: bool | None = Field(
+        default=None,
+        description="The API runs in a container, so discovery needs an explicit subnet.",
+    )
     message: str | None = None
 
 
@@ -429,6 +437,10 @@ class DiscoveredHost(BaseModel):
     health: dict[str, Any] | None = None
     cdi_api: bool = False
     already_registered: bool = False
+    is_this_bench: bool = Field(
+        default=False,
+        description="The API that ran discovery answered at this address (same /health instance_id).",
+    )
 
 
 class DiscoverResponse(BaseModel):

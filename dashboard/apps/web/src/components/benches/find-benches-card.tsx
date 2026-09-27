@@ -4,7 +4,13 @@
  * token ask for it inline, lab-mode ones don't.
  */
 import { useId, useMemo, useState, type FormEvent } from "react"
-import { CheckIcon, PlusIcon, RadarIcon, SearchIcon } from "lucide-react"
+import {
+  CheckIcon,
+  MonitorIcon,
+  PlusIcon,
+  RadarIcon,
+  SearchIcon,
+} from "lucide-react"
 
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
@@ -25,6 +31,7 @@ import {
   Note,
   PageSection,
 } from "@/components/ui-cdi"
+import { useHealthQuery } from "@/hooks/use-cdi-queries"
 import { ApiError, createMachine, discoverHosts } from "@/lib/api"
 import { appConfig } from "@/lib/config"
 import { defaultDiscoveredHostName } from "@/lib/host-utils"
@@ -39,6 +46,9 @@ type SearchResult = {
 }
 
 type TokenNeed = "none" | "token" | "unknown"
+
+const CONTAINER_HINT =
+  "This dashboard runs in Docker, so it can't see your network on its own. Enter your network, for example 192.168.0.0/24."
 
 function tokenNeed(host: DiscoveredHost): TokenNeed {
   const health = host.health
@@ -121,7 +131,18 @@ export function FindBenchesCard({
   const parsed = useMemo(() => parseNetworks(networks), [networks])
   const inputError = touched ? parsed.error : null
 
-  const fresh = (result?.found ?? []).filter((host) => !host.already_registered)
+  const health = useHealthQuery().data
+  // In Docker a blank search only sees the container network.
+  const needsNetwork =
+    health?.running_in_container === true && networks.trim() === ""
+  // The bench this dashboard runs on answers too; it is never added as a bench.
+  const ownInstanceId = health?.instance_id ?? null
+  const isThisBench = (host: DiscoveredHost) =>
+    Boolean(host.is_this_bench) ||
+    (ownInstanceId != null && host.health?.instance_id === ownInstanceId)
+  const thisBench = (result?.found ?? []).filter(isThisBench)
+  const others = (result?.found ?? []).filter((host) => !isThisBench(host))
+  const fresh = others.filter((host) => !host.already_registered)
   const pending = fresh.filter((host) => !added.has(host.address))
 
   const search = async (event: FormEvent) => {
@@ -186,9 +207,10 @@ export function FindBenchesCard({
           return next
         })
       } catch (error) {
-        const text =
-          error instanceof Error &&
-          /already|exists|duplicate/i.test(error.message)
+        const message = error instanceof Error ? error.message : ""
+        const text = /this bench itself/i.test(message)
+          ? `${name} is this bench — the dashboard is running here.`
+          : /already|exists|duplicate/i.test(message)
             ? `${name} is already added.`
             : `Couldn't add ${name} — try again.`
         setAddErrors((current) => ({ ...current, [host.address]: text }))
@@ -216,7 +238,9 @@ export function FindBenchesCard({
 
   const busy = searching || adding.size > 0
   const line = result
-    ? resultLine(result.found.length, pending.length, added.size)
+    ? others.length === 0
+      ? "Only this bench answered — the dashboard is running here."
+      : resultLine(others.length, pending.length, added.size)
     : ""
 
   return (
@@ -267,11 +291,17 @@ export function FindBenchesCard({
           id={hintId}
           className={cn(
             "text-[15px]",
-            inputError ? "text-destructive" : "text-muted-foreground"
+            inputError
+              ? "text-destructive"
+              : needsNetwork
+                ? "text-tone-warn-fg"
+                : "text-muted-foreground"
           )}
         >
           {inputError ??
-            `Up to ${MAX_NETWORKS} networks, separated by commas or spaces. Leave it blank to search the network this dashboard is on.`}
+            (needsNetwork
+              ? CONTAINER_HINT
+              : `Up to ${MAX_NETWORKS} networks, separated by commas or spaces. Leave it blank to search the network this dashboard is on.`)}
         </p>
       </form>
 
@@ -296,8 +326,26 @@ export function FindBenchesCard({
         ) : null}
       </div>
 
-      {result && fresh.length > 0 ? (
+      {result && (fresh.length > 0 || thisBench.length > 0) ? (
         <ul className="flex flex-col divide-y rounded-[10px] border">
+          {thisBench.map((host) => (
+            <li
+              key={host.address}
+              className="flex items-center gap-3 px-4 py-3"
+            >
+              <BenchLabel
+                className="flex-1"
+                machine={{
+                  name: defaultDiscoveredHostName(host),
+                  address: benchAddress({ address: host.address }),
+                }}
+              />
+              <span className="inline-flex items-center gap-2 text-[15px] text-muted-foreground">
+                <MonitorIcon className="size-5" aria-hidden="true" />
+                This bench (the dashboard is running here)
+              </span>
+            </li>
+          ))}
           {fresh.map((host) => {
             const need = tokenNeed(host)
             const name = defaultDiscoveredHostName(host)
