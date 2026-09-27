@@ -16,6 +16,10 @@ const MockDataSettingsContext = React.createContext<
 >(undefined)
 
 function readStoredMockData(): boolean {
+  // The static demo is all sample data already; the API-side switch is off.
+  if (__CDI_DEMO__) {
+    return false
+  }
   try {
     return localStorage.getItem(STORAGE_KEY) === "1"
   } catch {
@@ -39,11 +43,17 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
   const [useMockData, setUseMockDataState] = React.useState(readStoredMockData)
 
   const setUseMockData = React.useCallback((enabled: boolean) => {
+    if (__CDI_DEMO__) {
+      return
+    }
     writeStoredMockData(enabled)
     setUseMockDataState(enabled)
   }, [])
 
   React.useEffect(() => {
+    if (__CDI_DEMO__) {
+      return
+    }
     const handleStorageChange = (event: StorageEvent) => {
       if (event.storageArea !== localStorage || event.key !== STORAGE_KEY) {
         return
@@ -79,12 +89,17 @@ export function useMockDataSettings() {
   const context = React.useContext(MockDataSettingsContext)
 
   if (context === undefined) {
-    throw new Error("useMockDataSettings must be used within a MockDataProvider")
+    throw new Error(
+      "useMockDataSettings must be used within a MockDataProvider"
+    )
   }
 
   return context
 }
 
-export function mockDataRequestFields(useMockData: boolean, mockDataPath: string) {
+export function mockDataRequestFields(
+  useMockData: boolean,
+  mockDataPath: string
+) {
   return useMockData ? { mock_data: mockDataPath } : {}
 }

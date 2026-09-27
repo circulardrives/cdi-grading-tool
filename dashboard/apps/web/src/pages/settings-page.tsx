@@ -62,32 +62,35 @@ export function SettingsPage() {
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
-      <PageSection id="demo-mode" title="Demo mode">
-        <div className="flex items-center justify-between gap-6">
-          <label htmlFor="demo-mode-switch" className="flex flex-col gap-1">
-            <span className="text-[17px] font-semibold">
-              Show sample drives
-            </span>
-            <span className="text-muted-foreground">
-              Shows sample drives instead of real benches — for training and
-              demos. While it's on, a banner across the top of every page says
-              so.
-            </span>
-          </label>
-          <Switch
-            id="demo-mode-switch"
-            checked={useMockData}
-            onCheckedChange={setUseMockData}
-            className="scale-125"
-          />
-        </div>
-        {useMockData ? (
-          <Note tone="warn">
-            Demo mode is on. Scans load sample drives; nothing is read from real
-            benches.
-          </Note>
-        ) : null}
-      </PageSection>
+      {/* The static public demo is always sample data: no switch to show. */}
+      {__CDI_DEMO__ ? null : (
+        <PageSection id="demo-mode" title="Demo mode">
+          <div className="flex items-center justify-between gap-6">
+            <label htmlFor="demo-mode-switch" className="flex flex-col gap-1">
+              <span className="text-[17px] font-semibold">
+                Show sample drives
+              </span>
+              <span className="text-muted-foreground">
+                Shows sample drives instead of real benches — for training and
+                demos. While it's on, a banner across the top of every page says
+                so.
+              </span>
+            </label>
+            <Switch
+              id="demo-mode-switch"
+              checked={useMockData}
+              onCheckedChange={setUseMockData}
+              className="scale-125"
+            />
+          </div>
+          {useMockData ? (
+            <Note tone="warn">
+              Demo mode is on. Scans load sample drives; nothing is read from
+              real benches.
+            </Note>
+          ) : null}
+        </PageSection>
+      )}
 
       <PageSection id="theme" title="Theme">
         <div
@@ -125,7 +128,9 @@ export function SettingsPage() {
               <span className="flex flex-col">
                 <span>{benchHostname || "—"}</span>
                 <span className="font-mono text-sm font-normal text-muted-foreground">
-                  {hostLabel(appConfig.apiHost)}
+                  {__CDI_DEMO__
+                    ? "Sample data in this browser"
+                    : hostLabel(appConfig.apiHost)}
                 </span>
               </span>
             }

@@ -178,3 +178,6 @@ dashboard/out/
 dashboard/.env.local
 !dashboard/lib/
 !dashboard/lib/**
+
+# Cloudflare wrangler local state
+.wrangler/

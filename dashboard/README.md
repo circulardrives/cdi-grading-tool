@@ -89,3 +89,35 @@ bun run start   # serves apps/web/dist via vite preview
 ```
 
 For production without bun on the host, use Docker (`deploy/docker/`) or GHCR compose.
+
+## Static demo
+
+A public, API-free demo of the dashboard with sample drives on three benches
+(`bench-01` NVMe servers, `bench-02` HDD chassis, `bench-03` mixed intake). It
+is plain static files, so it can be hosted anywhere (Cloudflare Pages below).
+
+```bash
+# From the repository root: regenerate sample data, then build with VITE_DEMO=1
+./scripts/build-demo.sh               # --no-data reuses the committed data
+
+bunx serve -s dashboard/apps/web/dist-demo    # preview with SPA fallback
+
+npx wrangler deploy -c dashboard/apps/web/wrangler.demo.jsonc
+```
+
+- **Data.** `scripts/generate_demo_data.py` takes smartctl fixtures from
+  `src/cdi_health/mock_data` and `tests/fixtures/revert_standard`, anonymizes
+  them (serials, WWN / EUI-64 / FGUID replaced with stable hash-derived values;
+  vendor placeholders replaced), and runs them through the real grader and API
+  endpoints in-process. Grades, reasons, CSVs and the HTML reports are exactly
+  what CDI Health produces for those drives. The output is committed under
+  `apps/web/src/demo/data/`; rerun the script after grading changes.
+- **Backend.** With `VITE_DEMO=1`, `src/lib/api.ts` sends every API call to
+  `src/demo/backend.ts`, which answers from that data in the browser — no
+  network requests. Scans, reports and self-tests (which pass after ~20 s)
+  are simulated in memory; benches added or removed live in `sessionStorage`,
+  so the demo resets when the tab closes.
+- **Build.** Normal builds are unaffected: `__CDI_DEMO__` is a build-time
+  constant, so the demo backend and data are never bundled. The demo build
+  writes `dist-demo/` (SPA fallback comes from `wrangler.demo.jsonc`) and the page title
+  "CDI Health — Demo".
