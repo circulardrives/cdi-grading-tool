@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker:** demo mode ("Use mock data") works in the Docker stack (the sample-drive path is allowed in the API image).
 - **Host dependency installer:** `install-host-dependencies.sh` no longer aborts with "unbound variable" after installing OpenSeaChest or building nvme-cli.
 - **Dashboard systemd env example** uses the variable names the proxy reads (`VITE_CDI_API_PROXY_TARGET`, `CDI_HEALTH_API_TOKEN`).
+- **NVMe self-test code 3h** (Host-Initiated Refresh) is recognised instead of shown as "Unknown (3)" / not running.
+- **Spec:** `docs/CDI_HEALTH_SPEC.md` and `docs/NVME_HEALTH_POLICY.md` checked against NVMe Base 2.4 and OCP 2.7. Corrected: OCP config key names that did not exist, section/figure references, the meaning of Critical Warning bit 1, and the NVMe fail-gates the core spec did not list (CCTT, EGCWS, OCP C0h). No grading rule changed.
 
 ### Added
 - **Static public demo** of the dashboard with sample drives (#169).
