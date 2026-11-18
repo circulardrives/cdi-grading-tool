@@ -36,6 +36,7 @@ this module keeps working unchanged once the scoring engine lands them.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -531,6 +532,24 @@ def _usable_serial(device: dict) -> str | None:
     return serial
 
 
+_CSV_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+_CSV_PLAIN_NUMBER_RE = re.compile(r"[+-]?\d+(\.\d+)?")
+
+
+def csv_safe(text: str) -> str:
+    """Stop a spreadsheet from running a cell as a formula.
+
+    Model, serial, firmware and bench names come from drive firmware and from
+    other machines. A cell starting with ``=``, ``+``, ``-`` or ``@`` is
+    evaluated by Excel and LibreOffice when the CSV is opened, so such text is
+    prefixed with an apostrophe, which they show as plain text. Plain numbers
+    (``-5``) are left alone.
+    """
+    if text.startswith(_CSV_FORMULA_LEADERS) and not _CSV_PLAIN_NUMBER_RE.fullmatch(text):
+        return "'" + text
+    return text
+
+
 def csv_cell(value: Any) -> str:
     """Flatten a §13 value (list/dict/bool/None) for a CSV cell."""
     if value is None:
@@ -538,7 +557,7 @@ def csv_cell(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, list):
-        return " | ".join(str(v) for v in value)
+        return csv_safe(" | ".join(str(v) for v in value))
     if isinstance(value, dict):
         return json.dumps(value, ensure_ascii=False, default=str) if value else ""
-    return str(value)
+    return csv_safe(str(value))

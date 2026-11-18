@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from cdi_health.classes.explain import attach_explanation
-from cdi_health.classes.revert import flag_duplicate_serials, is_ungraded, revert_fields
+from cdi_health.classes.revert import csv_safe, flag_duplicate_serials, is_ungraded, revert_fields
 from cdi_health.classes.scoring import HealthScoreCalculator
 
 
@@ -161,7 +161,7 @@ class ReportGenerator:
                         row[h] = str(fn(d))
                     except Exception:
                         row[h] = ""
-            rows.append(row)
+            rows.append({header: csv_safe(value) for header, value in row.items()})
         with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=headers, extrasaction="ignore")
             writer.writeheader()
