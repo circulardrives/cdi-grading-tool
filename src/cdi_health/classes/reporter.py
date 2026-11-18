@@ -543,6 +543,15 @@ class ReportGenerator:
             return str(reason)
         return str(d)
 
+    @staticmethod
+    def _device_deductions(device: dict):
+        """A drive's deductions, under whichever key its record carries them.
+
+        Scoring output (``attach_explanation``, saved API scans) stores them as
+        ``deductions``; ``health_deductions`` is the older table-formatter key.
+        """
+        return device.get("health_deductions") or device.get("deductions")
+
     def _format_deductions_short(self, deductions) -> str:
         """One-line summary for table cells."""
         if not deductions:
@@ -599,9 +608,12 @@ class ReportGenerator:
             variant = "bad"
         return self._badge_html(status_text, variant)
 
-    def _render_deduction_list(self, deductions) -> str:
+    def _render_deduction_list(self, deductions, *, ungraded: bool = False) -> str:
         items = self._iter_deduction_dicts(deductions)
         if not items:
+            if ungraded:
+                # Nothing was evaluated; "within policy" would be a false claim.
+                return '<p class="evidence-empty">Not graded — no deductions were evaluated.</p>'
             return '<p class="evidence-empty">No score deductions — metrics within policy.</p>'
         lis = []
         for item in items:
@@ -694,7 +706,7 @@ class ReportGenerator:
               {extra_html}
               <div class="evidence-deductions">
                 <h4>Grading deductions</h4>
-                {self._render_deduction_list(device.get("health_deductions"))}
+                {self._render_deduction_list(self._device_deductions(device), ungraded=ungraded)}
               </div>
             </article>"""
 
@@ -1197,7 +1209,7 @@ class ReportGenerator:
             ("Revert standard version", lambda d: d.get("revert_standard_version", "—")),
             ("CDI certified", lambda d: "Yes" if d.get("is_certified") else "No"),
             ("Certification rationale", lambda d: d.get("certification_rationale", "—")),
-            ("Deductions", lambda d: self._format_deductions_short(d.get("health_deductions"))),
+            ("Deductions", lambda d: self._format_deductions_short(self._device_deductions(d))),
         ]
 
     def _nvme_supplemental_column_specs(self, devices: list[dict]) -> list[tuple]:

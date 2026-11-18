@@ -21,10 +21,98 @@
 
 from __future__ import annotations
 
+import csv
+import re
 from pathlib import Path
 
-from cdi_health.classes.mock import MockDevices
+from cdi_health.classes.mock import MockDevices, create_mock_device
 from cdi_health.classes.reporter import ReportGenerator
+
+
+def _mock_device(mock_data_dir: Path, relative: str) -> dict:
+    """One parsed device record from a mock smartctl capture."""
+    return create_mock_device(json_file=str(mock_data_dir / relative)).to_dict(pop=True)
+
+
+def _evidence_cards(html_text: str) -> dict[str, str]:
+    """Evidence card HTML by its title (the drive's serial label)."""
+    cards = {}
+    for card in re.findall(r'<article class="evidence-card">.*?</article>', html_text, flags=re.DOTALL):
+        title = re.search(r'<h3 class="evidence-card__title">(.*?)</h3>', card, flags=re.DOTALL)
+        cards[title.group(1).strip() if title else ""] = card
+    return cards
+
+
+def test_html_evidence_card_lists_the_drives_deductions(tmp_path: Path, mock_data_dir: Path) -> None:
+    """A failed drive's card must say why (regression: every card read "No score deductions")."""
+    failed = _mock_device(mock_data_dir, "scsi/high_grown_defects.json")
+    healthy = _mock_device(mock_data_dir, "scsi/healthy_sas.json")
+
+    out = tmp_path / "report.html"
+    ReportGenerator().generate_html([failed, healthy], str(out))
+    cards = _evidence_cards(out.read_text(encoding="utf-8"))
+
+    failed_card = next(card for title, card in cards.items() if failed["serial_number"] in title)
+    assert 'class="deduction-list"' in failed_card
+    assert "Grown defects" in failed_card
+    assert "No score deductions" not in failed_card
+
+    healthy_card = next(card for title, card in cards.items() if healthy["serial_number"] in title)
+    assert "No score deductions" in healthy_card
+
+
+def test_csv_report_deductions_column_is_filled(tmp_path: Path, mock_data_dir: Path) -> None:
+    failed = _mock_device(mock_data_dir, "scsi/high_grown_defects.json")
+    healthy = _mock_device(mock_data_dir, "scsi/healthy_sas.json")
+
+    out = tmp_path / "report.csv"
+    ReportGenerator().generate_csv([failed, healthy], str(out))
+    with out.open(encoding="utf-8-sig", newline="") as handle:
+        rows = {row["Serial"]: row for row in csv.DictReader(handle)}
+
+    assert "Grown defects" in rows[failed["serial_number"]]["Deductions"]
+    assert rows[healthy["serial_number"]]["Deductions"] == "—"
+
+
+def test_report_from_saved_scan_keeps_recorded_deductions(tmp_path: Path) -> None:
+    """Saved API scans store deductions as dicts under ``deductions``."""
+    recorded = {
+        "dut": "/dev/sdb",
+        "serial_number": "SAVED-1",
+        "model_number": "SAVED MODEL",
+        "transport_protocol": "SCSI",
+        "media_type": "HDD",
+        "health_grade": "C",
+        "health_score": 70,
+        "health_status": "Fair",
+        "is_certified": True,
+        "deductions": [
+            {
+                "reason": "Grown defects",
+                "points": 30,
+                "severity": "warning",
+                "field": "grown_defects",
+                "value": 31,
+                "threshold": 100,
+                "attribute_grade": "C",
+            }
+        ],
+    }
+    out = tmp_path / "saved.html"
+    ReportGenerator(preserve_grades=True).generate_html([recorded], str(out))
+    card = next(iter(_evidence_cards(out.read_text(encoding="utf-8")).values()))
+    assert "Grown defects" in card
+    assert "(grade C)" in card
+
+
+def test_ungraded_card_does_not_claim_metrics_within_policy(tmp_path: Path, mock_data_dir: Path) -> None:
+    """Nothing was evaluated on an unreadable drive, so "within policy" would be false."""
+    unreadable = _mock_device(mock_data_dir, "nvme/bad_drive_SKHynix_PE6110_unavailable.json")
+    out = tmp_path / "ungraded.html"
+    ReportGenerator().generate_html([unreadable], str(out))
+    card = next(iter(_evidence_cards(out.read_text(encoding="utf-8")).values()))
+    assert "Not graded" in card
+    assert "metrics within policy" not in card
 
 
 def test_generate_csv_includes_nvme_columns_and_category(tmp_path: Path, mock_data_dir: Path) -> None:
