@@ -59,6 +59,11 @@ api = [
     "pydantic>=2.0.0",
     "uvicorn>=0.29.0",
 ]
+# PDF reports. Also needs the Pango libraries and a font from the OS
+# (see deploy/docker/Dockerfile.api, scripts/install-host-dependencies.sh --with-pdf).
+pdf = [
+    "weasyprint>=60",
+]
 dev = [
     "licenseheaders",
     "pre-commit",

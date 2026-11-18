@@ -123,7 +123,7 @@ For `source: "scan"`, `hosts` is a single `{"name": "Local API", "machine_id": n
 
 **Report index.** Every generated report is recorded in `{data_dir}/reports/index.json` (mode **0600**), so `GET /api/v1/reports` and downloads survive API restarts. `GET /api/v1/reports` returns `[{filename, format, generated_at, source, devices_count, hosts}]`, newest first, skipping entries whose file was removed. Only the newest **200** records are kept; older records are dropped from the index but their files are not deleted (they can still be downloaded by name).
 
-**PDF** needs `weasyprint` (`GET /api/v1/health` → `weasyprint_available`); without it `format: "pdf"` fails with **400** `Report failed`.
+**PDF** needs `weasyprint` (`GET /api/v1/health` → `weasyprint_available`); without it `format: "pdf"` fails with **400** `Report failed`. The Docker API image ships it; for other installs use `pip install 'cdi_health[pdf]'` plus the Pango libraries and a font (`scripts/install-host-dependencies.sh --with-pdf`).
 
 ## Host Registry Model
 

@@ -54,7 +54,7 @@ When you install the release `.deb` with apt, **smartmontools** and **nvme-cli**
 **Optional**
 
 - **OCP NVMe extended SMART (C0h):** `nvme-cli` **2.10+** with the OCP plugin (`nvme ocp smart-add-log`). Distro packages may be older; use `scripts/install-host-dependencies.sh --build-nvme-cli` if needed.
-- **PDF reports:** `pip install weasyprint` (or your distro package); pass `--with-pdf` to the host dependency script for OS libraries.
+- **PDF reports:** `pip install 'cdi_health[pdf]'` (WeasyPrint, or your distro package); pass `--with-pdf` to the host dependency script for OS libraries. The Docker API image includes it.
 - **OpenSeaChest on older distros:** not in default apt on **Ubuntu 22.04** or **Debian Bookworm** — run `sudo ./scripts/install-host-dependencies.sh` to install from the [Seagate GitHub release](https://github.com/Seagate/openSeaChest/releases).
 
 ---
