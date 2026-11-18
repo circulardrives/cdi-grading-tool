@@ -21,6 +21,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 
 import pytest
@@ -97,6 +99,36 @@ class TestCSVFormatter:
         lines = result.strip().split("\n")
         # Should have header + at least one data row
         assert len(lines) >= 2
+
+    @staticmethod
+    def _capacity_cells(text: str) -> list[str]:
+        return [row["capacity"] for row in csv.DictReader(io.StringIO(text))]
+
+    def test_capacity_is_filled_from_bytes(self) -> None:
+        """#167: scans report the size as ``bytes``; the column was always blank."""
+        devices = [
+            {"dut": "/dev/sda", "serial_number": "S1", "transport_protocol": "ATA", "bytes": 960197124096},
+            {"dut": "/dev/sdb", "serial_number": "S2", "transport_protocol": "ATA", "bytes": 1920383410176},
+        ]
+        result = CSVFormatter().format(devices)
+        assert self._capacity_cells(result) == ["960 GB", "1.92 TB"]
+
+    def test_capacity_matches_the_table(self) -> None:
+        """The CSV and the table show the same size for the same drive."""
+        device = {"dut": "/dev/sda", "serial_number": "S1", "transport_protocol": "ATA", "bytes": 4000787030016}
+        csv_value = self._capacity_cells(CSVFormatter().format([device]))[0]
+        assert csv_value == TableFormatter()._get_display_value(device, "capacity")
+
+    def test_capacity_blank_when_size_unknown(self) -> None:
+        """An unreported size is an empty cell, not a placeholder."""
+        device = {"dut": "/dev/sda", "serial_number": "S1", "transport_protocol": "ATA"}
+        assert self._capacity_cells(CSVFormatter().format([device])) == [""]
+
+    def test_capacity_filled_without_rescoring(self) -> None:
+        """The API's saved-scan export (include_scores=False) fills it too."""
+        device = {"dut": "/dev/nvme0", "serial_number": "N1", "health_grade": "A", "bytes": 7681501126656}
+        result = CSVFormatter(include_scores=False).format([device])
+        assert self._capacity_cells(result) == ["7.68 TB"]
 
 
 class TestYAMLFormatter:
