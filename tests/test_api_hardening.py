@@ -312,7 +312,7 @@ class _FakeHealthResponse:
     def __exit__(self, *exc):
         return False
 
-    def read(self) -> bytes:
+    def read(self, _size: int = -1) -> bytes:
         return b'{"status": "ok", "version": "x"}'
 
 
@@ -321,11 +321,11 @@ def _capture_probe_headers(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, st
 
     captured: list[dict[str, str]] = []
 
-    def fake_urlopen(request, timeout=None):
+    def fake_open(request, timeout=None):
         captured.append({k.lower(): v for k, v in request.header_items()})
         return _FakeHealthResponse()
 
-    monkeypatch.setattr(discovery.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(discovery, "_open_probe", fake_open)
     monkeypatch.setattr(discovery, "is_port_open", lambda ip, port, timeout: ip == "192.168.50.1")
     monkeypatch.setattr(discovery, "reverse_hostname", lambda ip: None)
     return captured
@@ -571,3 +571,115 @@ def test_selftest_start_rejects_unknown_fields(api_client: TestClient) -> None:
     """A typo like "devices" must be rejected, not treated as "all drives"."""
     response = api_client.post("/api/v1/selftests", json={"devices": ["/dev/nvme4"], "test_type": "short"})
     assert response.status_code == 422
+
+
+# --- discovery probes: no redirects, bounded reads ---------------------------
+
+
+def _serve(handler_factory):  # noqa: ANN001, ANN202
+    """A throwaway HTTP server on 127.0.0.1; returns (server, port)."""
+    import threading
+    from http.server import ThreadingHTTPServer
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler_factory)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, server.server_address[1]
+
+
+def test_discovery_probe_does_not_follow_redirects() -> None:
+    """A scanned host answering 302 made the bench fetch any URL, token included, and return its JSON."""
+    from http.server import BaseHTTPRequestHandler
+
+    from cdi_health.api import discovery
+
+    elsewhere_requests: list[dict[str, str]] = []
+
+    class Elsewhere(BaseHTTPRequestHandler):
+        def log_message(self, *_args) -> None:  # noqa: ANN002
+            pass
+
+        def do_GET(self) -> None:  # noqa: N802
+            elsewhere_requests.append({k.lower(): v for k, v in self.headers.items()})
+            body = b'{"status": "ok", "secret": "internal"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    elsewhere, elsewhere_port = _serve(Elsewhere)
+
+    class Redirector(BaseHTTPRequestHandler):
+        def log_message(self, *_args) -> None:  # noqa: ANN002
+            pass
+
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{elsewhere_port}/internal/admin")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    redirector, redirector_port = _serve(Redirector)
+    try:
+        result = discovery.probe_cdi_health(
+            "127.0.0.1", redirector_port, probe_token="operator-probe-token", timeout_seconds=3
+        )
+    finally:
+        redirector.shutdown()
+        redirector.server_close()
+        elsewhere.shutdown()
+        elsewhere.server_close()
+
+    assert result is None
+    assert elsewhere_requests == [], "the redirect target was contacted"
+
+
+def test_discovery_probe_ignores_oversized_answers() -> None:
+    from http.server import BaseHTTPRequestHandler
+
+    from cdi_health.api import discovery
+
+    class Huge(BaseHTTPRequestHandler):
+        def log_message(self, *_args) -> None:  # noqa: ANN002
+            pass
+
+        def do_GET(self) -> None:  # noqa: N802
+            body = b'{"status": "ok", "pad": "' + b"x" * (discovery.MAX_PROBE_RESPONSE_BYTES + 1024) + b'"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server, port = _serve(Huge)
+    try:
+        assert discovery.probe_cdi_health("127.0.0.1", port, probe_token=None, timeout_seconds=3) is None
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_discovery_probe_reads_a_normal_health_answer() -> None:
+    from http.server import BaseHTTPRequestHandler
+
+    from cdi_health.api import discovery
+
+    class Bench(BaseHTTPRequestHandler):
+        def log_message(self, *_args) -> None:  # noqa: ANN002
+            pass
+
+        def do_GET(self) -> None:  # noqa: N802
+            body = b'{"status": "ok", "version": "0.13.1", "hostname": "bench-07"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server, port = _serve(Bench)
+    try:
+        health = discovery.probe_cdi_health("127.0.0.1", port, probe_token=None, timeout_seconds=3)
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert health == {"status": "ok", "version": "0.13.1", "hostname": "bench-07"}
