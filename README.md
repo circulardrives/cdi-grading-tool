@@ -54,7 +54,7 @@ When you install the release `.deb` with apt, **smartmontools** and **nvme-cli**
 **Optional**
 
 - **OCP NVMe extended SMART (C0h):** `nvme-cli` **2.10+** with the OCP plugin (`nvme ocp smart-add-log`). Distro packages may be older; use `scripts/install-host-dependencies.sh --build-nvme-cli` if needed.
-- **PDF reports:** `pip install 'cdi_health[pdf]'` (WeasyPrint, or your distro package); pass `--with-pdf` to the host dependency script for OS libraries. The Docker API image includes it.
+- **PDF reports:** WeasyPrint. The Docker API image includes it. From a source checkout: `pip install -e '.[pdf]'`; on a `.deb` install: `sudo /opt/cdi-health/venv/bin/pip install 'weasyprint>=60'`. Pass `--with-pdf` to the host dependency script for the OS libraries.
 - **OpenSeaChest on older distros:** not in default apt on **Ubuntu 22.04** or **Debian Bookworm** — run `sudo ./scripts/install-host-dependencies.sh` to install from the [Seagate GitHub release](https://github.com/Seagate/openSeaChest/releases).
 
 ---
@@ -93,11 +93,7 @@ Images default to GHCR **`latest`** (`CDI_VERSION=<semver>` to pin). Multi-arch:
 
 Full options: [Technician deployment](docs/TECHNICIAN_DEPLOYMENT.md) · [Team testing](docs/TEAM_TESTING.md).
 
-**From PyPI**
-
-```shell
-pip install cdi-health
-```
+**Not on PyPI.** CDI Health is not published there, so do not `pip install cdi-health`: that name does not belong to this project. Use the release `.deb`, the Docker images, or a source checkout.
 
 **From source**
 

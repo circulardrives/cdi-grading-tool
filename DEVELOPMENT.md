@@ -272,7 +272,7 @@ pip install -e .[dev]
 1. Update version in git tags
 2. Build: `python -m build`
 3. Test installation: `pip install dist/cdi_health-*.whl`
-4. Upload to PyPI: `twine upload dist/*`
+4. Releases are published by `.github/workflows/release.yml` on a `v*` tag (GitHub Release + GHCR images). The package is not published to PyPI.
 
 ## Debugging
 
