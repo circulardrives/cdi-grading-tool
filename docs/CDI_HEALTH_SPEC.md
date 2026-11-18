@@ -126,12 +126,18 @@ Applies to NVMe (`percentage_used`, `available_spare` / AVSPT from log 02h), SAT
 
 ### Readiness (TEST UNIT READY)
 
-CDI issues SCSI TEST UNIT READY (`sg_turs`) to every device (issue #128):
+CDI issues SCSI TEST UNIT READY (`sg_turs`) to every SATA and SAS device (issue #128):
 
 - Only a genuine *Not Ready* sense (sg_turs exit 2) or medium/hardware error (exit 3) counts as **Not Ready**. A Not Ready drive is retried once after a best-effort START UNIT (`sg_start --start`).
 - Tool missing, timeout, permission/open failure, or transport timeout → readiness **Unknown**, flag `TUR_UNAVAILABLE`. Not a fail-gate.
 - **SCSI/SAS** Not Ready after retry → **F-NO-RESPONSE** fail-gate.
-- **ATA/NVMe** Not Ready is waived when the drive returned readable SMART/health data (flag `TUR_NOT_READY`); the SAT/NVMe translation of TUR is not trusted over valid health data.
+- **ATA** Not Ready is waived when the drive returned readable SMART/health data (flag `TUR_NOT_READY`); the SAT translation of TUR is not trusted over valid health data.
+
+**NVMe** drives are never sent a SCSI TUR (issue #162). `sg_turs` reaches an NVMe drive only through sg3_utils' SCSI-to-NVMe translation, which some firmware rejects, and each rejected command adds an entry to the drive's error log. Readiness is the controller state the kernel reports in `/sys/class/nvme/<controller>/state`:
+
+- `live` → **Ready**.
+- `dead` (the kernel gave up on the controller, e.g. after a fatal controller status) → **Not Ready**; waived like ATA only if the drive still returned readable health data.
+- Resetting, reconnecting, or a state that cannot be read → **Unknown**, flag `TUR_UNAVAILABLE`. Not a fail-gate.
 
 ### Missing and unknown data
 
