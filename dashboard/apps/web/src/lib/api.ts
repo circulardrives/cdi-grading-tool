@@ -107,6 +107,18 @@ async function parseErrorMessage(response: Response): Promise<string> {
   return message
 }
 
+/**
+ * `fetch` for API calls. The static demo build (VITE_DEMO=1) answers them in
+ * the browser from sample data instead; `__CDI_DEMO__` is a build-time
+ * constant, so normal builds drop that branch and never load the demo.
+ */
+const apiFetch: typeof fetch = __CDI_DEMO__
+  ? async (input, init) => {
+      const { demoFetch } = await import("@/demo/backend")
+      return demoFetch(input, init)
+    }
+  : (input, init) => fetch(input, init)
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set("Accept", "application/json")
@@ -118,7 +130,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // No X-API-Token here: the Vite dev proxy and nginx inject it server-side,
   // so the token never ships in the browser bundle.
 
-  const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
+  const response = await apiFetch(`${appConfig.apiBaseUrl}${path}`, {
     ...init,
     headers,
   })
@@ -344,7 +356,7 @@ async function fetchReportBlob(
   const headers = new Headers()
   headers.set("Accept", "*/*")
 
-  const response = await fetch(
+  const response = await apiFetch(
     `${appConfig.apiBaseUrl}/api/v1/reports/${encodeURIComponent(filename)}${query}`,
     { headers }
   )
@@ -382,7 +394,7 @@ export async function downloadReportFile(filename: string): Promise<void> {
  */
 export async function downloadDrivesCsv(bench?: string | null): Promise<void> {
   const query = bench ? `?machine_id=${encodeURIComponent(bench)}` : ""
-  const response = await fetch(
+  const response = await apiFetch(
     `${appConfig.apiBaseUrl}/api/v1/fleet/devices.csv${query}`,
     { headers: { Accept: "text/csv" } }
   )

@@ -150,7 +150,7 @@ Systemd unit **`cdi-health-api.service`** may be installed under `/usr/lib/syste
 **LAN discovery:** the default unit binds to `127.0.0.1` only. For a bench to appear in **Discover** from a technician laptop, use the shipped LAN drop-in (requires a token in `/etc/default/cdi-health-api`):
 
 ```bash
-sudo cp /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
+sudo install -m 600 -o root -g root /usr/share/cdi-health/examples/cdi-health-api.env.example /etc/default/cdi-health-api
 # edit /etc/default/cdi-health-api — set CDI_HEALTH_API_TOKEN (e.g. openssl rand -hex 32)
 sudo mkdir -p /etc/systemd/system/cdi-health-api.service.d
 sudo cp /usr/share/cdi-health/examples/systemd/cdi-health-api.service.d/lan.conf \
@@ -230,7 +230,7 @@ sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-dashboard.service /etc/s
 Optional env files:
 
 ```bash
-sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.env.example /etc/default/cdi-health-api
+sudo install -m 600 -o root -g root /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.env.example /etc/default/cdi-health-api
 sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-dashboard.env.example /etc/default/cdi-health-dashboard
 ```
 

@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CDI Health Report — 2026-09-25 16:00:00</title>
+    <style>
+        /*
+ * Circular Drive Initiative (CDI) — brand color tokens
+ * Source: docs/cdi_brand_palette.md
+ * Do not change HEX brand values without updating the doc and brand guidelines.
+ *
+ * Semantic layer aligned with dashboard shadcn theme
+ * (dashboard/packages/ui/src/styles/globals.css) for HTML report parity.
+ * Reports stay self-contained; hex approximations of oklch tokens for PDF.
+ */
+
+:root {
+  /* —— Primary palette (canonical) —— */
+  --cdi-simply-green: #139c7a;
+  --cdi-simply-green-rgb: 19, 156, 122;
+
+  --cdi-foliage-green: #3b7351;
+  --cdi-foliage-green-rgb: 59, 115, 81;
+
+  --cdi-green-spruce: #5c9279;
+  --cdi-green-spruce-rgb: 92, 146, 121;
+
+  --cdi-lilac-gray: #9298a6;
+  --cdi-lilac-gray-rgb: 146, 153, 166;
+
+  --cdi-real-teal: #3e6071;
+  --cdi-real-teal-rgb: 61, 96, 114;
+
+  /* —— shadcn-aligned semantic tokens (light) —— */
+  --background: #f6faf8;
+  --foreground: #1c1917;
+  --card: #ffffff;
+  --card-foreground: #1c1917;
+  --primary: var(--cdi-simply-green);
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f4;
+  --secondary-foreground: #1c1917;
+  --muted: #eef5f2;
+  --muted-foreground: #78716c;
+  --accent-surface: #eef5f2;
+  --accent-surface-foreground: #1c1917;
+  --destructive: #dc2626;
+  --border: #e4ebe7;
+  --input: #e4ebe7;
+  --ring: var(--cdi-green-spruce);
+  --sidebar: #fafcfb;
+  --sidebar-foreground: #1c1917;
+  --sidebar-primary: var(--cdi-simply-green);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef5f2;
+  --sidebar-accent-foreground: #1c1917;
+  --sidebar-border: #e4ebe7;
+
+  --warn: #ca8a04;
+  --danger: var(--destructive);
+  --link: var(--cdi-real-teal);
+
+  /* Soft fills (badges / hover) */
+  --primary-soft: rgba(19, 156, 122, 0.12);
+  --warn-soft: rgba(202, 138, 4, 0.12);
+  --danger-soft: rgba(220, 38, 38, 0.1);
+
+  /* Typography — match dashboard (Source Sans 3 + JetBrains Mono) */
+  --font: "Source Sans 3", "Source Sans Pro", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --radius: 0.625rem;
+  --sidebar-w: 16rem;
+
+  /* —— Legacy report aliases (map to shadcn names) —— */
+  --bg: var(--background);
+  --bg-card: var(--card);
+  --text: var(--foreground);
+  --accent: var(--primary);
+  --accent-secondary: var(--cdi-foliage-green);
+  --accent-tertiary: var(--cdi-green-spruce);
+  --accent-soft: var(--primary-soft);
+  --accent-soft-strong: rgba(19, 156, 122, 0.18);
+  --surface-sidebar: var(--sidebar);
+}
+
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: var(--font);
+          background: var(--background);
+          color: var(--foreground);
+          display: flex;
+          min-height: 100vh;
+          line-height: 1.5;
+          -webkit-font-smoothing: antialiased;
+        }
+        .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+        .main { flex: 1; padding: 1.75rem 2rem 3rem; max-width: 72rem; min-width: 0; }
+
+        /* Sidebar (shadcn Sidebar-like) */
+        .sidebar {
+          width: var(--sidebar-w);
+          flex-shrink: 0;
+          background: var(--sidebar);
+          color: var(--sidebar-foreground);
+          border-right: 1px solid var(--sidebar-border);
+          display: flex;
+          flex-direction: column;
+          position: sticky;
+          top: 0;
+          align-self: flex-start;
+          min-height: 100vh;
+        }
+        .brand {
+          padding: 1rem 1rem 0.875rem;
+          border-bottom: 1px solid var(--sidebar-border);
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+        }
+        .brand-logo { width: 100%; max-width: 11rem; }
+        .brand-logo-svg { display: block; width: 100%; height: auto; }
+        .brand-text strong { display: block; font-size: 0.9375rem; font-weight: 600; color: var(--foreground); }
+        .brand-text span { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500; }
+        .nav-tabs {
+          display: flex;
+          flex-direction: column;
+          padding: 0.5rem;
+          gap: 0.125rem;
+          flex: 1;
+        }
+        .nav-tabs .tab-btn {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.75rem;
+          padding: 0.5rem 0.75rem;
+          border-radius: calc(var(--radius) - 2px);
+          text-decoration: none;
+          color: var(--sidebar-foreground);
+          font-size: 0.875rem;
+          font-weight: 500;
+          border: none;
+          background: transparent;
+          transition: background .15s, color .15s;
+        }
+        .nav-tabs .tab-btn:hover { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); }
+        .nav-tabs .tab-btn.active {
+          background: var(--sidebar-accent);
+          color: var(--sidebar-primary);
+          font-weight: 600;
+        }
+        .tab-title { flex: 1; min-width: 0; }
+        .tab-count {
+          font-family: var(--mono);
+          font-size: 0.6875rem;
+          background: var(--muted);
+          color: var(--muted-foreground);
+          padding: 0.125rem 0.5rem;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        .nav-tabs .tab-btn.active .tab-count {
+          background: var(--primary);
+          color: var(--primary-foreground);
+        }
+        .sidebar-foot {
+          padding: 0.75rem 1rem;
+          font-size: 0.6875rem;
+          color: var(--muted-foreground);
+          border-top: 1px solid var(--sidebar-border);
+        }
+
+        /* Hero + view toggle */
+        .hero { margin-bottom: 1.5rem; }
+        .hero h1 {
+          font-size: 1.5rem;
+          font-weight: 600;
+          letter-spacing: -0.025em;
+          color: var(--foreground);
+        }
+        .hero-sub { color: var(--muted-foreground); margin-top: 0.25rem; font-size: 0.9375rem; }
+        .hero-time {
+          font-size: 0.8125rem;
+          color: var(--muted-foreground);
+          margin-top: 0.5rem;
+          font-family: var(--mono);
+        }
+        .hero-top {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 1rem;
+        }
+        .view-mode-bar {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
+          padding: 0.25rem;
+          background: var(--muted);
+          border-radius: var(--radius);
+        }
+        .view-mode-label {
+          font-size: 0.6875rem;
+          font-weight: 500;
+          color: var(--muted-foreground);
+          padding: 0 0.5rem;
+        }
+        .mode-btn {
+          padding: 0.375rem 0.75rem;
+          border-radius: calc(var(--radius) - 2px);
+          border: none;
+          background: transparent;
+          color: var(--muted-foreground);
+          font-family: var(--font);
+          font-size: 0.8125rem;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .mode-btn:hover { color: var(--foreground); }
+        .mode-btn.active {
+          background: var(--card);
+          color: var(--foreground);
+          box-shadow: 0 1px 2px rgba(0,0,0,.06);
+        }
+        body[data-view="simple"] .advanced-only { display: none !important; }
+        body[data-view="advanced"] .simple-only { display: none !important; }
+
+        /* Summary cards */
+        .summary-strip {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+          gap: 0.75rem;
+          margin-bottom: 1.75rem;
+        }
+        .s-card {
+          background: var(--card);
+          color: var(--card-foreground);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 1rem 1.125rem;
+        }
+        .s-label {
+          font-size: 0.75rem;
+          font-weight: 500;
+          color: var(--muted-foreground);
+        }
+        .s-val {
+          display: block;
+          font-size: 1.5rem;
+          font-weight: 600;
+          font-family: var(--mono);
+          margin-top: 0.25rem;
+          letter-spacing: -0.02em;
+        }
+        .s-ok .s-val { color: var(--primary); }
+        .s-warn .s-val { color: var(--warn); }
+        .s-bad .s-val { color: var(--destructive); }
+
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        .cat-head {
+          font-size: 1.125rem;
+          font-weight: 600;
+          color: var(--foreground);
+          margin-bottom: 0.25rem;
+        }
+        .cat-meta { font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 1rem; }
+        .empty-cat {
+          padding: 2rem;
+          background: var(--card);
+          border: 1px dashed var(--border);
+          border-radius: var(--radius);
+          color: var(--muted-foreground);
+          text-align: center;
+          font-size: 0.875rem;
+        }
+
+        /* Badges (shadcn Badge-like) */
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 999px;
+          padding: 0.125rem 0.625rem;
+          font-size: 0.75rem;
+          font-weight: 500;
+          line-height: 1.25rem;
+          border: 1px solid transparent;
+          white-space: nowrap;
+        }
+        .badge--ok { background: var(--primary-soft); color: var(--cdi-foliage-green); }
+        .badge--warn { background: var(--warn-soft); color: #a16207; }
+        .badge--bad { background: var(--danger-soft); color: var(--destructive); }
+        .badge--muted { background: var(--muted); color: var(--muted-foreground); }
+
+        /* Evidence cards (simple view) */
+        .evidence-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          margin-bottom: 1.5rem;
+        }
+        .evidence-card {
+          background: var(--card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 1.25rem;
+        }
+        .evidence-card__head {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 0.75rem;
+          margin-bottom: 1rem;
+        }
+        .evidence-card__title {
+          font-size: 1rem;
+          font-weight: 600;
+          font-family: var(--mono);
+          letter-spacing: -0.01em;
+        }
+        .evidence-card__sub {
+          font-size: 0.8125rem;
+          color: var(--muted-foreground);
+          margin-top: 0.125rem;
+        }
+        .evidence-card__badges { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+        .evidence-metrics {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+          gap: 0.75rem;
+          margin-bottom: 1rem;
+          padding: 0.875rem;
+          background: var(--muted);
+          border-radius: calc(var(--radius) - 2px);
+        }
+        .evidence-metrics dt {
+          font-size: 0.6875rem;
+          font-weight: 500;
+          color: var(--muted-foreground);
+        }
+        .evidence-metrics dd { font-size: 0.875rem; font-weight: 500; margin-top: 0.125rem; }
+        .evidence-rationale, .evidence-deductions { margin-top: 1rem; }
+        .evidence-rationale h4, .evidence-deductions h4 {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--muted-foreground);
+          margin-bottom: 0.375rem;
+        }
+        .evidence-rationale p { font-size: 0.875rem; line-height: 1.55; }
+        .evidence-empty { font-size: 0.8125rem; color: var(--muted-foreground); }
+        .deduction-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+        .deduction {
+          display: flex;
+          gap: 0.625rem;
+          align-items: flex-start;
+          padding: 0.625rem 0.75rem;
+          border-radius: calc(var(--radius) - 2px);
+          border: 1px solid var(--border);
+          background: var(--background);
+          font-size: 0.8125rem;
+        }
+        .deduction-sev {
+          flex-shrink: 0;
+          font-size: 0.6875rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          padding: 0.125rem 0.375rem;
+          border-radius: 0.25rem;
+        }
+        .deduction--critical .deduction-sev { background: var(--danger-soft); color: var(--destructive); }
+        .deduction--warning .deduction-sev { background: var(--warn-soft); color: #a16207; }
+        .deduction--info .deduction-sev { background: var(--muted); color: var(--muted-foreground); }
+        .deduction-body { min-width: 0; }
+        .deduction-meta {
+          display: block;
+          margin-top: 0.25rem;
+          font-family: var(--mono);
+          font-size: 0.6875rem;
+          color: var(--muted-foreground);
+        }
+
+        /* Tables (shadcn Table-like) */
+        .table-wrap {
+          overflow-x: auto;
+          background: var(--card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          margin-bottom: 1.5rem;
+        }
+        .device-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.875rem;
+        }
+        .device-table th,
+        .device-table td {
+          padding: 0.75rem 1rem;
+          text-align: left;
+          border-bottom: 1px solid var(--border);
+          height: 3rem;
+          vertical-align: middle;
+        }
+        .device-table th {
+          background: transparent;
+          color: var(--muted-foreground);
+          font-weight: 500;
+          font-family: var(--font);
+          font-size: 0.75rem;
+          text-transform: none;
+          letter-spacing: 0;
+          height: 2.75rem;
+        }
+        .device-table tbody tr:hover { background: color-mix(in srgb, var(--muted) 50%, transparent); }
+        .device-table tbody tr:last-child td { border-bottom: 0; }
+        .device-table .score { font-weight: 600; font-family: var(--mono); }
+        .device-table--simple td { font-size: 0.875rem; }
+        .device-table--wide { font-size: 0.75rem; font-family: var(--mono); min-width: max-content; }
+        .device-table--wide th {
+          white-space: normal;
+          min-width: 8.5rem;
+          max-width: 12rem;
+          line-height: 1.35;
+          vertical-align: bottom;
+          position: sticky;
+          top: 0;
+          z-index: 2;
+          background: var(--card);
+        }
+        .device-table--wide .col-head--key { min-width: 9rem; }
+        .device-table--wide .cell-stat {
+          max-width: 18rem;
+          min-width: 7rem;
+          vertical-align: top;
+          height: auto;
+          padding-top: 0.625rem;
+          padding-bottom: 0.625rem;
+        }
+        .device-table--wide .cell-stat__clamp {
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 8;
+          overflow: hidden;
+          word-break: break-word;
+          white-space: pre-wrap;
+          line-height: 1.45;
+        }
+        .device-table--wide .cell-stat__body {
+          display: block;
+          word-break: break-word;
+          white-space: pre-wrap;
+          line-height: 1.55;
+        }
+        .device-table--wide td:first-child,
+        .device-table--wide th:first-child {
+          position: sticky;
+          left: 0;
+          z-index: 1;
+          background: var(--card);
+          box-shadow: 2px 0 4px rgba(0,0,0,.04);
+        }
+        .device-table--wide thead th:first-child { z-index: 3; }
+        .cell-stat--is-missing { color: var(--muted-foreground); font-style: italic; }
+        .cell-stat--is-bool { font-family: var(--font); font-weight: 600; }
+        .cell-stat--is-multiline { line-height: 1.55; }
+        .cell-deductions {
+          max-width: 24rem;
+          font-size: 0.75rem;
+          word-break: break-word;
+          vertical-align: top;
+        }
+        .col-serial { font-weight: 600; font-family: var(--mono); }
+        .grade-a, .grade-b { color: var(--cdi-foliage-green); font-weight: 600; }
+        .grade-c { color: var(--warn); font-weight: 600; }
+        .grade-d { color: #c65f00; font-weight: 600; }
+        .grade-f { color: var(--destructive); font-weight: 600; }
+        .status-healthy { color: var(--primary); }
+        .status-warning { color: var(--warn); }
+        .status-failed { color: var(--destructive); }
+
+        .nvme-json-blobs { display: none !important; }
+        .nvme-log-btns { display: flex; flex-direction: column; gap: 0.375rem; align-items: flex-start; }
+        .btn-json-log {
+          padding: 0.375rem 0.625rem;
+          border-radius: calc(var(--radius) - 2px);
+          border: 1px solid var(--border);
+          background: var(--card);
+          color: var(--foreground);
+          font-size: 0.6875rem;
+          font-weight: 500;
+          cursor: pointer;
+          font-family: var(--font);
+        }
+        .btn-json-log:hover { background: var(--muted); }
+        .cell-nvme-log-btns { max-width: 11rem; white-space: normal; vertical-align: top; }
+
+        .cdi-json-modal[hidden] { display: none !important; }
+        .cdi-json-modal:not([hidden]) {
+          position: fixed;
+          inset: 0;
+          z-index: 50;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .cdi-json-modal__backdrop {
+          position: absolute;
+          inset: 0;
+          background: rgba(28, 25, 23, 0.5);
+        }
+        .cdi-json-modal__dialog {
+          position: relative;
+          z-index: 1;
+          max-width: min(920px, 92vw);
+          max-height: 85vh;
+          width: 100%;
+          background: var(--card);
+          border-radius: var(--radius);
+          border: 1px solid var(--border);
+          box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .cdi-json-modal__head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.75rem;
+          padding: 0.75rem 1rem;
+          border-bottom: 1px solid var(--border);
+        }
+        .cdi-json-modal__title { font-size: 0.9375rem; margin: 0; font-weight: 600; }
+        .cdi-json-modal__close {
+          border: none;
+          background: transparent;
+          font-size: 1.25rem;
+          line-height: 1;
+          cursor: pointer;
+          color: var(--muted-foreground);
+          padding: 0.25rem 0.5rem;
+          border-radius: calc(var(--radius) - 2px);
+        }
+        .cdi-json-modal__close:hover { background: var(--muted); color: var(--foreground); }
+        .cdi-json-modal__pre {
+          margin: 0;
+          padding: 1rem;
+          overflow: auto;
+          flex: 1;
+          font-family: var(--mono);
+          font-size: 0.75rem;
+          line-height: 1.45;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
+        .page-foot {
+          margin-top: 2.5rem;
+          padding-top: 1.25rem;
+          border-top: 1px solid var(--border);
+          text-align: center;
+          font-size: 0.75rem;
+          color: var(--muted-foreground);
+        }
+        @media print {
+          .sidebar { display: none; }
+          .main { max-width: 100%; padding: 1rem; }
+          .tab-panel { display: block !important; page-break-before: always; }
+          .tab-panel:first-of-type { page-break-before: auto; }
+          .evidence-card { break-inside: avoid; }
+          .view-mode-bar { display: none; }
+        }
+        @media (max-width: 900px) {
+          body { flex-direction: column; }
+          .sidebar {
+            position: relative;
+            width: 100%;
+            min-height: unset;
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: center;
+          }
+          .nav-tabs { flex-direction: row; flex-wrap: wrap; width: 100%; }
+          .main { padding: 1.25rem; }
+        }
+
+    </style>
+</head>
+<body data-view="simple">
+    <div id="cdi-json-modal" class="cdi-json-modal" hidden>
+        <div class="cdi-json-modal__backdrop" data-cdi-json-close="1"></div>
+        <div class="cdi-json-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="cdi-json-modal-title">
+            <header class="cdi-json-modal__head">
+                <h3 class="cdi-json-modal__title" id="cdi-json-modal-title">Log</h3>
+                <button type="button" class="cdi-json-modal__close" data-cdi-json-close="1" aria-label="Close">×</button>
+            </header>
+            <pre class="cdi-json-modal__pre"></pre>
+        </div>
+    </div>
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-logo"><svg class="brand-logo-svg" role="img" aria-label="Circular Drive Initiative logo" id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 576 395.71">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #039f77;
+        fill-rule: evenodd;
+      }
+
+      .cls-1, .cls-2, .cls-3 {
+        stroke-width: 0px;
+      }
+
+      .cls-2 {
+        fill: #111828;
+      }
+
+      .cls-3 {
+        fill: none;
+      }
+    </style>
+  </defs>
+  <path class="cls-1" d="M206.57,79.3c-92.64.16-167.69,75.31-167.69,167.99,0,28.51,7.1,55.36,19.63,78.88l13.49-7.17c-11.39-21.38-17.85-45.79-17.85-71.71,0-84.25,68.23-152.57,152.45-152.72l-.03-15.27Z"/>
+  <path class="cls-1" d="M133.27,364.89c-39.12-24.53-65.12-68.03-65.12-117.6,0-76.27,61.55-138.16,137.68-138.72l.1,15.27c-67.75.49-122.52,55.57-122.52,123.44,0,44.11,23.14,82.82,57.95,104.65l-8.09,12.95Z"/>
+  <path class="cls-1" d="M206.48,137.85c-60.27.21-109.07,49.13-109.07,109.45,0,55.93,41.95,102.06,96.11,108.64l1.86-15.16c-46.6-5.66-82.7-45.35-82.7-93.48,0-51.9,41.98-94,93.85-94.17l-.05-15.27Z"/>
+  <path class="cls-1" d="M206.47,167.12c-44.1.21-79.79,36.03-79.79,80.18s35.9,80.18,80.18,80.18c13.61,0,26.42-3.39,37.65-9.37l-7.17-13.49c-9.09,4.84-19.46,7.59-30.48,7.59-35.85,0-64.9-29.06-64.9-64.9s28.89-64.73,64.59-64.9l-.07-15.27Z"/>
+  <path class="cls-1" d="M206.82,196.39c-28.09.02-50.86,22.81-50.86,50.91s22.79,50.91,50.9,50.91c16.93,0,31.94-8.27,41.19-20.99l-12.35-8.98c-6.48,8.9-16.98,14.69-28.84,14.69-19.68,0-35.63-15.96-35.63-35.63s15.93-35.61,35.59-35.63v-15.27Z"/>
+  <path class="cls-2" d="M246.02,108.88c-6.51,0-11.82-4.77-11.82-11.82s5.31-11.82,11.82-11.82c4.57,0,8.53,2.32,10.47,6.21l11.89-5.57c-3.93-8.06-12.32-12.93-22.36-12.93-14.17,0-24.98,9.67-24.98,24.11s10.81,24.11,24.98,24.11c10.04,0,18.43-4.87,22.36-12.93l-11.89-5.57c-1.94,3.89-5.91,6.21-10.47,6.21M279.4,79.87c3.96,0,7.22-3.29,7.22-7.29s-3.25-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.25,7.29,7.25,7.29M273.08,120.57h12.59v-36.93h-12.59v36.93ZM290.99,83.63v36.93h12.59v-18.46c0-5.27,3.42-8.46,11.35-8.46v-10.61c-5.44,0-9.2,1.41-11.35,4.7l-.57-4.09h-12.02ZM335.28,110.83c-4.33,0-7.89-3.22-7.89-8.73s3.56-8.73,7.89-8.73c3.09,0,5.74,1.61,6.98,5.11l11.52-4.6c-2.95-6.75-10.28-10.84-18.5-10.84-10.95,0-20.45,6.82-20.45,19.07s9.5,19.07,20.45,19.07c8.22,0,15.55-4.1,18.5-10.85l-11.52-4.6c-1.24,3.49-3.9,5.11-6.98,5.11M369.32,83.63h-12.59v18.47c0,11.89,3.59,19.1,14.2,19.1,5.47,0,9.37-1.88,11.15-5.04l.57,4.4h12.02v-36.93h-12.59v18.47c0,5.27-2.32,8.46-6.75,8.46s-6.01-3.05-6.01-8.46v-18.47ZM399.98,120.57h12.59v-50.36h-12.59v50.36ZM433.09,82.99c-9.5,0-16.92,7.69-16.92,19.11s7.42,19.1,16.92,19.1c5.44,0,9.64-1.72,11.42-5.04l.57,4.4h12.02v-36.93h-12.02l-.57,4.4c-1.78-3.16-5.98-5.04-11.42-5.04M436.62,110.56c-4.33,0-7.86-3.22-7.86-8.46s3.53-8.46,7.86-8.46,7.89,3.22,7.89,8.46-3.52,8.46-7.89,8.46M461.72,83.63v36.93h12.59v-18.46c0-5.27,3.43-8.46,11.35-8.46v-10.61c-5.44,0-9.2,1.41-11.35,4.7l-.57-4.09h-12.02ZM243.6,140.35h-21.22v47h21.22c14.13,0,23.84-9.63,23.84-23.5s-9.7-23.5-23.84-23.5M241.92,176.75h-6.11v-25.79h6.11c6.65,0,12.09,4.8,12.09,12.89s-5.44,12.89-12.09,12.89M271.5,150.42v36.93h12.59v-18.46c0-5.27,3.42-8.46,11.35-8.46v-10.61c-5.44,0-9.2,1.41-11.35,4.7l-.57-4.1h-12.02ZM306,146.66c3.96,0,7.22-3.29,7.22-7.29s-3.26-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.26,7.29,7.25,7.29M299.69,187.36h12.59v-36.93h-12.59v36.93ZM345.43,150.42l-7.96,25.76-7.99-25.76h-13.43l12.15,36.93h18.46l12.19-36.93h-13.43ZM378.63,149.79c-10.95,0-20.45,6.85-20.45,19.1s9.5,19.11,20.45,19.11c7.32,0,14.13-3.23,17.73-9.1l-10.71-5.17c-1.54,2.82-3.79,4.43-7.01,4.43-3.39,0-6.35-2.15-7.42-5.88h27.33c1.18-14.47-7.69-22.5-19.91-22.5M378.63,159.62c3.86,0,6.55,2.15,7.49,5.87h-14.98c.97-3.73,3.63-5.87,7.49-5.87M222.38,251.37h13.43v-47.01h-13.43v47.01ZM267.32,251.37h12.56v-18.46c0-11.89-3.59-19.1-14.2-19.1-5.47,0-9.37,1.88-11.15,5.04l-.57-4.4h-12.02v36.93h12.59v-18.46c0-5.27,2.32-8.46,6.78-8.46s6.01,3.02,6.01,8.46v18.46ZM291.53,210.67c3.96,0,7.22-3.29,7.22-7.29s-3.26-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.26,7.29,7.25,7.29M285.21,251.37h12.59v-36.93h-12.59v36.93ZM307.06,206.24v8.19h-4.47v9.77h4.47v13.2c0,9.77,3.62,14.57,13.5,14.57,1.88,0,5.34-.24,7.32-.54v-10.27c-2.15.36-4.16.4-5.74-.17-1.68-.51-2.52-1.82-2.52-4.06v-12.73h8.26v-9.77h-8.26v-8.19h-12.56ZM338.94,210.67c3.96,0,7.22-3.29,7.22-7.29s-3.26-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.26,7.29,7.25,7.29M332.63,251.37h12.59v-36.93h-12.59v36.93ZM366.41,213.8c-9.5,0-16.92,7.69-16.92,19.1s7.42,19.1,16.92,19.1c5.44,0,9.64-1.71,11.42-5.04l.57,4.4h12.02v-36.93h-12.02l-.57,4.4c-1.78-3.16-5.98-5.04-11.42-5.04M369.94,241.36c-4.33,0-7.86-3.22-7.86-8.46s3.53-8.46,7.86-8.46,7.89,3.22,7.89,8.46-3.52,8.46-7.89,8.46M398.84,206.24v8.19h-4.46v9.77h4.46v13.2c0,9.77,3.63,14.57,13.5,14.57,1.88,0,5.34-.24,7.32-.54v-10.27c-2.15.36-4.17.4-5.74-.17-1.68-.51-2.52-1.82-2.52-4.06v-12.73h8.26v-9.77h-8.26v-8.19h-12.56ZM431.24,210.67c3.96,0,7.22-3.29,7.22-7.29s-3.26-7.22-7.22-7.22-7.25,3.29-7.25,7.22,3.26,7.29,7.25,7.29M424.93,251.37h12.59v-36.93h-12.59v36.93ZM469.33,214.43l-7.96,25.75-7.99-25.75h-13.43l12.15,36.93h18.47l12.19-36.93h-13.43ZM502.53,213.8c-10.95,0-20.45,6.85-20.45,19.1s9.5,19.1,20.45,19.1c7.32,0,14.13-3.23,17.73-9.1l-10.71-5.17c-1.55,2.82-3.79,4.43-7.02,4.43-3.39,0-6.35-2.15-7.42-5.88h27.33c1.18-14.47-7.69-22.49-19.91-22.49M502.53,223.63c3.86,0,6.55,2.15,7.49,5.87h-14.97c.98-3.73,3.62-5.87,7.49-5.87"/>
+  <rect class="cls-3" x="194.27" y="176.41" width="484.74" height="299.52"/>
+</svg></div>
+            <div class="brand-text">
+                <strong>CDI Health</strong>
+                <span>Circular Drive Initiative</span>
+            </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Device categories">
+            <a href="#" class="tab-btn active" data-tab="sata-hdd" data-label="SATA HDD">
+                <span class="tab-title">SATA HDD</span>
+                <span class="tab-count">7</span>
+            </a>
+            <a href="#" class="tab-btn" data-tab="sas-hdd" data-label="SAS HDD">
+                <span class="tab-title">SAS HDD</span>
+                <span class="tab-count">7</span>
+            </a>
+            <a href="#" class="tab-btn" data-tab="sata-ssd" data-label="SATA SSD">
+                <span class="tab-title">SATA SSD</span>
+                <span class="tab-count">0</span>
+            </a>
+            <a href="#" class="tab-btn" data-tab="sas-ssd" data-label="SAS SSD">
+                <span class="tab-title">SAS SSD</span>
+                <span class="tab-count">0</span>
+            </a>
+            <a href="#" class="tab-btn" data-tab="nvme-ssd" data-label="NVMe SSD">
+                <span class="tab-title">NVMe SSD</span>
+                <span class="tab-count">0</span>
+            </a>
+        </nav>
+        <p class="sidebar-foot">Storage health assessment</p>
+    </aside>
+    <main class="main">
+        <header class="hero">
+            <div class="hero-top">
+                <div>
+                    <h1>CDI Health Report</h1>
+                    <p class="hero-sub">Certification evidence pack · serial-keyed drives · grading rationale included</p>
+                    <p class="hero-time">Generated 2026-09-25 16:00:00</p>
+                    <p class="hero-time hero-source">Source: Saved scans — bench-02 (2026-09-25 15:39 UTC)</p>
+                </div>
+                <div class="view-mode-bar" role="toolbar" aria-label="Report layout">
+                    <span class="view-mode-label">View</span>
+                    <button type="button" class="mode-btn active" data-view="simple">Simple</button>
+                    <button type="button" class="mode-btn" data-view="advanced">Advanced</button>
+                </div>
+            </div>
+        </header>
+
+        <section class="summary-strip" aria-label="Fleet summary">
+            <div class="s-card"><span class="s-label">Total devices</span><span class="s-val">14</span></div><div class="s-card s-ok"><span class="s-label">Healthy</span><span class="s-val">4</span></div><div class="s-card s-warn"><span class="s-label">Warning</span><span class="s-val">5</span></div><div class="s-card s-bad"><span class="s-label">At risk</span><span class="s-val">5</span></div>
+        </section>
+
+
+        <section class="tab-panel active" data-panel="sata-hdd" aria-labelledby="hdr-sata-hdd">
+            <h2 class="cat-head" id="hdr-sata-hdd">SATA HDD</h2>
+            <p class="cat-meta">7 drive(s) · serial-keyed summary · per-drive evidence below</p>
+
+            <div class="table-wrap simple-only">
+                <table class="device-table device-table--simple">
+                    <thead>
+                        <tr>
+                            <th>Serial</th><th>Host</th><th>Scanned at</th>
+                            <th>Model</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td class="col-serial">NGQ3ARF9</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST2000DM008-2FR102</td><td class="score mono">100</td><td><span class="badge badge--ok">Grade A</span></td><td><span class="badge badge--ok">Excellent</span></td></tr><tr><td class="col-serial">WWSHFLYV47</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST1000DM010-2EP102</td><td class="score mono">85</td><td><span class="badge badge--ok">Grade B</span></td><td><span class="badge badge--ok">Good</span></td></tr><tr><td class="col-serial">ARE3TCR1</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST1000LM048-2E7172</td><td class="score mono">70</td><td><span class="badge badge--warn">Grade C</span></td><td><span class="badge badge--warn">Fair</span></td></tr><tr><td class="col-serial">Y9HKDQVD</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>MQ01ABD100</td><td class="score mono">50</td><td><span class="badge badge--warn">Grade D</span></td><td><span class="badge badge--warn">Poor</span></td></tr><tr><td class="col-serial">RGANZCL768</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST1000DM010-2EP102</td><td class="score mono">0</td><td><span class="badge badge--bad">Grade F</span></td><td><span class="badge badge--bad">Failed</span></td></tr><tr><td class="col-serial">MJKCMREL03</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST1000DM010-2EP102</td><td class="score mono">0</td><td><span class="badge badge--bad">Grade F</span></td><td><span class="badge badge--bad">Failed</span></td></tr><tr><td class="col-serial">XRS7NKQ7</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST2000DM008-2FR102</td><td class="score mono">—</td><td><span class="badge badge--muted">UNGRADED</span></td><td><span class="badge badge--muted">Ungraded</span></td></tr></tbody>
+                </table>
+            </div><div class="evidence-grid simple-only">
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">NGQ3ARF9</h3>
+                  <p class="evidence-card__sub">ST2000DM008-2FR102 · FW 0001 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--ok">Grade A</span>
+                  <span class="badge badge--ok">Excellent</span>
+                  <span class="badge badge--ok">Certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">100</dd></div>
+                <div><dt>Protocol</dt><dd>ATA</dd></div>
+                <div><dt>Capacity</dt><dd>2.00 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">13500</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Certified because grade A (Excellent) and no critical deductions.</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">WWSHFLYV47</h3>
+                  <p class="evidence-card__sub">ST1000DM010-2EP102 · FW RV01 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--ok">Grade B</span>
+                  <span class="badge badge--ok">Good</span>
+                  <span class="badge badge--ok">Certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">85</dd></div>
+                <div><dt>Protocol</dt><dd>ATA</dd></div>
+                <div><dt>Capacity</dt><dd>1.00 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">8100</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Certified because grade B (Good) and no critical deductions.</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">ARE3TCR1</h3>
+                  <p class="evidence-card__sub">ST1000LM048-2E7172 · FW 0002 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--warn">Grade C</span>
+                  <span class="badge badge--warn">Fair</span>
+                  <span class="badge badge--ok">Certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">70</dd></div>
+                <div><dt>Protocol</dt><dd>ATA</dd></div>
+                <div><dt>Capacity</dt><dd>1.00 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">45000</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Certified because grade C (Fair) and no critical deductions.</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">Y9HKDQVD</h3>
+                  <p class="evidence-card__sub">MQ01ABD100 · FW AX001U · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--warn">Grade D</span>
+                  <span class="badge badge--warn">Poor</span>
+                  <span class="badge badge--bad">Not certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">50</dd></div>
+                <div><dt>Protocol</dt><dd>ATA</dd></div>
+                <div><dt>Capacity</dt><dd>1.00 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">30000</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Not certified because grade is D (Advisory tier; full certification requires A, B, or C).</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">RGANZCL768</h3>
+                  <p class="evidence-card__sub">ST1000DM010-2EP102 · FW RV01 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--bad">Grade F</span>
+                  <span class="badge badge--bad">Failed</span>
+                  <span class="badge badge--bad">Not certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">0</dd></div>
+                <div><dt>Protocol</dt><dd>ATA</dd></div>
+                <div><dt>Capacity</dt><dd>1.00 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">15000</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Not certified because grade is F (certification requires A, B, or C); critical deduction: Failed ATA self-test history (2 recent, 0 older).</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">MJKCMREL03</h3>
+                  <p class="evidence-card__sub">ST1000DM010-2EP102 · FW RV01 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--bad">Grade F</span>
+                  <span class="badge badge--bad">Failed</span>
+                  <span class="badge badge--bad">Not certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">0</dd></div>
+                <div><dt>Protocol</dt><dd>ATA</dd></div>
+                <div><dt>Capacity</dt><dd>1.00 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">8400</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Not certified because grade is F (certification requires A, B, or C); critical deduction: Reallocated sectors.</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">XRS7NKQ7</h3>
+                  <p class="evidence-card__sub">ST2000DM008-2FR102 · FW 0001 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--muted">UNGRADED</span>
+                  <span class="badge badge--muted">Ungraded</span>
+                  <span class="badge badge--muted">Not graded</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">—</dd></div>
+                <div><dt>Protocol</dt><dd>ATA</dd></div>
+                <div><dt>Capacity</dt><dd>2.00 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">13500</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Not graded: SECURITY_LOCKED. Drive requires manual review before disposition.</p>
+              </div>
+              <div class="evidence-rationale"><h4>Ungraded reasons</h4><p>SECURITY_LOCKED</p></div>
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article></div>
+            <div class="table-wrap advanced-only">
+                <table class="device-table device-table--wide">
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Host">Host</th><th class="col-head" scope="col" title="Scanned at">Scanned at</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="Non-medium errors">Non-medium errors</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="Grading status">Grading status</th><th class="col-head" scope="col" title="Ungraded reasons">Ungraded reasons</th><th class="col-head" scope="col" title="Warning flags">Warning flags</th><th class="col-head" scope="col" title="Fail reason codes">Fail reason codes</th><th class="col-head" scope="col" title="Age-cap grade">Age-cap grade</th><th class="col-head" scope="col" title="Defect grade">Defect grade</th><th class="col-head" scope="col" title="Multi-factor applied">Multi-factor applied</th><th class="col-head" scope="col" title="Revert eligible">Revert eligible</th><th class="col-head" scope="col" title="Revert certified">Revert certified</th><th class="col-head" scope="col" title="Recommended use">Recommended use</th><th class="col-head" scope="col" title="Drive class">Drive class</th><th class="col-head" scope="col" title="Scan timestamp">Scan timestamp</th><th class="col-head" scope="col" title="Revert standard version">Revert standard version</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Certification rationale">Certification rationale</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">NGQ3ARF9</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST2000DM008-2FR102</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">ATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">SATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.00 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">0001</span></td><td class="cell-stat"><span class="cell-stat__clamp">3.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">7200</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">13500</span></td><td class="cell-stat"><span class="cell-stat__clamp">25</span></td><td class="cell-stat"><span class="cell-stat__clamp">100</span></td><td class="cell-stat"><span class="cell-stat__clamp">50</span></td><td class="cell-stat"><span class="cell-stat__clamp">35</span></td><td class="cell-stat"><span class="cell-stat__clamp">45</span></td><td class="cell-stat"><span class="cell-stat__clamp">60</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">100</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">Excellent</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">true</span></td><td class="cell-stat"><span class="cell-stat__clamp">Primary/Production</span></td><td class="cell-stat"><span class="cell-stat__clamp">consumer</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">Certified because grade A (Excellent) and no critical deductions.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">WWSHFLYV47</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST1000DM010-2EP102</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">ATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">SATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.00 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">RV01</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">7200</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">8100</span></td><td class="cell-stat"><span class="cell-stat__clamp">120</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">5</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">85</span></td><td class="cell-stat"><span class="cell-stat__clamp">B</span></td><td class="cell-stat"><span class="cell-stat__clamp">Good</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">B</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">true</span></td><td class="cell-stat"><span class="cell-stat__clamp">General purpose</span></td><td class="cell-stat"><span class="cell-stat__clamp">consumer</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">Certified because grade B (Good) and no critical deductions.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">ARE3TCR1</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST1000LM048-2E7172</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">ATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">SATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.00 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">0002</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">5400</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">45000</span></td><td class="cell-stat"><span class="cell-stat__clamp">1200</span></td><td class="cell-stat"><span class="cell-stat__clamp">100000</span></td><td class="cell-stat"><span class="cell-stat__clamp">1500</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">48</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">70</span></td><td class="cell-stat"><span class="cell-stat__clamp">C</span></td><td class="cell-stat"><span class="cell-stat__clamp">Fair</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">B</span></td><td class="cell-stat"><span class="cell-stat__clamp">C</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">true</span></td><td class="cell-stat"><span class="cell-stat__clamp">Non-critical/Archival</span></td><td class="cell-stat"><span class="cell-stat__clamp">consumer</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">Certified because grade C (Fair) and no critical deductions.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">Y9HKDQVD</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">MQ01ABD100</span></td><td class="cell-stat"><span class="cell-stat__clamp">TOSHIBA</span></td><td class="cell-stat"><span class="cell-stat__clamp">ATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">SATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.00 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">AX001U</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">5400</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">30000</span></td><td class="cell-stat"><span class="cell-stat__clamp">5000</span></td><td class="cell-stat"><span class="cell-stat__clamp">250000</span></td><td class="cell-stat"><span class="cell-stat__clamp">8500</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">56</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">50</span></td><td class="cell-stat"><span class="cell-stat__clamp">D</span></td><td class="cell-stat"><span class="cell-stat__clamp">Poor</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">B</span></td><td class="cell-stat"><span class="cell-stat__clamp">D</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">Advisory</span></td><td class="cell-stat"><span class="cell-stat__clamp">Non-critical/Archival (Advisory)</span></td><td class="cell-stat"><span class="cell-stat__clamp">consumer</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">Not certified because grade is D (Advisory tier; full certification requires A, B, or C).</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">RGANZCL768</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST1000DM010-2EP102</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">ATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">SATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.00 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">RV01</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">7200</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">15000</span></td><td class="cell-stat"><span class="cell-stat__clamp">120</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">F</span></td><td class="cell-stat"><span class="cell-stat__clamp">Failed</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">F-SELF-TEST-HISTORY</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">F</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">false</span></td><td class="cell-stat"><span class="cell-stat__clamp">Do not reuse - destroy/recycle</span></td><td class="cell-stat"><span class="cell-stat__clamp">consumer</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">Not certified because grade is F (certification requires A, B, or C); critical deduction: Failed ATA self-test history (2 recent, 0 older).</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">MJKCMREL03</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST1000DM010-2EP102</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">ATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">SATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.00 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">RV01</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">7200</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">8400</span></td><td class="cell-stat"><span class="cell-stat__clamp">120</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">150</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">F</span></td><td class="cell-stat"><span class="cell-stat__clamp">Failed</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">F-REALLOCATED-SECTORS</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">F</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">false</span></td><td class="cell-stat"><span class="cell-stat__clamp">Do not reuse - destroy/recycle</span></td><td class="cell-stat"><span class="cell-stat__clamp">consumer</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">Not certified because grade is F (certification requires A, B, or C); critical deduction: Reallocated sectors.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">XRS7NKQ7</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST2000DM008-2FR102</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">ATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">SATA</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.00 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">0001</span></td><td class="cell-stat"><span class="cell-stat__clamp">3.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">7200</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">13500</span></td><td class="cell-stat"><span class="cell-stat__clamp">25</span></td><td class="cell-stat"><span class="cell-stat__clamp">100</span></td><td class="cell-stat"><span class="cell-stat__clamp">50</span></td><td class="cell-stat"><span class="cell-stat__clamp">35</span></td><td class="cell-stat"><span class="cell-stat__clamp">45</span></td><td class="cell-stat"><span class="cell-stat__clamp">60</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">UNGRADED</span></td><td class="cell-stat"><span class="cell-stat__clamp">Ungraded</span></td><td class="cell-stat"><span class="cell-stat__clamp">UNGRADED</span></td><td class="cell-stat"><span class="cell-stat__clamp">SECURITY_LOCKED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">SECURITY_LOCKED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">false</span></td><td class="cell-stat"><span class="cell-stat__clamp">Manual review required</span></td><td class="cell-stat"><span class="cell-stat__clamp">consumer</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">Not graded: SECURITY_LOCKED. Drive requires manual review before disposition.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr></tbody>
+                </table>
+
+            </div>
+        </section>
+
+        <section class="tab-panel" data-panel="sas-hdd" aria-labelledby="hdr-sas-hdd">
+            <h2 class="cat-head" id="hdr-sas-hdd">SAS HDD</h2>
+            <p class="cat-meta">7 drive(s) · serial-keyed summary · per-drive evidence below</p>
+
+            <div class="table-wrap simple-only">
+                <table class="device-table device-table--simple">
+                    <thead>
+                        <tr>
+                            <th>Serial</th><th>Host</th><th>Scanned at</th>
+                            <th>Model</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td class="col-serial">T5F7VXQ3</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST600MM0026</td><td class="score mono">100</td><td><span class="badge badge--ok">Grade A</span></td><td><span class="badge badge--ok">Excellent</span></td></tr><tr><td class="col-serial">GGBLB65H97</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>HUC101212CSS600</td><td class="score mono">85</td><td><span class="badge badge--ok">Grade B</span></td><td><span class="badge badge--ok">Good</span></td></tr><tr><td class="col-serial">ANKHCRDAM6</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST1200MM0009</td><td class="score mono">70</td><td><span class="badge badge--warn">Grade C</span></td><td><span class="badge badge--warn">Fair</span></td></tr><tr><td class="col-serial">7VTD079Y</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST900MM0006</td><td class="score mono">70</td><td><span class="badge badge--warn">Grade C</span></td><td><span class="badge badge--warn">Fair</span></td></tr><tr><td class="col-serial">MBDXWPSA43</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST1200MM0009</td><td class="score mono">50</td><td><span class="badge badge--warn">Grade D</span></td><td><span class="badge badge--warn">Poor</span></td></tr><tr><td class="col-serial">GXSHFRARQ5</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST1200MM0009</td><td class="score mono">0</td><td><span class="badge badge--bad">Grade F</span></td><td><span class="badge badge--bad">Failed</span></td></tr><tr><td class="col-serial">GML2SE1T</td><td>bench-02</td><td class="mono">2026-09-25 15:39 UTC</td><td>ST1800MM0129</td><td class="score mono">0</td><td><span class="badge badge--bad">Grade F</span></td><td><span class="badge badge--bad">Failed</span></td></tr></tbody>
+                </table>
+            </div><div class="evidence-grid simple-only">
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">T5F7VXQ3</h3>
+                  <p class="evidence-card__sub">ST600MM0026 · FW 0004 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--ok">Grade A</span>
+                  <span class="badge badge--ok">Excellent</span>
+                  <span class="badge badge--ok">Certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">100</dd></div>
+                <div><dt>Protocol</dt><dd>SCSI</dd></div>
+                <div><dt>Capacity</dt><dd>600 GB</dd></div>
+                <div><dt>POH</dt><dd class="mono">25000</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Certified because grade A (Excellent) and no critical deductions.</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">GGBLB65H97</h3>
+                  <p class="evidence-card__sub">HUC101212CSS600 · FW RS20 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--ok">Grade B</span>
+                  <span class="badge badge--ok">Good</span>
+                  <span class="badge badge--ok">Certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">85</dd></div>
+                <div><dt>Protocol</dt><dd>SCSI</dd></div>
+                <div><dt>Capacity</dt><dd>1.20 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">45000</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Certified because grade B (Good) and no critical deductions.</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">ANKHCRDAM6</h3>
+                  <p class="evidence-card__sub">ST1200MM0009 · FW RS20 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--warn">Grade C</span>
+                  <span class="badge badge--warn">Fair</span>
+                  <span class="badge badge--ok">Certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">70</dd></div>
+                <div><dt>Protocol</dt><dd>SCSI</dd></div>
+                <div><dt>Capacity</dt><dd>1.20 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">3000</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Certified because grade C (Fair) and no critical deductions.</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">7VTD079Y</h3>
+                  <p class="evidence-card__sub">ST900MM0006 · FW RS20 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--warn">Grade C</span>
+                  <span class="badge badge--warn">Fair</span>
+                  <span class="badge badge--ok">Certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">70</dd></div>
+                <div><dt>Protocol</dt><dd>SCSI</dd></div>
+                <div><dt>Capacity</dt><dd>1.20 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">3192</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Certified because grade C (Fair) and no critical deductions.</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">MBDXWPSA43</h3>
+                  <p class="evidence-card__sub">ST1200MM0009 · FW RS20 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--warn">Grade D</span>
+                  <span class="badge badge--warn">Poor</span>
+                  <span class="badge badge--bad">Not certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">50</dd></div>
+                <div><dt>Protocol</dt><dd>SCSI</dd></div>
+                <div><dt>Capacity</dt><dd>1.20 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">9000</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Not certified because grade is D (Advisory tier; full certification requires A, B, or C); failed self-test: Failed SCSI self-test history (1 recent, 0 older).</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">GXSHFRARQ5</h3>
+                  <p class="evidence-card__sub">ST1200MM0009 · FW RS20 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--bad">Grade F</span>
+                  <span class="badge badge--bad">Failed</span>
+                  <span class="badge badge--bad">Not certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">0</dd></div>
+                <div><dt>Protocol</dt><dd>SCSI</dd></div>
+                <div><dt>Capacity</dt><dd>1.20 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">3000</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Not certified because grade is F (certification requires A, B, or C); critical deduction: Uncorrected read/write errors.</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article>
+            <article class="evidence-card">
+              <header class="evidence-card__head">
+                <div>
+                  <h3 class="evidence-card__title">GML2SE1T</h3>
+                  <p class="evidence-card__sub">ST1800MM0129 · FW RS20 · Host bench-02</p>
+                </div>
+                <div class="evidence-card__badges">
+                  <span class="badge badge--bad">Grade F</span>
+                  <span class="badge badge--bad">Failed</span>
+                  <span class="badge badge--bad">Not certified</span>
+                </div>
+              </header>
+              <dl class="evidence-metrics">
+                <div><dt>Score</dt><dd class="mono">0</dd></div>
+                <div><dt>Protocol</dt><dd>SCSI</dd></div>
+                <div><dt>Capacity</dt><dd>1.20 TB</dd></div>
+                <div><dt>POH</dt><dd class="mono">39500</dd></div>
+              </dl>
+              <div class="evidence-rationale">
+                <h4>Certification rationale</h4>
+                <p>Not certified because grade is F (certification requires A, B, or C); critical deduction: SMART status failed; critical deduction: Grown defects; failed self-test: Failed SCSI self-test history (1 recent, 0 older).</p>
+              </div>
+
+              <div class="evidence-deductions">
+                <h4>Grading deductions</h4>
+                <p class="evidence-empty">No score deductions — metrics within policy.</p>
+              </div>
+            </article></div>
+            <div class="table-wrap advanced-only">
+                <table class="device-table device-table--wide">
+                    <thead><tr><th class="col-head col-head--key" scope="col" title="Serial">Serial</th><th class="col-head" scope="col" title="Host">Host</th><th class="col-head" scope="col" title="Scanned at">Scanned at</th><th class="col-head" scope="col" title="Model">Model</th><th class="col-head" scope="col" title="Vendor">Vendor</th><th class="col-head" scope="col" title="Protocol">Protocol</th><th class="col-head" scope="col" title="Interface">Interface</th><th class="col-head" scope="col" title="Media">Media</th><th class="col-head" scope="col" title="Capacity">Capacity</th><th class="col-head" scope="col" title="Firmware">Firmware</th><th class="col-head" scope="col" title="Form factor">Form factor</th><th class="col-head" scope="col" title="Rotation rate">Rotation rate</th><th class="col-head" scope="col" title="SMART status">SMART status</th><th class="col-head" scope="col" title="Power-on hours">Power-on hours</th><th class="col-head" scope="col" title="Power cycles">Power cycles</th><th class="col-head" scope="col" title="Load cycles">Load cycles</th><th class="col-head" scope="col" title="Start/stop count">Start/stop count</th><th class="col-head" scope="col" title="Temperature °C">Temp °C</th><th class="col-head" scope="col" title="Highest temp °C">Peak temp °C</th><th class="col-head" scope="col" title="Max rated temp °C">Max rated °C</th><th class="col-head" scope="col" title="Reallocated sectors">Reallocated sectors</th><th class="col-head" scope="col" title="Pending sectors">Pending sectors</th><th class="col-head" scope="col" title="Uncorrectable errors">Uncorrectable errors</th><th class="col-head" scope="col" title="Offline uncorrectable">Offline uncorrectable</th><th class="col-head" scope="col" title="Non-medium errors">Non-medium errors</th><th class="col-head" scope="col" title="Health score">Health score</th><th class="col-head" scope="col" title="Grade">Grade</th><th class="col-head" scope="col" title="Health status">Health status</th><th class="col-head" scope="col" title="Grading status">Grading status</th><th class="col-head" scope="col" title="Ungraded reasons">Ungraded reasons</th><th class="col-head" scope="col" title="Warning flags">Warning flags</th><th class="col-head" scope="col" title="Fail reason codes">Fail reason codes</th><th class="col-head" scope="col" title="Age-cap grade">Age-cap grade</th><th class="col-head" scope="col" title="Defect grade">Defect grade</th><th class="col-head" scope="col" title="Multi-factor applied">Multi-factor applied</th><th class="col-head" scope="col" title="Revert eligible">Revert eligible</th><th class="col-head" scope="col" title="Revert certified">Revert certified</th><th class="col-head" scope="col" title="Recommended use">Recommended use</th><th class="col-head" scope="col" title="Drive class">Drive class</th><th class="col-head" scope="col" title="Scan timestamp">Scan timestamp</th><th class="col-head" scope="col" title="Revert standard version">Revert standard version</th><th class="col-head" scope="col" title="CDI certified">CDI certified</th><th class="col-head" scope="col" title="Certification rationale">Certification rationale</th><th class="col-head" scope="col" title="Deductions">Deductions</th></tr></thead>
+                    <tbody><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">T5F7VXQ3</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST600MM0026</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">SCSI</span></td><td class="cell-stat"><span class="cell-stat__clamp">SAS</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">600 GB</span></td><td class="cell-stat"><span class="cell-stat__clamp">0004</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">10000</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">25000</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">100</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">Excellent</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">true</span></td><td class="cell-stat"><span class="cell-stat__clamp">Primary/Production</span></td><td class="cell-stat"><span class="cell-stat__clamp">enterprise</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">Certified because grade A (Excellent) and no critical deductions.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">GGBLB65H97</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">HUC101212CSS600</span></td><td class="cell-stat"><span class="cell-stat__clamp">HGST</span></td><td class="cell-stat"><span class="cell-stat__clamp">SCSI</span></td><td class="cell-stat"><span class="cell-stat__clamp">SAS</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.20 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">RS20</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">10000</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">45000</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">85</span></td><td class="cell-stat"><span class="cell-stat__clamp">B</span></td><td class="cell-stat"><span class="cell-stat__clamp">Good</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">B</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">true</span></td><td class="cell-stat"><span class="cell-stat__clamp">General purpose</span></td><td class="cell-stat"><span class="cell-stat__clamp">enterprise</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">Certified because grade B (Good) and no critical deductions.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">ANKHCRDAM6</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST1200MM0009</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">SCSI</span></td><td class="cell-stat"><span class="cell-stat__clamp">SAS</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.20 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">RS20</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">10000</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">3000</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">30</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">70</span></td><td class="cell-stat"><span class="cell-stat__clamp">C</span></td><td class="cell-stat"><span class="cell-stat__clamp">Fair</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">C</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">true</span></td><td class="cell-stat"><span class="cell-stat__clamp">Non-critical/Archival</span></td><td class="cell-stat"><span class="cell-stat__clamp">enterprise</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">Certified because grade C (Fair) and no critical deductions.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">7VTD079Y</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST900MM0006</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">SCSI</span></td><td class="cell-stat"><span class="cell-stat__clamp">SAS</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.20 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">RS20</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">10000</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">3192</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">13</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">6</span></td><td class="cell-stat"><span class="cell-stat__clamp">6</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">70</span></td><td class="cell-stat"><span class="cell-stat__clamp">C</span></td><td class="cell-stat"><span class="cell-stat__clamp">Fair</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">C</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">true</span></td><td class="cell-stat"><span class="cell-stat__clamp">Non-critical/Archival</span></td><td class="cell-stat"><span class="cell-stat__clamp">enterprise</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">Certified because grade C (Fair) and no critical deductions.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">MBDXWPSA43</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST1200MM0009</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">SCSI</span></td><td class="cell-stat"><span class="cell-stat__clamp">SAS</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.20 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">RS20</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">10000</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">9000</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">50</span></td><td class="cell-stat"><span class="cell-stat__clamp">D</span></td><td class="cell-stat"><span class="cell-stat__clamp">Poor</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">D</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">Advisory</span></td><td class="cell-stat"><span class="cell-stat__clamp">Non-critical/Archival (Advisory)</span></td><td class="cell-stat"><span class="cell-stat__clamp">enterprise</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">Not certified because grade is D (Advisory tier; full certification requires A, B, or C); failed self-test: Failed SCSI self-test history (1 recent, 0 older).</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">GXSHFRARQ5</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST1200MM0009</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">SCSI</span></td><td class="cell-stat"><span class="cell-stat__clamp">SAS</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.20 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">RS20</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">10000</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">Yes</span></td><td class="cell-stat"><span class="cell-stat__clamp">3000</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">150</span></td><td class="cell-stat"><span class="cell-stat__clamp">150</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">F</span></td><td class="cell-stat"><span class="cell-stat__clamp">Failed</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">F-UNCORRECTED-ERRORS</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">F</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">false</span></td><td class="cell-stat"><span class="cell-stat__clamp">Do not reuse - destroy/recycle</span></td><td class="cell-stat"><span class="cell-stat__clamp">enterprise</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">Not certified because grade is F (certification requires A, B, or C); critical deduction: Uncorrected read/write errors.</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr><tr><td class="cell-stat col-serial"><span class="cell-stat__clamp">GML2SE1T</span></td><td class="cell-stat"><span class="cell-stat__clamp">bench-02</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25 15:39 UTC</span></td><td class="cell-stat"><span class="cell-stat__clamp">ST1800MM0129</span></td><td class="cell-stat"><span class="cell-stat__clamp">SEAGATE</span></td><td class="cell-stat"><span class="cell-stat__clamp">SCSI</span></td><td class="cell-stat"><span class="cell-stat__clamp">SAS</span></td><td class="cell-stat"><span class="cell-stat__clamp">HDD</span></td><td class="cell-stat"><span class="cell-stat__clamp">1.20 TB</span></td><td class="cell-stat"><span class="cell-stat__clamp">RS20</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.5 inches</span></td><td class="cell-stat"><span class="cell-stat__clamp">10000</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">39500</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">132</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">53</span></td><td class="cell-stat"><span class="cell-stat__clamp">53</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">0</span></td><td class="cell-stat"><span class="cell-stat__clamp">F</span></td><td class="cell-stat"><span class="cell-stat__clamp">Failed</span></td><td class="cell-stat"><span class="cell-stat__clamp">GRADED</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td><td class="cell-stat"><span class="cell-stat__clamp">F-SMART-FAIL | F-GROWN-DEFECTS</span></td><td class="cell-stat"><span class="cell-stat__clamp">A</span></td><td class="cell-stat"><span class="cell-stat__clamp">F</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat cell-stat--is-bool"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">false</span></td><td class="cell-stat"><span class="cell-stat__clamp">Do not reuse - destroy/recycle</span></td><td class="cell-stat"><span class="cell-stat__clamp">enterprise</span></td><td class="cell-stat"><span class="cell-stat__clamp">2026-09-25T15:39:00+00:00</span></td><td class="cell-stat"><span class="cell-stat__clamp">2.0</span></td><td class="cell-stat"><span class="cell-stat__clamp">No</span></td><td class="cell-stat"><span class="cell-stat__clamp">Not certified because grade is F (certification requires A, B, or C); critical deduction: SMART status failed; critical deduction: Grown defects; failed self-test: Failed SCSI self-test history (1 recent, 0 older).</span></td><td class="cell-stat cell-stat--is-missing"><span class="cell-stat__clamp">—</span></td></tr></tbody>
+                </table>
+
+            </div>
+        </section>
+
+        <section class="tab-panel" data-panel="sata-ssd" aria-labelledby="hdr-sata-ssd">
+            <h2 class="cat-head" id="hdr-sata-ssd">SATA SSD</h2>
+            <p class="cat-meta">0 drive(s) · serial-keyed summary · per-drive evidence below</p>
+            <p class="empty-cat">No devices in this category.</p>
+        </section>
+
+        <section class="tab-panel" data-panel="sas-ssd" aria-labelledby="hdr-sas-ssd">
+            <h2 class="cat-head" id="hdr-sas-ssd">SAS SSD</h2>
+            <p class="cat-meta">0 drive(s) · serial-keyed summary · per-drive evidence below</p>
+            <p class="empty-cat">No devices in this category.</p>
+        </section>
+
+        <section class="tab-panel" data-panel="nvme-ssd" aria-labelledby="hdr-nvme-ssd">
+            <h2 class="cat-head" id="hdr-nvme-ssd">NVMe SSD</h2>
+            <p class="cat-meta">0 drive(s) · serial-keyed summary · per-drive evidence below</p>
+            <p class="empty-cat">No devices in this category.</p>
+        </section>
+
+        <footer class="page-foot">
+            <p>Generated by CDI Health Scanner</p>
+            <p>© 2026 Circular Drive Initiative</p>
+        </footer>
+    </main>
+    <script>
+    (function() {
+      function setView(mode) {
+        if (mode !== "simple" && mode !== "advanced") mode = "simple";
+        document.body.setAttribute("data-view", mode);
+        document.querySelectorAll(".mode-btn").forEach(function(b) {
+          b.classList.toggle("active", b.getAttribute("data-view") === mode);
+        });
+        try { localStorage.setItem("cdi-report-view", mode); } catch (e) {}
+      }
+
+      document.querySelectorAll(".mode-btn").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+          setView(btn.getAttribute("data-view"));
+        });
+      });
+
+      try {
+        var savedView = localStorage.getItem("cdi-report-view");
+        if (savedView === "simple" || savedView === "advanced") setView(savedView);
+      } catch (e) {}
+
+      var tabs = document.querySelectorAll(".nav-tabs .tab-btn");
+      var panels = document.querySelectorAll(".tab-panel");
+
+      function show(slug) {
+        tabs.forEach(function(t) {
+          t.classList.toggle("active", t.getAttribute("data-tab") === slug);
+        });
+        panels.forEach(function(p) {
+          p.classList.toggle("active", p.getAttribute("data-panel") === slug);
+        });
+        try { localStorage.setItem("cdi-report-tab", slug); } catch (e) {}
+      }
+
+      tabs.forEach(function(btn) {
+        btn.addEventListener("click", function(e) {
+          e.preventDefault();
+          show(btn.getAttribute("data-tab"));
+        });
+      });
+
+      var initial = "sata-hdd";
+      try {
+        var savedTab = localStorage.getItem("cdi-report-tab");
+        if (savedTab) initial = savedTab;
+      } catch (e) {}
+
+      if (!document.querySelector('.tab-panel[data-panel="' + initial + '"]')) {
+        initial = "sata-hdd";
+      }
+
+      show(initial);
+
+      (function cdiJsonModal() {
+        var modal = document.getElementById("cdi-json-modal");
+        if (!modal) return;
+        var pre = modal.querySelector(".cdi-json-modal__pre");
+        var titleEl = modal.querySelector(".cdi-json-modal__title");
+        function openModal(jsonId, title) {
+          var el = document.getElementById(jsonId);
+          if (!el) return;
+          try {
+            var data = JSON.parse(el.textContent);
+            pre.textContent = JSON.stringify(data, null, 2);
+          } catch (err) {
+            pre.textContent = el.textContent;
+          }
+          titleEl.textContent = title || "Log";
+          modal.hidden = false;
+          document.body.style.overflow = "hidden";
+        }
+        function closeModal() {
+          modal.hidden = true;
+          document.body.style.overflow = "";
+        }
+        document.addEventListener("click", function(e) {
+          var btn = e.target.closest(".btn-json-log");
+          if (btn) {
+            e.preventDefault();
+            openModal(btn.getAttribute("data-json-id"), btn.getAttribute("data-title"));
+            return;
+          }
+          if (e.target.getAttribute("data-cdi-json-close")) closeModal();
+        });
+        document.addEventListener("keydown", function(e) {
+          if (e.key === "Escape" && !modal.hidden) closeModal();
+        });
+      })();
+    })();
+    </script>
+</body>
+</html>
