@@ -231,7 +231,7 @@ Optional env files:
 
 ```bash
 sudo install -m 600 -o root -g root /opt/cdi-grading-tool/deploy/systemd/cdi-health-api.env.example /etc/default/cdi-health-api
-sudo cp /opt/cdi-grading-tool/deploy/systemd/cdi-health-dashboard.env.example /etc/default/cdi-health-dashboard
+sudo install -m 600 -o root -g root /opt/cdi-grading-tool/deploy/systemd/cdi-health-dashboard.env.example /etc/default/cdi-health-dashboard
 ```
 
 Then enable and start:

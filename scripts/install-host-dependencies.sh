@@ -115,7 +115,9 @@ install_nvme_cli_from_source() {
   log "Building nvme-cli ${NVME_CLI_SOURCE_TAG} from source (OCP plugin enabled)"
   local build_root
   build_root="$(mktemp -d /tmp/cdi-nvme-cli.XXXXXX)"
-  trap 'rm -rf "$build_root"' RETURN
+  # Clear the trap once it has run: a RETURN trap stays set and would fire
+  # again when the caller returns, where this local no longer exists (set -u).
+  trap 'rm -rf "$build_root"; trap - RETURN' RETURN
 
   install_apt_packages \
     build-essential meson ninja-build pkg-config git \
@@ -189,7 +191,9 @@ install_openseachest_from_seagate() {
   arch_deb="$(detect_arch_deb)"
   arch_portable="$(detect_arch_portable)"
   tmpdir="$(mktemp -d /tmp/cdi-openseachest.XXXXXX)"
-  trap 'rm -rf "$tmpdir"' RETURN
+  # Clear the trap once it has run: a RETURN trap stays set and would fire
+  # again when the caller returns, where this local no longer exists (set -u).
+  trap 'rm -rf "$tmpdir"; trap - RETURN' RETURN
 
   install_apt_packages curl ca-certificates xz-utils unzip
 
