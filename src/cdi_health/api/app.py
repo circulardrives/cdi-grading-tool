@@ -709,10 +709,10 @@ def create_app() -> FastAPI:
         store = app.state.runtime.machine_store
         if updates.get("address"):
             current = _get_machine_or_404(machine_id)
-            token = updates.get("api_token")
-            if token is None:
-                token = store.get_api_token(machine_id)
-            _refuse_self_address(updates.get("name") or current["name"], updates["address"], token)
+            # Only a token supplied with this request may go to the new
+            # address. The stored one belongs to the old address, and
+            # /health answers the instance id without a token anyway.
+            _refuse_self_address(updates.get("name") or current["name"], updates["address"], updates.get("api_token"))
         machine = store.update_machine(machine_id, updates)
         if not machine:
             raise HTTPException(status_code=404, detail="Machine not found")

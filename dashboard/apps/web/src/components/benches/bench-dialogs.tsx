@@ -373,7 +373,13 @@ function EditBenchForm({
   const [saving, setSaving] = useState(false)
   const notesId = useId()
 
-  const wantsNewToken = hasToken ? tokenChoice === "replace" : usesToken
+  // The saved token was given for the old address and is never sent to a
+  // different one (the API drops it), so "keep" is off the table.
+  const addressChanged = benchAddress({ address }) !== benchAddress(machine)
+  const effectiveChoice: TokenChoice =
+    addressChanged && tokenChoice === "keep" ? "replace" : tokenChoice
+
+  const wantsNewToken = hasToken ? effectiveChoice === "replace" : usesToken
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -394,7 +400,7 @@ function EditBenchForm({
     }
     if (wantsNewToken) {
       payload.api_token = trimmedToken
-    } else if (hasToken && tokenChoice === "clear") {
+    } else if (hasToken && effectiveChoice === "clear") {
       payload.api_token = ""
     }
 
@@ -477,22 +483,27 @@ function EditBenchForm({
               <CheckboxRow
                 type="radio"
                 name={`token-${machine.id}`}
-                checked={tokenChoice === "keep"}
+                checked={effectiveChoice === "keep"}
                 onChange={() => setTokenChoice("keep")}
-                disabled={saving}
+                description={
+                  addressChanged
+                    ? "Not for a new address: the saved token belongs to the old one."
+                    : undefined
+                }
+                disabled={saving || addressChanged}
               >
                 Keep the saved token
               </CheckboxRow>
               <CheckboxRow
                 type="radio"
                 name={`token-${machine.id}`}
-                checked={tokenChoice === "replace"}
+                checked={effectiveChoice === "replace"}
                 onChange={() => setTokenChoice("replace")}
                 disabled={saving}
               >
                 Replace it with a new token
               </CheckboxRow>
-              {tokenChoice === "replace" ? (
+              {effectiveChoice === "replace" ? (
                 <TokenInput
                   label="New token"
                   autoFocus={machine.status === "auth_failed"}
@@ -509,7 +520,7 @@ function EditBenchForm({
               <CheckboxRow
                 type="radio"
                 name={`token-${machine.id}`}
-                checked={tokenChoice === "clear"}
+                checked={effectiveChoice === "clear"}
                 onChange={() => setTokenChoice("clear")}
                 description="For benches that no longer use one."
                 disabled={saving}

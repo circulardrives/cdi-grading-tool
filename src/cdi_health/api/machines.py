@@ -255,6 +255,16 @@ class MachineStore:
             if entry.get("address") != old_address:
                 # A new address may be a different bench; re-learn it on the next check.
                 entry.pop("remote_instance_id", None)
+            if _bare_address(entry.get("address")) != _bare_address(old_address):
+                # The stored token was given for the old address. Never send
+                # it to another one: the caller must supply the new bench's
+                # token. What was learned about the old bench goes with it.
+                entry.pop(TOKEN_FIELD, None)
+                entry.update(remote_hostname=None, remote_version=None, remote_auth=None)
+                if payload.get("status") is None:
+                    entry["status"] = "unknown"
+                entry.update(last_scan_at=None, last_scan_status=None, last_scan_summary=None)
+                self._latest_scans.pop(machine_id, None)
 
             # Omitted (or null) = unchanged; "" clears; any other string replaces.
             if payload.get(TOKEN_FIELD) is not None:
