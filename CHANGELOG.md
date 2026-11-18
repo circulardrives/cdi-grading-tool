@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Bench tokens stay with their address:** editing a bench's address no longer sends its saved token to the new address (during the edit, or on later checks and scans). The token is dropped unless a new one is supplied, and the old bench's reported name and cached scan are forgotten. The dashboard's edit dialog asks for the new token.
+- **Discovery probes** refuse redirects, ignore proxy environment variables and read at most 64 KiB. A host in a scanned subnet could previously redirect the probe (and the probe token) to any URL and have its JSON returned.
+- **Example token refused on the LAN:** the API will not bind a non-loopback address with `CDI_HEALTH_API_TOKEN=replace-with-strong-token` (the value in the example env files) or a blank token.
+- **CSV exports** prefix cells that start with `=`, `+`, `-`, `@`, tab or CR with an apostrophe, so drive or bench strings are never run as spreadsheet formulas.
+- **API reports:** `output_file` must end in the requested `format`'s extension (a CSV saved as `.html` was served as HTML), and reports requested in the same second can no longer share a file.
+- **Token files:** the API token file is installed mode 600 (#163); `docker-up.sh` keeps `deploy/docker/.env` at 600; the dashboard's systemd env file is installed 600.
+- **Docs:** CDI Health is not published on PyPI. The README no longer says `pip install cdi-health`, a name this project does not own.
+
+### Fixed
+- **Reports show deductions again:** every HTML evidence card said "No score deductions — metrics within policy" and the CSV Deductions column was "—", including for grade F drives (regression in 0.12.0).
+- **PDF reports contain the grades:** PDFs rendered only the wide data table, cut off after four columns. They now show the score/grade/status table and each drive's evidence card. Empty categories no longer take a page each.
+- **UNGRADED drives never show a grade:** `scan --explain` printed "Grade A, Score 100, Certified: Yes" for a drive whose SMART data could not be read; JSON/YAML/API records kept `certification: "true"` and a `grading_explanation` with a grade.
+- **NVMe temperature:** a drive reporting only WCTEMP (or only CCTEMP) had the missing limit filled in from the 55/60 °C HDD fallback and could be graded F below its own warning threshold. NVMe never uses that fallback now, and its thresholds are inclusive (≥ WCTEMP warns, ≥ CCTEMP fails), as `docs/NVME_HEALTH_POLICY.md` states.
+- **Self-test recency past 65,535 power-on hours:** ATA/SCSI self-test logs store the hour in 16 bits, so on older drives every failure looked old and was under-penalised (`abcdf`).
+- **NVMe failed self-test count** used result 1 (aborted) instead of 5–7 (failed); under `binary` an aborted test graded the drive F.
+- **NVMe readiness (#162):** NVMe drives are no longer sent a SCSI TEST UNIT READY through sg3_utils' translation layer, which some firmware rejects and logs as errors. Readiness is the controller state in `/sys/class/nvme/<controller>/state`.
+- **SAS identity:** vendor, model and firmware were "Not Reported" for SAS drives scanned with smartctl 7.2 (Ubuntu 22.04).
+- **Threshold overrides:** a partial band table (e.g. `reallocated_sectors_bands: {D: 20}`) is rejected when it no longer runs in order once merged with the defaults, instead of silently grading with a mixed table. `nvme.endurance_exceeded_grade` is validated at load.
+- **CLI:** `scan --device /dev/nvme12` no longer returns `/dev/nvme1`; `selftest --abort` / `--status` without `--device` exit 2 instead of starting a self-test on every drive.
+- **#167 follow-ups:** `capacity` is filled in `scan -o csv` and the drive CSV export; the Docker API image can make PDF reports (new `pdf` extra; image is ~120 MB larger); reports and the CSV `bench` column name a bench added by address by its hostname.
+- **Dashboard:** "Scan all benches" also scans the drives on the bench the dashboard runs on.
+- **Docker:** demo mode ("Use mock data") works in the Docker stack (the sample-drive path is allowed in the API image).
+- **Host dependency installer:** `install-host-dependencies.sh` no longer aborts with "unbound variable" after installing OpenSeaChest or building nvme-cli.
+- **Dashboard systemd env example** uses the variable names the proxy reads (`VITE_CDI_API_PROXY_TARGET`, `CDI_HEALTH_API_TOKEN`).
+
+### Added
+- **Static public demo** of the dashboard with sample drives (#169).
+
+### Changed
+- Bun 1.4.4 for the dashboard (CI, `packageManager`, Docker builder).
+
 ## [0.13.1] - 2026-09-26
 
 ### Fixed
