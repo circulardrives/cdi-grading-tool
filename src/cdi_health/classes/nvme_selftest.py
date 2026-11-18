@@ -20,7 +20,8 @@
 """
 NVMe Self-Test Support
 
-Implements NVMe Device Self-Test functionality per NVMe Base Specification 2.3.
+Implements NVMe Device Self-Test functionality per NVMe Base Specification 2.4
+(§5.2.13.1.7, Figures 218-219).
 Supports short and extended self-tests via nvme-cli.
 """
 
@@ -108,9 +109,16 @@ RESULT_STRINGS = {
 # Self-test Code (entry byte 0 bits 7:4, and current operation)
 CODE_SHORT = 0x1
 CODE_EXTENDED = 0x2
+# Host-Initiated Refresh is a device self-test operation (NVMe Base 2.3+, §8.1.13).
+CODE_REFRESH = 0x3
 CODE_VENDOR = 0xE
-SELF_TEST_CODE_STRINGS = {CODE_SHORT: "Short", CODE_EXTENDED: "Extended", CODE_VENDOR: "Vendor specific"}
-IN_PROGRESS_OPERATIONS = frozenset({CODE_SHORT, CODE_EXTENDED, CODE_VENDOR})
+SELF_TEST_CODE_STRINGS = {
+    CODE_SHORT: "Short",
+    CODE_EXTENDED: "Extended",
+    CODE_REFRESH: "Host-Initiated Refresh",
+    CODE_VENDOR: "Vendor specific",
+}
+IN_PROGRESS_OPERATIONS = frozenset({CODE_SHORT, CODE_EXTENDED, CODE_REFRESH, CODE_VENDOR})
 
 # Valid Diagnostic Information flags (entry byte 2)
 VDI_NSID = 0x1
@@ -146,6 +154,8 @@ def _op_string(op_value: int) -> str:
         return "Short self-test in progress"
     if op_value == CODE_EXTENDED:
         return "Extended self-test in progress"
+    if op_value == CODE_REFRESH:
+        return "Host-Initiated Refresh in progress"
     if op_value == CODE_VENDOR:
         return "Vendor specific self-test in progress"
     return f"Unknown operation ({op_value})"
@@ -382,14 +392,15 @@ class NVMeSelfTest:
     """
     NVMe Self-Test Management
 
-    Per NVMe Base Specification 2.3:
-    - Short Device Self-Test (DSTS code 1)
-    - Extended Device Self-Test (DSTS code 2)
-    - Abort Device Self-Test (DSTS code 0xF)
-    - Get Device Self-Test Results (Log Page 0x06)
+    Per NVMe Base Specification 2.4 (Self-test Code, STC, of the Device
+    Self-test command):
+    - Short Device Self-Test (STC 1h)
+    - Extended Device Self-Test (STC 2h)
+    - Abort Device Self-Test (STC Fh)
+    - Get Device Self-Test Results (Log Page 06h)
     """
 
-    # Self-test codes per NVMe spec 2.3
+    # Self-test Code (STC) values of the Device Self-test command
     DSTS_ABORT = 0xF
     DSTS_SHORT = 0x1
     DSTS_EXTENDED = 0x2

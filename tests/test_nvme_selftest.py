@@ -554,3 +554,10 @@ class TestCmdSelftestScanWait:
         assert result["test_aborted"] is True
         assert result["test_failed"] is False
         handler.execute_short.assert_not_called()
+
+
+def test_host_initiated_refresh_is_a_known_self_test_operation() -> None:
+    """Self-test code 3h (NVMe Base 2.3+): it showed as "Unknown (3)" and was not counted as running."""
+    assert nst.SELF_TEST_CODE_STRINGS[nst.CODE_REFRESH] == "Host-Initiated Refresh"
+    assert nst.CODE_REFRESH in nst.IN_PROGRESS_OPERATIONS
+    assert nst._op_string(nst.CODE_REFRESH) == "Host-Initiated Refresh in progress"
