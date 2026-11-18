@@ -95,6 +95,10 @@ def validate_report_filename(filename: str) -> None:
         raise ValueError("Unsupported report format")
 
 
+_report_name_lock = threading.Lock()
+_report_names_issued: set[str] = set()
+
+
 def resolve_report_output_path(output_file: str | None, report_format: str) -> Path:
     """
     Resolve a report output path constrained to the dedicated reports directory.
@@ -115,12 +119,21 @@ def resolve_report_output_path(output_file: str | None, report_format: str) -> P
             resolved = (reports_dir / candidate.name).resolve()
     else:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        resolved = (reports_dir / f"cdi-report-{timestamp}.{report_format}").resolve()
-        # Two reports in the same second must not overwrite each other.
-        suffix = 2
-        while resolved.exists():
-            resolved = (reports_dir / f"cdi-report-{timestamp}-{suffix}.{report_format}").resolve()
-            suffix += 1
+        # Two reports in the same second must not share a file. Checking
+        # exists() alone is not enough: both requests can pass it before
+        # either has written anything, and one report then holds the other's
+        # drives. Names are handed out under a lock and remembered until the
+        # second has passed.
+        with _report_name_lock:
+            _report_names_issued.intersection_update({name for name in _report_names_issued if timestamp in name})
+            suffix = 1
+            while True:
+                name = f"cdi-report-{timestamp}{'' if suffix == 1 else f'-{suffix}'}.{report_format}"
+                resolved = (reports_dir / name).resolve()
+                if name not in _report_names_issued and not resolved.exists():
+                    break
+                suffix += 1
+            _report_names_issued.add(name)
 
     try:
         resolved.relative_to(reports_dir)
@@ -129,6 +142,10 @@ def resolve_report_output_path(output_file: str | None, report_format: str) -> P
 
     if resolved.suffix.lower() not in ALLOWED_REPORT_EXTENSIONS:
         raise ValueError("Unsupported report format")
+    # The download's content type comes from the extension. A CSV saved as
+    # "export.html" would be served inline as HTML, with its cells unescaped.
+    if resolved.suffix.lower() != f".{str(report_format).lower()}":
+        raise ValueError(f"Report file name must end in .{str(report_format).lower()}")
 
     # Reject if an existing symlink would escape the allowlist after open.
     if resolved.exists() and resolved.is_symlink():

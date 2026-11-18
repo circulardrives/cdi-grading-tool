@@ -705,3 +705,47 @@ def test_example_token_is_refused_on_a_lan_bind(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setenv(security.API_TOKEN_ENV, "a-real-token-of-my-own")
     security.assert_token_required_for_bind("0.0.0.0")
+
+
+# --- report file names --------------------------------------------------------
+
+
+def test_reports_requested_in_the_same_second_get_different_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two saved-scan reports in one second shared a file name; one then held the other's drives."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from cdi_health.api import services
+
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(tmp_path))
+    services.reports_directory().mkdir(parents=True, exist_ok=True)
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        paths = list(pool.map(lambda _i: services.resolve_report_output_path(None, "html"), range(48)))
+
+    assert len(set(paths)) == len(paths)
+    assert all(path.suffix == ".html" for path in paths)
+
+
+@pytest.mark.parametrize(
+    ("output_file", "report_format"),
+    [("export.html", "csv"), ("export.csv", "html"), ("export.pdf", "html"), ("export.HTML", "pdf")],
+)
+def test_report_file_extension_must_match_its_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, output_file: str, report_format: str
+) -> None:
+    """A CSV saved as .html was later served inline as HTML."""
+    from cdi_health.api import services
+
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(tmp_path))
+    with pytest.raises(ValueError, match=f"must end in .{report_format}"):
+        services.resolve_report_output_path(output_file, report_format)
+
+
+def test_report_file_with_matching_extension_is_accepted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cdi_health.api import services
+
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(tmp_path))
+    assert services.resolve_report_output_path("Lot-42.HTML", "html").name == "Lot-42.HTML"
+    assert services.resolve_report_output_path("lot-42.csv", "csv").name == "lot-42.csv"
