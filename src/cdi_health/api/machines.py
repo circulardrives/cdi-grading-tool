@@ -91,6 +91,35 @@ def _normalize_token(value: Any) -> str | None:
     return cleaned or None
 
 
+_ADDRESS_SCHEME_RE = re.compile(r"^https?://", re.IGNORECASE)
+_DEFAULT_PORT_RE = re.compile(r":8844$")
+_IPV4_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+
+
+def _bare_address(value: Any) -> str:
+    """``http://10.0.0.5:8844/`` → ``10.0.0.5`` (a non-default port is kept)."""
+    text = _ADDRESS_SCHEME_RE.sub("", str(value or "").strip()).rstrip("/")
+    return _DEFAULT_PORT_RE.sub("", text)
+
+
+def bench_display_name(machine: dict[str, Any]) -> str:
+    """Bench name for reports and exports (#167).
+
+    A bench added by address is saved under that address, so its name is an
+    IP. Reports then show the hostname the bench reported about itself, as the
+    dashboard does (``benchName`` in the web app). A name someone chose is kept.
+    """
+    name = str(machine.get("name") or "").strip()
+    address = _bare_address(machine.get("address"))
+    reported = str(machine.get("remote_hostname") or "").strip()
+    if reported and not _IPV4_RE.match(reported):
+        # "bench-01.lab.example" → "bench-01", like the dashboard.
+        reported = reported.split(".")[0] or reported
+    if reported and (not name or _bare_address(name) == address):
+        return reported
+    return name or address or "Unnamed bench"
+
+
 def public_machine(entry: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of a machine record that is safe to expose (no token)."""
     public = {key: value for key, value in entry.items() if key != TOKEN_FIELD}

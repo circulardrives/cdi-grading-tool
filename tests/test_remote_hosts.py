@@ -675,6 +675,55 @@ def test_fleet_csv_single_bench_has_exact_cli_columns(api_client: TestClient, fa
     assert api_client.get("/api/v1/fleet/devices.csv?machine_id=nope").status_code == 404
 
 
+@pytest.mark.parametrize(
+    ("machine", "expected"),
+    [
+        # Added by address: the saved name is the address, so use what the bench calls itself.
+        ({"name": "192.168.0.74", "address": "http://192.168.0.74:8844", "remote_hostname": "bench-01"}, "bench-01"),
+        ({"name": "192.168.0.74:8844", "address": "192.168.0.74:8844", "remote_hostname": "bench-01"}, "bench-01"),
+        ({"name": "10.0.0.5:9000", "address": "http://10.0.0.5:9000/", "remote_hostname": "bench-02"}, "bench-02"),
+        ({"name": "", "address": "10.0.0.5:8844", "remote_hostname": "bench-02.lab.example"}, "bench-02"),
+        # A name someone chose is kept.
+        ({"name": "Rack 3 left", "address": "10.0.0.5:8844", "remote_hostname": "bench-02"}, "Rack 3 left"),
+        # Nothing reported yet (never checked, or an older API): fall back to the saved name.
+        ({"name": "192.168.0.74", "address": "192.168.0.74:8844", "remote_hostname": None}, "192.168.0.74"),
+        ({"name": "", "address": "http://192.168.0.74:8844/"}, "192.168.0.74"),
+        # A bench that reports an IP as its hostname is not shortened to "192".
+        ({"name": "192.168.0.74", "address": "192.168.0.74", "remote_hostname": "192.168.0.74"}, "192.168.0.74"),
+        ({}, "Unnamed bench"),
+    ],
+)
+def test_bench_display_name(machine: dict[str, Any], expected: str) -> None:
+    from cdi_health.api.machines import bench_display_name
+
+    assert bench_display_name(machine) == expected
+
+
+def test_fleet_csv_names_a_bench_added_by_address_by_its_hostname(
+    api_client: TestClient, fake_remote: FakeRemote
+) -> None:
+    """#167: the bench column showed the IP while the dashboard showed the bench's hostname."""
+    import csv
+    import io
+
+    # What the dashboard saves when a bench is added by address and not named.
+    machine_id = _register(api_client, fake_remote.address, fake_remote.address)["id"]
+    assert api_client.post(f"/api/v1/machines/{machine_id}/check").status_code == 200
+    assert api_client.post("/api/v1/fleet/scan").status_code == 200
+
+    fleet = api_client.get("/api/v1/fleet/devices.csv")
+    benches = {row["bench"] for row in csv.DictReader(io.StringIO(fleet.text))}
+    assert "bench-01" in benches
+    assert fake_remote.address not in benches
+
+    single = api_client.get(f"/api/v1/fleet/devices.csv?machine_id={machine_id}")
+    assert 'filename="cdi-drives-bench-01-' in single.headers["content-disposition"]
+
+    report = api_client.post("/api/v1/reports", json={"source": "fleet", "format": "csv"})
+    assert report.status_code == 200, report.text
+    assert "bench-01" in [host["name"] for host in report.json()["hosts"]]
+
+
 # --- self-discovery: never add this bench as a remote of itself ------------
 
 SELF_DETAIL = "That address is this bench itself"
