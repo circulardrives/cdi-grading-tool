@@ -683,3 +683,25 @@ def test_discovery_probe_reads_a_normal_health_answer() -> None:
         server.shutdown()
         server.server_close()
     assert health == {"status": "ok", "version": "0.13.1", "hostname": "bench-07"}
+
+
+# --- the documented example token is public ----------------------------------
+
+
+def test_example_token_is_refused_on_a_lan_bind(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unedited copy of the example env file left the API on the LAN behind a token printed in the docs."""
+    from cdi_health.api import security
+
+    monkeypatch.delenv(security.NO_AUTH_ENV, raising=False)
+    monkeypatch.setenv(security.API_TOKEN_ENV, "replace-with-strong-token")
+    with pytest.raises(RuntimeError, match="example value"):
+        security.assert_token_required_for_bind("0.0.0.0")
+    # Loopback is not exposed, so nothing is refused there.
+    security.assert_token_required_for_bind("127.0.0.1")
+
+    monkeypatch.setenv(security.API_TOKEN_ENV, "   ")
+    with pytest.raises(RuntimeError):
+        security.assert_token_required_for_bind("0.0.0.0")
+
+    monkeypatch.setenv(security.API_TOKEN_ENV, "a-real-token-of-my-own")
+    security.assert_token_required_for_bind("0.0.0.0")
