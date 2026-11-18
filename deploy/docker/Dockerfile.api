@@ -26,6 +26,10 @@ ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 RUN pip install --no-cache-dir ".[api,pdf]"
 
 ENV CDI_HEALTH_DATA_DIR=/var/lib/cdi-health
+# The dashboard's demo mode scans the sample drives at this path (the
+# dashboard image is built with VITE_CDI_MOCK_DATA_PATH pointing here). The
+# package itself is installed into site-packages, so allow this copy too.
+ENV CDI_HEALTH_API_ALLOWED_DATA_PATHS=/app/src/cdi_health/mock_data
 RUN mkdir -p /var/lib/cdi-health
 
 EXPOSE 8844
