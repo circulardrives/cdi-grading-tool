@@ -42,6 +42,7 @@ from cdi_health.classes.exceptions import CommandException, DevicesException
 
 # Helpers
 from cdi_health.classes.helpers import clean_string
+from cdi_health.classes.nvme_selftest import classify_result
 
 # Tools
 from cdi_health.classes.tools import Command, SG3Utils, Smartctl, resolve_tool_path
@@ -1898,7 +1899,8 @@ class NVMeProtocol:
                 else:
                     value = e.get("result")
                 try:
-                    return int(value or 0) == 1
+                    # Results 5-7 are failures; 1-4, 8 and 9 are aborts (#130).
+                    return classify_result(int(value or 0)) == "failed"
                 except (TypeError, ValueError):
                     return "fail" in str(value).lower()
 
