@@ -720,3 +720,53 @@ class TestNvmeSelfTestFailedCount:
     @pytest.mark.parametrize("result", [0, 1, 2, 3, 4, 8, 9, 15])
     def test_pass_abort_and_unused_are_not_counted(self, tmp_path: Path, result: int) -> None:
         assert self._device(tmp_path, [result])["nvme_self_test_failed_count"] == 0
+
+
+class TestScsiIdentityKeys:
+    """smartctl 7.3 renamed the SCSI identity keys; both spellings must be read."""
+
+    SOURCE = Path(__file__).parent.parent / "src/cdi_health/mock_data/scsi/healthy_sas.json"
+
+    @staticmethod
+    def _device(tmp_path: Path, payload: dict) -> dict:
+        capture = tmp_path / "sas.json"
+        capture.write_text(json.dumps(payload), encoding="utf-8")
+        return create_mock_device(json_file=str(capture)).to_dict(pop=True)
+
+    def test_smartctl_7_2_bare_keys(self, tmp_path: Path) -> None:
+        """Every SAS drive scanned with smartctl 7.2 showed "Not Reported" for all three."""
+        payload = json.loads(self.SOURCE.read_text(encoding="utf-8"))
+        assert "vendor" in payload and "scsi_vendor" not in payload
+
+        device = self._device(tmp_path, payload)
+
+        assert device["vendor"] == "SEAGATE"
+        assert device["model_number"] == "ST600MM0026"
+        assert device["firmware_revision"] == "0004"
+        assert device["interface_link"] == "SAS"
+
+    def test_smartctl_7_3_prefixed_keys(self, tmp_path: Path) -> None:
+        payload = json.loads(self.SOURCE.read_text(encoding="utf-8"))
+        for bare in ("vendor", "product", "model_name", "revision"):
+            payload[f"scsi_{bare}"] = payload.pop(bare)
+        payload.pop("transport_protocol")
+        payload["scsi_transport_protocol"] = {"name": "SAS (SPL-4)", "value": 6}
+
+        device = self._device(tmp_path, payload)
+
+        assert device["vendor"] == "SEAGATE"
+        assert device["model_number"] == "ST600MM0026"
+        assert device["firmware_revision"] == "0004"
+        # A readable name, not the repr of smartctl's {"name": ..., "value": ...} object.
+        assert device["interface_link"] == "SAS (SPL-4)"
+        assert device["transport_version"] == "SAS (SPL-4)"
+
+    def test_unreported_identity_stays_not_reported(self, tmp_path: Path) -> None:
+        payload = json.loads(self.SOURCE.read_text(encoding="utf-8"))
+        for key in ("vendor", "product", "model_name", "revision"):
+            payload.pop(key)
+
+        device = self._device(tmp_path, payload)
+
+        assert device["vendor"] == "Not Reported"
+        assert device["firmware_revision"] == "Not Reported"
