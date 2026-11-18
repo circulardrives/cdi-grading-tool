@@ -1427,12 +1427,39 @@ class HealthScoreCalculator:
         recent = 0
         old = 0
         for entry in failed_entries:
-            hours = self._selftest_entry_hours(entry)
-            if current_poh is None or hours is None or (current_poh - hours) <= window:
+            age = self._selftest_entry_age(self._selftest_entry_hours(entry), current_poh, protocol)
+            if age is None or age <= window:
                 recent += 1
             else:
                 old += 1
         return recent, old, has_history
+
+    # ATA and SCSI self-test logs record the power-on hour in a 16-bit field.
+    SELFTEST_HOURS_LIMIT = 0x10000
+
+    @classmethod
+    def _selftest_entry_age(cls, hours: int | None, current_poh: int | None, protocol: str) -> int | None:
+        """
+        Power-on hours since a self-test entry was logged; None when unknown.
+
+        An unknown age counts as recent, so a failure is never aged out by
+        missing data. Past 65,535 power-on hours (about 7.5 years) the 16-bit
+        log field can no longer hold the real hour:
+
+        - ATA wraps, so a failure at hour 65,900 is logged as 364. The age is
+          taken modulo 65,536, which is exact for any failure in the last 7.5
+          years and never makes an older one look newer than it could be.
+        - SCSI saturates at FFFFh, so that value only means "65,535 or later".
+        """
+        if hours is None or current_poh is None:
+            return None
+        if protocol != "NVME" and current_poh >= cls.SELFTEST_HOURS_LIMIT and hours < cls.SELFTEST_HOURS_LIMIT:
+            if protocol == "SCSI":
+                if hours == cls.SELFTEST_HOURS_LIMIT - 1:
+                    return None
+            else:
+                return (current_poh - hours) % cls.SELFTEST_HOURS_LIMIT
+        return current_poh - hours
 
     @staticmethod
     def _selftest_entry_hours(entry: dict) -> int | None:
