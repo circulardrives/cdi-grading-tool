@@ -286,6 +286,11 @@ def is_ungraded(device: dict) -> bool:
     return device.get("grading_status") == STATUS_UNGRADED or bool(ungraded_reasons(device))
 
 
+def ungraded_rationale(reasons: list[str]) -> str:
+    """The one sentence every output shows in place of a grade (§15)."""
+    return "Not graded: " + "; ".join(reasons) + ". Drive requires manual review before disposition."
+
+
 def _normalized_state(device: dict) -> str:
     state = device.get("state")
     if state is None:
@@ -468,17 +473,32 @@ def revert_fields(device: dict, score: Any = None) -> dict[str, Any]:
     }
 
     if ungraded:
+        rationale = ungraded_rationale(reasons)
+        blockers = [f"not graded: {reason}" for reason in reasons]
         fields.update(
             {
                 "health_grade": UNGRADED_GRADE,
                 "health_status": "Ungraded",
                 "health_score": None,
                 "is_certified": False,
-                "certification_rationale": (
-                    "Not graded: " + "; ".join(reasons) + ". Drive requires manual review before disposition."
-                ),
+                "certification": "false",
+                "certification_rationale": rationale,
+                "certification_blockers": blockers,
             }
         )
+        # The scoring engine still scored whatever data it had (often none, so
+        # a clean A / 100 / certified). None of that may reach the output.
+        explanation = device.get("grading_explanation")
+        if isinstance(explanation, dict):
+            fields["grading_explanation"] = {
+                **explanation,
+                "score": None,
+                "grade": UNGRADED_GRADE,
+                "status": "Ungraded",
+                "is_certified": False,
+                "certification_rationale": rationale,
+                "certification_blockers": blockers,
+            }
 
     return fields
 
