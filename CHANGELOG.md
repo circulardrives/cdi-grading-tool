@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-18
+
+A full review of the grading engine, reports, API, dashboard and packaging, plus a check of the spec against NVMe Base 2.4 and OCP 2.7. Several fixes change what a report shows or how a drive grades; read the upgrade notes before rolling this out.
+
+### Upgrade notes
+- **Grades can change.** NVMe drives that report only one temperature threshold are no longer failed against the 60 °C HDD fallback. Under `abcdf`, self-test failures on drives past 65,535 power-on hours are now aged correctly, which can lower a grade. Under `binary`, an aborted NVMe self-test no longer fails a drive, and a really failed one now does.
+- **Reports look different.** HTML and CSV reports list each drive's deductions again. PDF reports now show the grade table and evidence cards instead of the wide data table.
+- **The API refuses to start on a LAN address with the example token** (`replace-with-strong-token`). Set a real token first.
+- **Editing a bench's address removes its saved token.** Enter the new bench's token in the same edit.
+- **Threshold configs are checked more strictly.** A partial band table that no longer runs in order once merged with the defaults is an error (CLI exit 2, HTTP 400), as is an invalid `nvme.endurance_exceeded_grade`.
+- **CSV cells that start with `=`, `+`, `-` or `@` get a leading apostrophe.** Scripts that read model or serial columns should expect it on such values.
+- **The Docker API image is about 120 MB larger** (PDF support).
+
 ### Security
 - **Bench tokens stay with their address:** editing a bench's address no longer sends its saved token to the new address (during the edit, or on later checks and scans). The token is dropped unless a new one is supplied, and the old bench's reported name and cached scan are forgotten. The dashboard's edit dialog asks for the new token.
 - **Discovery probes** refuse redirects, ignore proxy environment variables and read at most 64 KiB. A host in a scanned subnet could previously redirect the probe (and the probe token) to any URL and have its JSON returned.
@@ -149,7 +162,8 @@ See git history and [v0.9.0 release notes](https://github.com/circulardrives/cdi
 ### Added
 - Initial beta release (pre-dashboard CLI line).
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.14.0
 [0.13.1]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.13.1
 [0.13.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.13.0
 [0.12.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.12.0

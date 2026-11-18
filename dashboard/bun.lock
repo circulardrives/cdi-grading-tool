@@ -13,7 +13,7 @@
     },
     "apps/web": {
       "name": "web",
-      "version": "0.13.1",
+      "version": "0.14.0",
       "dependencies": {
         "@tanstack/react-query": "^5.101.2",
         "@workspace/ui": "workspace:*",
