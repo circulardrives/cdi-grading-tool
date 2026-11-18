@@ -251,6 +251,51 @@ def validate_thresholds(config: Any, schema: dict | None = None) -> list[str]:
         cap = grading.get("missing_defect_data_grade_cap")
         if isinstance(cap, str) and cap.strip().upper() not in _GRADE_KEYS:
             errors.append(f"grading.missing_defect_data_grade_cap: must be one of A-F, got {cap!r}")
+
+    nvme = config.get("nvme")
+    if isinstance(nvme, dict):
+        # Checked here, not when it is first read: a typo used to surface in
+        # the middle of a scan and drop every SSD from the results.
+        exceeded = nvme.get("endurance_exceeded_grade")
+        if isinstance(exceeded, str) and exceeded.strip().upper() not in ("C", "D", "F"):
+            errors.append(f"nvme.endurance_exceeded_grade: must be C, D or F, got {exceeded!r}")
+
+    if not errors:
+        errors.extend(_merged_grade_map_errors(config, schema))
+    return errors
+
+
+def _lookup(tree: Any, path: tuple[str, ...]) -> Any:
+    for key in path:
+        if not isinstance(tree, dict) or key not in tree:
+            return None
+        tree = tree[key]
+    return tree
+
+
+def _merged_grade_map_errors(config: dict, schema: dict) -> list[str]:
+    """
+    Check each overridden band table as it will actually be used.
+
+    An override is merged key by key over the defaults, so a partial table
+    such as ``reallocated_sectors_bands: {D: 20}`` keeps the default A/B/C
+    limits and ends up as A 0, B 9, C 50, D 20: valid on its own, nonsense
+    once merged (21-50 would still grade C). Reject it instead of guessing.
+    """
+    errors: list[str] = []
+    for key_path in sorted(_GRADE_MAP_PATHS):
+        override = _lookup(config, key_path)
+        default = _lookup(schema, key_path)
+        if not isinstance(override, dict) or not isinstance(default, dict):
+            continue
+        merged = {**default, **override}
+        problem = _grade_map_order_problem(merged, key_path)
+        if problem:
+            left_out = ", ".join(g for g in _GRADE_KEYS if g in default and g not in override)
+            errors.append(
+                f"{'.'.join(key_path)}: {problem} once the default limits for {left_out} are filled in; "
+                "set every grade in this table"
+            )
     return errors
 
 
@@ -296,12 +341,20 @@ def _validate_grade_map(value: Any, key_path: tuple[str, ...], errors: list[str]
             ok = False
     if not ok:
         return
+    problem = _grade_map_order_problem(value, key_path)
+    if problem:
+        errors.append(f"{dotted}: {problem}")
+
+
+def _grade_map_order_problem(value: dict, key_path: tuple[str, ...]) -> str | None:
+    """First place where a band table's limits run the wrong way, if any."""
     ordered = [(g, value[g]) for g in _GRADE_KEYS if g in value]
     for (g1, v1), (g2, v2) in zip(ordered, ordered[1:]):
         if key_path in _ASCENDING_GRADE_MAPS and v2 < v1:
-            errors.append(f"{dotted}: non-monotonic bands ({g2}={v2} is below {g1}={v1})")
-        elif key_path in _DESCENDING_GRADE_MAPS and v2 > v1:
-            errors.append(f"{dotted}: non-monotonic bands ({g2}={v2} is above {g1}={v1})")
+            return f"non-monotonic bands ({g2}={v2} is below {g1}={v1})"
+        if key_path in _DESCENDING_GRADE_MAPS and v2 > v1:
+            return f"non-monotonic bands ({g2}={v2} is above {g1}={v1})"
+    return None
 
 
 def normalize_grading_profile(profile: str | None) -> str:
