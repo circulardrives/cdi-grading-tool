@@ -124,6 +124,28 @@ class TestFilterDevicesByPath:
         devs = [{"dut": "/dev/nvme0n1"}]
         assert _filter_devices_by_path(devs, "/dev/nvme0") == [{"dut": "/dev/nvme0n1"}]
 
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("/dev/nvme1", ["/dev/nvme1"]),
+            ("/dev/nvme1n1", ["/dev/nvme1"]),
+            ("/dev/nvme1n1p2", ["/dev/nvme1"]),
+            # --device /dev/nvme12 used to return the /dev/nvme1 drive.
+            ("/dev/nvme12", ["/dev/nvme12"]),
+            ("/dev/nvme12n1", ["/dev/nvme12"]),
+            ("/dev/nvme10", []),
+            ("/dev/nvme1xyz", []),
+        ],
+    )
+    def test_nvme_controller_numbers_are_not_prefix_matched(self, path: str, expected: list[str]) -> None:
+        devs = [{"dut": "/dev/nvme1"}, {"dut": "/dev/nvme12"}, {"dut": "/dev/nvme2"}]
+        assert [d["dut"] for d in _filter_devices_by_path(devs, path)] == expected
+
+    def test_namespace_duts_are_not_prefix_matched(self) -> None:
+        devs = [{"dut": "/dev/nvme1n1"}, {"dut": "/dev/nvme1n10"}, {"dut": "/dev/nvme10n1"}]
+        assert [d["dut"] for d in _filter_devices_by_path(devs, "/dev/nvme1")] == ["/dev/nvme1n1", "/dev/nvme1n10"]
+        assert [d["dut"] for d in _filter_devices_by_path(devs, "/dev/nvme1n1")] == ["/dev/nvme1n1"]
+
 
 class TestCLIParser:
     """Test CLI argument parser."""

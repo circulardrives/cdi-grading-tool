@@ -436,6 +436,20 @@ def _args(**overrides) -> Namespace:
     return Namespace(**base)
 
 
+@pytest.mark.parametrize("flag", ["abort", "status"])
+def test_abort_and_status_without_a_device_start_nothing(flag: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """``selftest --abort`` with no --device used to start a short test on every drive."""
+    from cdi_health.cli import cmd_selftest
+
+    with patch("cdi_health.classes.nvme_selftest.NVMeSelfTest") as handler_class:
+        rc = cmd_selftest(_args(device=None, wait=False, **{flag: True}))
+
+    assert rc == 2
+    assert f"--{flag} needs --device" in capsys.readouterr().err
+    handler_class.find_supported_devices.assert_not_called()
+    handler_class.assert_not_called()
+
+
 def _handler(logs: list[list[dict]]) -> MagicMock:
     """Mock handler whose get_results() returns successive entry lists (last one repeats)."""
     handler = MagicMock()
