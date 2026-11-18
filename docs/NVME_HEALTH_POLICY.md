@@ -2,7 +2,7 @@
 
 Spec baselines:
 
-- [NVM Express Base Specification 2.3](https://nvmexpress.org/wp-content/uploads/NVM-Express-Base-Specification-Revision-2.3-2025.08.01-Ratified.pdf) §5.2.12.1.3 (SMART / Health Information, Log 02h)
+- NVM Express Base Specification 2.4 (ratified 2026-07-31; [nvmexpress.org/specifications](https://nvmexpress.org/specifications/)): §5.2.13.1.3 / Figure 213 (SMART / Health Information, Log 02h), §5.2.13.1.7 / Figures 218–219 (Device Self-test, Log 06h), Figure 338 (Identify Controller WCTEMP / CCTEMP). In revision 2.3 the same content is §5.2.12.1.3 / Figure 210.
 - [OCP Datacenter NVMe SSD Specification v2.7](Datacenter%20NVMe%20SSD%20Specification%20v2.7%20Final.md) (SMART C0h extended log)
 
 Configurable knobs live in `src/cdi_health/config/thresholds.yaml` under `nvme` / `temperature` / `nvme.ocp`.
@@ -26,7 +26,9 @@ Configurable knobs live in `src/cdi_health/config/thresholds.yaml` under `nvme` 
 | `warning_temp_time` (WCTT) > 0 | No (warning) | Lifetime minutes in warning band |
 | Fixed YAML 55/60 °C | **Not used for NVMe** when grading current temp | HDD-oriented fallback for ATA/SCSI only |
 
-Instant over-temp without lifetime history still surfaces as Critical Warning bit 1 (TTC) when the controller asserts it.
+Critical Warning bit 1 is set while a temperature is at or above its over-temperature threshold, or at or below its under-temperature threshold. The default over-temperature threshold for the composite temperature is **WCTEMP**, not CCTEMP, and the host can change it (Temperature Threshold feature). The bit is current state only and does not mean CCTEMP was reached.
+
+**Open policy question.** Because any Critical Warning bit is a fail-gate, a drive scanned at or above WCTEMP normally grades F through bit 1 (and through smartctl's overall status, which for NVMe is simply "Critical Warning is zero"), so the "≥ WCTEMP → warning" row above is rarely reached. OCP 2.7 exempts bit 0 and bit 1 from its own self-test SMART check (SELFTST-1). A drive that reports no CCTEMP also holds CCTT at 0, and one that reports no WCTEMP or CCTEMP holds WCTT at 0.
 
 ## OCP C0h predictive-fail algorithm (v1)
 
@@ -40,9 +42,9 @@ Grounded in OCP DSSD v2.7 field definitions (SMART-3…SMART-19). This is a **CD
 | Uncorrectable read error count | `> 0` | — | missing |
 | End-to-end detected − corrected | `> 0` uncorrected | — | missing |
 | Bad user NAND normalized | `< bad_user_nand_critical` (default 50) | `< bad_user_nand_warning` (default 90) | missing / `0xFFFF` |
-| System data % used | `≥ 100` | `≥ system_data_warn` (default 90) | missing |
-| Incomplete shutdowns | — | `≥ incomplete_shutdowns_warn` (default 10) | — |
-| Thermal throttling events / status | — | status ≥ 2 or events ≥ throttle_events_warn | — |
+| System data % used | `≥ 100` | `≥ system_data_used_warning` (default 90) | missing |
+| Incomplete shutdowns | — | `≥ incomplete_shutdowns_warning` (default 10) | — |
+| Thermal throttling events / status | — | status ≥ 2 or events ≥ `thermal_throttle_events_warning` (default 20) | — |
 | Soft ECC error count | — | — | telemetry only (recoverable) |
 | PCIe correctable errors | — | — | telemetry only |
 

@@ -117,8 +117,9 @@ def nvme_readiness(device_id: str) -> str:
 
     ``live`` is Ready. ``dead`` means the kernel gave up on the controller
     (for example after a fatal controller status) and is Not Ready. A
-    controller that is resetting or reconnecting, or a state that cannot be
-    read at all, is Unknown: that is not evidence of a bad drive.
+    controller in a transitional state (``resetting``, ``connecting``,
+    ``deleting``, ``new``), or a state that cannot be read at all, is
+    Unknown: that is not evidence of a bad drive.
 
     :return: "Ready" | "Not Ready" | "Unknown"
     """

@@ -1568,7 +1568,7 @@ class HealthScoreCalculator:
                 )
             )
 
-        # Critical Warning (NVMe Base Spec §5.2.12.1.3) — decode bits
+        # Critical Warning (NVMe Base Spec 2.4 §5.2.13.1.3) — decode bits
         deductions.extend(self._check_nvme_critical_warning(device))
 
         # Endurance Group Critical Warning Summary (EGCWS)
@@ -1595,7 +1595,7 @@ class HealthScoreCalculator:
 
         return deductions
 
-    # NVMe Critical Warning bit labels (Base Spec Figure 210)
+    # NVMe Critical Warning bit labels (Base Spec 2.4 Figure 213)
     _NVME_CW_BITS: dict[int, str] = {
         0: "Available Spare Below Threshold (ASCBT)",
         1: "Temperature Threshold Condition (TTC)",
@@ -1878,9 +1878,10 @@ class HealthScoreCalculator:
         SCSI drive_trip). YAML 55/60 is an ATA/SCSI fallback only.
 
         NVMe never uses the YAML ceiling (docs/NVME_HEALTH_POLICY.md). A
-        threshold the drive does not report (WCTEMP or CCTEMP of 0 is legal)
-        is returned as None and that band is simply not evaluated — Critical
-        Warning bit 1 and WCTT/CCTT remain the gates.
+        threshold the drive does not report (WCTEMP or CCTEMP of 0) is
+        returned as None and that band is simply not evaluated. Critical
+        Warning bit 1 remains; WCTT/CCTT do not, because the drive holds them
+        at 0 when the matching threshold is 0 (NVMe Base 2.4, Figure 213).
         """
         drive_warning = self._coerce_temp_celsius(device.get("warning_temperature"))
         drive_max = self._coerce_temp_celsius(device.get("maximum_temperature"))
