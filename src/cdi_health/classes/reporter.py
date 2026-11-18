@@ -181,7 +181,11 @@ class ReportGenerator:
             raise RuntimeError("PDF generation requires weasyprint. Install with: pip install weasyprint")
 
         enriched = self._prepare_devices(devices)
-        html_content = self._generate_html_content(enriched, default_view="advanced", source_label=source_label)
+        # The simple view (score, grade, status, then each drive's evidence
+        # card) is the one that fits a page. The advanced view hides all of
+        # that and shows only the wide table, which runs off the paper after
+        # the first four columns, so a PDF had no grades in it at all.
+        html_content = self._generate_html_content(enriched, default_view="simple", source_label=source_label)
         HTML(string=html_content).write_pdf(output_path)
 
     def _prepare_devices(self, devices: list[dict]) -> list[dict]:
@@ -1322,6 +1326,8 @@ class ReportGenerator:
     def _category_panel(self, title: str, slug: str, devices: list[dict], active: bool = False) -> str:
         active_class = self._active_class(active)
         if not devices:
+            # On paper an empty category is a wasted page.
+            active_class += " tab-panel--empty"
             body = '<p class="empty-cat">No devices in this category.</p>'
         else:
             rows_simple = "".join(self._generate_row_simple(d) for d in devices)
@@ -2047,7 +2053,10 @@ class ReportGenerator:
           .main { max-width: 100%; padding: 1rem; }
           .tab-panel { display: block !important; page-break-before: always; }
           .tab-panel:first-of-type { page-break-before: auto; }
-          .evidence-card { break-inside: avoid; }
+          .tab-panel--empty { display: none !important; }
+          /* A flex container cannot keep its items whole across a page break. */
+          .evidence-grid { display: block; }
+          .evidence-card { break-inside: avoid; margin-bottom: 1rem; }
           .view-mode-bar { display: none; }
         }
         @media (max-width: 900px) {

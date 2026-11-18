@@ -23,7 +23,11 @@ from __future__ import annotations
 
 import csv
 import re
+import sys
+import types
 from pathlib import Path
+
+import pytest
 
 from cdi_health.classes.mock import MockDevices, create_mock_device
 from cdi_health.classes.reporter import ReportGenerator
@@ -302,3 +306,39 @@ def test_format_deductions_short_prefers_attribute_grade_over_points() -> None:
     assert "(grade C)" in html
     assert "(−25)" not in html
     assert "(−5)" in html
+
+
+def test_pdf_uses_the_view_that_contains_the_grades(
+    tmp_path: Path, mock_data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PDFs rendered the advanced view: only the wide table, cut off after four columns, no grades."""
+    captured: dict[str, str] = {}
+
+    class FakeHTML:
+        def __init__(self, string: str) -> None:
+            captured["html"] = string
+
+        def write_pdf(self, path: str) -> None:
+            Path(path).write_bytes(b"%PDF-")
+
+    monkeypatch.setitem(sys.modules, "weasyprint", types.SimpleNamespace(HTML=FakeHTML))
+    failed = _mock_device(mock_data_dir, "scsi/high_grown_defects.json")
+
+    ReportGenerator().generate_pdf([failed], str(tmp_path / "report.pdf"))
+
+    page = captured["html"]
+    assert '<body data-view="simple">' in page
+    # The rule that hides the grade table and evidence cards only applies to the advanced view.
+    assert 'body[data-view="advanced"] .simple-only { display: none !important; }' in page
+    assert "Grown defects" in _evidence_cards(page)[next(iter(_evidence_cards(page)))]
+
+
+def test_empty_categories_are_marked_so_print_can_skip_them(tmp_path: Path, mock_data_dir: Path) -> None:
+    out = tmp_path / "report.html"
+    ReportGenerator().generate_html([_mock_device(mock_data_dir, "scsi/healthy_sas.json")], str(out))
+    page = out.read_text(encoding="utf-8")
+
+    empty_panels = re.findall(r'<section class="tab-panel[^"]*tab-panel--empty[^"]*" data-panel="([^"]+)"', page)
+    all_panels = re.findall(r'<section class="tab-panel[^"]*" data-panel="([^"]+)"', page)
+    assert len(all_panels) - len(empty_panels) == 1
+    assert ".tab-panel--empty { display: none !important; }" in page
