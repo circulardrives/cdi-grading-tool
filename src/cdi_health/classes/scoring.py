@@ -1850,15 +1850,19 @@ class HealthScoreCalculator:
         Prefer drive-reported limits (NVMe WCTEMP/CCTEMP, ATA specified max,
         SCSI drive_trip). YAML 55/60 is an ATA/SCSI fallback only.
 
-        For NVMe without WCTEMP/CCTEMP, return (None, None) so current-temp
-        does not use the YAML ceiling — CW bit 1 + WCTT/CCTT are the gates.
+        NVMe never uses the YAML ceiling (docs/NVME_HEALTH_POLICY.md). A
+        threshold the drive does not report (WCTEMP or CCTEMP of 0 is legal)
+        is returned as None and that band is simply not evaluated — Critical
+        Warning bit 1 and WCTT/CCTT remain the gates.
         """
         drive_warning = self._coerce_temp_celsius(device.get("warning_temperature"))
         drive_max = self._coerce_temp_celsius(device.get("maximum_temperature"))
         protocol = str(device.get("transport_protocol", "")).upper()
 
-        if drive_warning is None and drive_max is None and protocol == "NVME":
-            return None, None
+        if protocol == "NVME":
+            if drive_warning is not None and drive_max is not None and drive_warning >= drive_max:
+                drive_warning = max(drive_max - 5, 0)
+            return drive_warning, drive_max
 
         warning_temp = drive_warning if drive_warning is not None else self.config.warning_temperature
         max_temp = drive_max if drive_max is not None else self.config.maximum_operating_temperature
@@ -1879,7 +1883,14 @@ class HealthScoreCalculator:
             pass
         else:
             warning_temp, max_temp = self._resolve_temperature_thresholds(device)
-            if max_temp is not None and temp > max_temp:
+            # NVMe thresholds are inclusive: the drive raises its own warning
+            # at >= WCTEMP / CCTEMP. ATA/SCSI fail above the operating maximum.
+            inclusive = str(device.get("transport_protocol", "")).upper() == "NVME"
+
+            def _over(limit: int | None) -> bool:
+                return limit is not None and (temp >= limit if inclusive else temp > limit)
+
+            if _over(max_temp):
                 deductions.append(
                     ScoreDeduction(
                         reason="Temperature critical",
@@ -1890,7 +1901,7 @@ class HealthScoreCalculator:
                         threshold=max_temp,
                     )
                 )
-            elif warning_temp is not None and temp > warning_temp:
+            elif _over(warning_temp):
                 deductions.append(
                     ScoreDeduction(
                         reason="Temperature warning",

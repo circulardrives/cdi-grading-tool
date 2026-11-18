@@ -434,6 +434,90 @@ class TestHealthScoreCalculator:
         assert result.score == 100
         assert not any(d.field == "current_temperature" for d in result.deductions)
 
+    @pytest.mark.parametrize("temperature", [56, 62, 69])
+    def test_nvme_with_wctemp_only_never_uses_the_yaml_ceiling(self, temperature: int) -> None:
+        """A drive reporting WCTEMP but no CCTEMP failed at 62 °C against the HDD fallback of 60."""
+        device = {
+            "transport_protocol": "NVMe",
+            "smart_status": "PASSED",
+            "current_temperature": temperature,
+            "warning_temperature": 70,
+            "critical_warning": 0,
+            "percentage_used": 3,
+            "available_spare": 100,
+            "media_errors": 0,
+        }
+
+        result = HealthScoreCalculator().calculate(device)
+
+        assert result.grade == "A"
+        assert not any(d.field == "current_temperature" for d in result.deductions)
+
+    def test_nvme_with_wctemp_only_still_warns_at_its_own_threshold(self) -> None:
+        device = {
+            "transport_protocol": "NVMe",
+            "smart_status": "PASSED",
+            "current_temperature": 71,
+            "warning_temperature": 70,
+        }
+
+        result = HealthScoreCalculator().calculate(device)
+
+        assert result.grade != "F"
+        assert [(d.severity, d.threshold) for d in result.deductions if d.field == "current_temperature"] == [
+            ("warning", 70)
+        ]
+
+    def test_nvme_with_cctemp_only_has_no_yaml_warning_band(self) -> None:
+        """56 °C drew a warning against the HDD fallback of 55 on a drive whose only limit is 85."""
+        device = {
+            "transport_protocol": "NVMe",
+            "smart_status": "PASSED",
+            "current_temperature": 56,
+            "maximum_temperature": 85,
+        }
+
+        result = HealthScoreCalculator().calculate(device)
+
+        assert result.score == 100
+        assert not any(d.field == "current_temperature" for d in result.deductions)
+
+    @pytest.mark.parametrize(
+        ("temperature", "severity", "threshold"),
+        [(77, None, None), (78, "warning", 78), (81, "warning", 78), (82, "critical", 82), (90, "critical", 82)],
+    )
+    def test_nvme_thresholds_are_inclusive(self, temperature: int, severity: str | None, threshold: int | None) -> None:
+        """docs/NVME_HEALTH_POLICY.md: >= WCTEMP is a warning, >= CCTEMP is the fail-gate."""
+        device = {
+            "transport_protocol": "NVMe",
+            "smart_status": "PASSED",
+            "current_temperature": temperature,
+            "warning_temperature": 78,
+            "maximum_temperature": 82,
+        }
+
+        result = HealthScoreCalculator().calculate(device)
+
+        found = [(d.severity, d.threshold) for d in result.deductions if d.field == "current_temperature"]
+        assert found == ([(severity, threshold)] if severity else [])
+        assert (result.grade == "F") == (severity == "critical")
+
+    def test_ata_at_its_maximum_operating_temperature_is_not_failed(self) -> None:
+        """ATA/SCSI fail above the operating maximum, not at it."""
+        device = {
+            "transport_protocol": "ATA",
+            "media_type": "HDD",
+            "smart_status": "PASSED",
+            "current_temperature": 60,
+            "maximum_temperature": 60,
+            "reallocated_sectors": 0,
+            "pending_sectors": 0,
+        }
+
+        result = HealthScoreCalculator().calculate(device)
+
+        assert not any(d.severity == "critical" for d in result.deductions)
+
     def test_nvme_temp_above_drive_cctemp_is_critical(self) -> None:
         calculator = HealthScoreCalculator()
         device = {
