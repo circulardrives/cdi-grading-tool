@@ -169,6 +169,54 @@ class TestConfigValidation:
         with pytest.raises(ConfigError):
             ThresholdConfig().load_from_dict(config)
 
+    @pytest.mark.parametrize(
+        ("config", "table"),
+        [
+            # Asked for "F above 20"; the default C limit of 50 survived, so 21-50 still graded C.
+            ({"ata": {"reallocated_sectors_bands": {"D": 20}}}, "ata.reallocated_sectors_bands"),
+            ({"scsi": {"grown_defects_bands": {"A": 0, "B": 60, "D": 100}}}, "scsi.grown_defects_bands"),
+            # Minimum spare per grade: C 70 sits above the default B 60, so C can never be reached.
+            ({"nvme": {"available_spare_bands": {"C": 70}}}, "nvme.available_spare_bands"),
+            ({"grading": {"grade_bands": {"B": 95}}}, "grading.grade_bands"),
+            ({"grading": {"age_cap": {"consumer": {"B": 70000}}}}, "grading.age_cap.consumer"),
+        ],
+    )
+    def test_partial_band_table_that_breaks_once_merged_is_rejected(self, config: dict, table: str) -> None:
+        """A partial table is valid alone but is merged over the defaults; check what will be used."""
+        problems = validate_thresholds(config)
+        assert len(problems) == 1, problems
+        assert problems[0].startswith(f"{table}: non-monotonic bands")
+        assert "set every grade in this table" in problems[0]
+        with pytest.raises(ConfigError):
+            ThresholdConfig().load_from_dict(config)
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            {"ata": {"reallocated_sectors_bands": {"D": 200}}},
+            {"ata": {"reallocated_sectors_bands": {"A": 0, "B": 5, "C": 10, "D": 20}}},
+            {"scsi": {"grown_defects_bands": {"B": 5}}},
+            {"nvme": {"available_spare_bands": {"A": 90, "B": 70, "C": 50}}},
+            {"grading": {"age_cap": {"consumer": {"B": 30000, "C": 50000}}}},
+        ],
+    )
+    def test_partial_band_table_that_stays_ordered_is_accepted(self, config: dict) -> None:
+        assert validate_thresholds(config) == []
+        ThresholdConfig().load_from_dict(config)
+
+    @pytest.mark.parametrize("value", ["B", "A", "x", ""])
+    def test_endurance_exceeded_grade_is_checked_at_load(self, value: str) -> None:
+        """A typo used to pass loading, then drop every SSD with wear data from the scan."""
+        config = {"nvme": {"endurance_exceeded_grade": value}}
+        problems = validate_thresholds(config)
+        assert problems == [f"nvme.endurance_exceeded_grade: must be C, D or F, got {value!r}"]
+        with pytest.raises(ConfigError):
+            ThresholdConfig().load_from_dict(config)
+
+    @pytest.mark.parametrize("value", ["C", "d", " F "])
+    def test_endurance_exceeded_grade_accepts_c_d_f(self, value: str) -> None:
+        assert validate_thresholds({"nvme": {"endurance_exceeded_grade": value}}) == []
+
     def test_valid_partial_override_loads(self, tmp_path: Path) -> None:
         cfg = tmp_path / "ok.yaml"
         cfg.write_text("grading:\n  profile: binary\nscsi:\n  maximum_grown_defects: 20.5\n", encoding="utf-8")

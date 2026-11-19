@@ -91,6 +91,35 @@ def _normalize_token(value: Any) -> str | None:
     return cleaned or None
 
 
+_ADDRESS_SCHEME_RE = re.compile(r"^https?://", re.IGNORECASE)
+_DEFAULT_PORT_RE = re.compile(r":8844$")
+_IPV4_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+
+
+def _bare_address(value: Any) -> str:
+    """``http://10.0.0.5:8844/`` → ``10.0.0.5`` (a non-default port is kept)."""
+    text = _ADDRESS_SCHEME_RE.sub("", str(value or "").strip()).rstrip("/")
+    return _DEFAULT_PORT_RE.sub("", text)
+
+
+def bench_display_name(machine: dict[str, Any]) -> str:
+    """Bench name for reports and exports (#167).
+
+    A bench added by address is saved under that address, so its name is an
+    IP. Reports then show the hostname the bench reported about itself, as the
+    dashboard does (``benchName`` in the web app). A name someone chose is kept.
+    """
+    name = str(machine.get("name") or "").strip()
+    address = _bare_address(machine.get("address"))
+    reported = str(machine.get("remote_hostname") or "").strip()
+    if reported and not _IPV4_RE.match(reported):
+        # "bench-01.lab.example" → "bench-01", like the dashboard.
+        reported = reported.split(".")[0] or reported
+    if reported and (not name or _bare_address(name) == address):
+        return reported
+    return name or address or "Unnamed bench"
+
+
 def public_machine(entry: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of a machine record that is safe to expose (no token)."""
     public = {key: value for key, value in entry.items() if key != TOKEN_FIELD}
@@ -226,6 +255,16 @@ class MachineStore:
             if entry.get("address") != old_address:
                 # A new address may be a different bench; re-learn it on the next check.
                 entry.pop("remote_instance_id", None)
+            if _bare_address(entry.get("address")) != _bare_address(old_address):
+                # The stored token was given for the old address. Never send
+                # it to another one: the caller must supply the new bench's
+                # token. What was learned about the old bench goes with it.
+                entry.pop(TOKEN_FIELD, None)
+                entry.update(remote_hostname=None, remote_version=None, remote_auth=None)
+                if payload.get("status") is None:
+                    entry["status"] = "unknown"
+                entry.update(last_scan_at=None, last_scan_status=None, last_scan_summary=None)
+                self._latest_scans.pop(machine_id, None)
 
             # Omitted (or null) = unchanged; "" clears; any other string replaces.
             if payload.get(TOKEN_FIELD) is not None:

@@ -48,7 +48,7 @@ from cdi_health.api.discovery import (
 )
 from cdi_health.api.history import ScanHistoryStore
 from cdi_health.api.jobs import JobStore
-from cdi_health.api.machines import MachineStore, load_or_create_instance_id
+from cdi_health.api.machines import MachineStore, bench_display_name, load_or_create_instance_id
 from cdi_health.api.remote import (
     RemoteAddressError,
     RemoteHostClient,
@@ -526,7 +526,7 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=404, detail="Bench not found or not scanned yet")
 
         rows = [
-            {**device, "bench": host["name"]}
+            {**device, "bench": _report_host_name(host)}
             for host, scan in pairs
             for device in (scan or {}).get("devices") or []
             if isinstance(device, dict)
@@ -536,7 +536,7 @@ def create_app() -> FastAPI:
             formatter.FIELDS = [*CSVFormatter.FIELDS, "bench"]
         text = formatter.format(rows) or ",".join(formatter.FIELDS) + "\r\n"
 
-        scope = "all-benches" if not machine_id else re.sub(r"[^A-Za-z0-9._-]+", "-", pairs[0][0]["name"])
+        scope = "all-benches" if not machine_id else re.sub(r"[^A-Za-z0-9._-]+", "-", _report_host_name(pairs[0][0]))
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
         return Response(
             content=text,
@@ -709,10 +709,10 @@ def create_app() -> FastAPI:
         store = app.state.runtime.machine_store
         if updates.get("address"):
             current = _get_machine_or_404(machine_id)
-            token = updates.get("api_token")
-            if token is None:
-                token = store.get_api_token(machine_id)
-            _refuse_self_address(updates.get("name") or current["name"], updates["address"], token)
+            # Only a token supplied with this request may go to the new
+            # address. The stored one belongs to the old address, and
+            # /health answers the instance id without a token anyway.
+            _refuse_self_address(updates.get("name") or current["name"], updates["address"], updates.get("api_token"))
         machine = store.update_machine(machine_id, updates)
         if not machine:
             raise HTTPException(status_code=404, detail="Machine not found")
@@ -1019,7 +1019,11 @@ def create_app() -> FastAPI:
         if not machine_id:
             return LOCAL_HOST_NAME
         machine = app.state.runtime.machine_store.get_machine(machine_id)
-        return machine["name"] if machine else f"Removed host {machine_id[:8]}"
+        return bench_display_name(machine) if machine else f"Removed host {machine_id[:8]}"
+
+    def _report_host_name(host: dict[str, Any]) -> str:
+        """Bench name for a report or CSV row (a ``_fleet_host_scans`` host)."""
+        return _history_host_name(host["machine_id"]) if host["machine_id"] else host["name"]
 
     def _saved_scans_for_report(request: ReportRequest) -> list[dict[str, Any]]:
         """Stored scans for a fleet/history report ({name, machine_id, scanned_at, devices})."""
@@ -1027,7 +1031,7 @@ def create_app() -> FastAPI:
         if request.source == "fleet":
             return [
                 {
-                    "name": host["name"],
+                    "name": _report_host_name(host),
                     "machine_id": host["machine_id"],
                     "scanned_at": scan_result.get("scanned_at"),
                     "devices": scan_result.get("devices") or [],

@@ -42,6 +42,7 @@ from cdi_health.classes.exceptions import CommandException, DevicesException
 
 # Helpers
 from cdi_health.classes.helpers import clean_string
+from cdi_health.classes.nvme_selftest import classify_result
 
 # Tools
 from cdi_health.classes.tools import Command, SG3Utils, Smartctl, resolve_tool_path
@@ -1898,7 +1899,8 @@ class NVMeProtocol:
                 else:
                     value = e.get("result")
                 try:
-                    return int(value or 0) == 1
+                    # Results 5-7 are failures; 1-4, 8 and 9 are aborts (#130).
+                    return classify_result(int(value or 0)) == "failed"
                 except (TypeError, ValueError):
                     return "fail" in str(value).lower()
 
@@ -1967,24 +1969,29 @@ class SCSIProtocol:
         self.device = device
         self.smartctl = smartctl
 
-        # Identifiers
-        device.vendor: str = smartctl.get("scsi_vendor", "Not Reported")
+        def _first(*keys: str):
+            """First of ``keys`` that smartctl reported with a value."""
+            for key in keys:
+                value = smartctl.get(key)
+                if value not in (None, ""):
+                    return value
+            return "Not Reported"
+
+        # Identifiers. smartctl 7.3 renamed the SCSI identity keys with a
+        # "scsi_" prefix; 7.2 (Ubuntu 22.04) emits the bare names.
+        device.vendor: str = _first("scsi_vendor", "vendor")
         device.model_number: str = str(
-            device.determine_model_by_model_number(smartctl.get("scsi_model_name", "Not Reported"))
+            device.determine_model_by_model_number(_first("scsi_model_name", "model_name", "scsi_product", "product"))
         ).upper()
         device.serial_number: str = smartctl.get("serial_number", "Not Reported")
-        device.firmware_revision: str = smartctl.get("scsi_revision", "Not Reported")
+        device.firmware_revision: str = _first("scsi_revision", "revision")
         device.transport_revision: str = smartctl.get("scsi_version", "Not Reported")
-        device.transport_version: str = smartctl.get("scsi_transport_protocol", "Not Reported")
-        _tp = smartctl.get("transport_protocol")
+        # {"name": "SAS (SPL-4)", "value": 6} on current smartctl, a plain string on some dumps.
+        _tp = _first("scsi_transport_protocol", "transport_protocol")
         if isinstance(_tp, dict):
-            device.interface_link = str(_tp.get("name", "Not Reported")).strip()
-        elif isinstance(_tp, str) and _tp:
-            device.interface_link = _tp
-        elif device.transport_version not in (None, "Not Reported"):
-            device.interface_link = str(device.transport_version)
-        else:
-            device.interface_link = "Not Reported"
+            _tp = str(_tp.get("name") or "Not Reported").strip()
+        device.transport_version: str = str(_tp)
+        device.interface_link = str(_tp)
         device.form_factor: str = smartctl.get("form_factor", {}).get("name", "Not Reported")
         device.rotation_rate: str = smartctl.get("rotation_rate", "Not Reported")
         # SAS SSD endurance indicator (percentage used), scored with the SSD

@@ -225,7 +225,7 @@ def _selftest_grade(payload: dict, protocol: str, current_poh: int) -> str:
                 code = int(result.get("value", 0) or 0)
             except (TypeError, ValueError):
                 code = 0
-            if code == 1:
+            if code in (5, 6, 7):  # NVMe 06h: 5-7 failed; 1-4, 8, 9 aborted
                 hours = entry.get("power_on_hours")
                 try:
                     failed_hours.append(int(hours) if hours is not None else None)

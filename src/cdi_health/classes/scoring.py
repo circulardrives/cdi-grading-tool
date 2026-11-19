@@ -1427,12 +1427,39 @@ class HealthScoreCalculator:
         recent = 0
         old = 0
         for entry in failed_entries:
-            hours = self._selftest_entry_hours(entry)
-            if current_poh is None or hours is None or (current_poh - hours) <= window:
+            age = self._selftest_entry_age(self._selftest_entry_hours(entry), current_poh, protocol)
+            if age is None or age <= window:
                 recent += 1
             else:
                 old += 1
         return recent, old, has_history
+
+    # ATA and SCSI self-test logs record the power-on hour in a 16-bit field.
+    SELFTEST_HOURS_LIMIT = 0x10000
+
+    @classmethod
+    def _selftest_entry_age(cls, hours: int | None, current_poh: int | None, protocol: str) -> int | None:
+        """
+        Power-on hours since a self-test entry was logged; None when unknown.
+
+        An unknown age counts as recent, so a failure is never aged out by
+        missing data. Past 65,535 power-on hours (about 7.5 years) the 16-bit
+        log field can no longer hold the real hour:
+
+        - ATA wraps, so a failure at hour 65,900 is logged as 364. The age is
+          taken modulo 65,536, which is exact for any failure in the last 7.5
+          years and never makes an older one look newer than it could be.
+        - SCSI saturates at FFFFh, so that value only means "65,535 or later".
+        """
+        if hours is None or current_poh is None:
+            return None
+        if protocol != "NVME" and current_poh >= cls.SELFTEST_HOURS_LIMIT and hours < cls.SELFTEST_HOURS_LIMIT:
+            if protocol == "SCSI":
+                if hours == cls.SELFTEST_HOURS_LIMIT - 1:
+                    return None
+            else:
+                return (current_poh - hours) % cls.SELFTEST_HOURS_LIMIT
+        return current_poh - hours
 
     @staticmethod
     def _selftest_entry_hours(entry: dict) -> int | None:
@@ -1541,7 +1568,7 @@ class HealthScoreCalculator:
                 )
             )
 
-        # Critical Warning (NVMe Base Spec §5.2.12.1.3) — decode bits
+        # Critical Warning (NVMe Base Spec 2.4 §5.2.13.1.3) — decode bits
         deductions.extend(self._check_nvme_critical_warning(device))
 
         # Endurance Group Critical Warning Summary (EGCWS)
@@ -1568,7 +1595,7 @@ class HealthScoreCalculator:
 
         return deductions
 
-    # NVMe Critical Warning bit labels (Base Spec Figure 210)
+    # NVMe Critical Warning bit labels (Base Spec 2.4 Figure 213)
     _NVME_CW_BITS: dict[int, str] = {
         0: "Available Spare Below Threshold (ASCBT)",
         1: "Temperature Threshold Condition (TTC)",
@@ -1850,15 +1877,20 @@ class HealthScoreCalculator:
         Prefer drive-reported limits (NVMe WCTEMP/CCTEMP, ATA specified max,
         SCSI drive_trip). YAML 55/60 is an ATA/SCSI fallback only.
 
-        For NVMe without WCTEMP/CCTEMP, return (None, None) so current-temp
-        does not use the YAML ceiling — CW bit 1 + WCTT/CCTT are the gates.
+        NVMe never uses the YAML ceiling (docs/NVME_HEALTH_POLICY.md). A
+        threshold the drive does not report (WCTEMP or CCTEMP of 0) is
+        returned as None and that band is simply not evaluated. Critical
+        Warning bit 1 remains; WCTT/CCTT do not, because the drive holds them
+        at 0 when the matching threshold is 0 (NVMe Base 2.4, Figure 213).
         """
         drive_warning = self._coerce_temp_celsius(device.get("warning_temperature"))
         drive_max = self._coerce_temp_celsius(device.get("maximum_temperature"))
         protocol = str(device.get("transport_protocol", "")).upper()
 
-        if drive_warning is None and drive_max is None and protocol == "NVME":
-            return None, None
+        if protocol == "NVME":
+            if drive_warning is not None and drive_max is not None and drive_warning >= drive_max:
+                drive_warning = max(drive_max - 5, 0)
+            return drive_warning, drive_max
 
         warning_temp = drive_warning if drive_warning is not None else self.config.warning_temperature
         max_temp = drive_max if drive_max is not None else self.config.maximum_operating_temperature
@@ -1879,7 +1911,14 @@ class HealthScoreCalculator:
             pass
         else:
             warning_temp, max_temp = self._resolve_temperature_thresholds(device)
-            if max_temp is not None and temp > max_temp:
+            # NVMe thresholds are inclusive: the drive raises its own warning
+            # at >= WCTEMP / CCTEMP. ATA/SCSI fail above the operating maximum.
+            inclusive = str(device.get("transport_protocol", "")).upper() == "NVME"
+
+            def _over(limit: int | None) -> bool:
+                return limit is not None and (temp >= limit if inclusive else temp > limit)
+
+            if _over(max_temp):
                 deductions.append(
                     ScoreDeduction(
                         reason="Temperature critical",
@@ -1890,7 +1929,7 @@ class HealthScoreCalculator:
                         threshold=max_temp,
                     )
                 )
-            elif warning_temp is not None and temp > warning_temp:
+            elif _over(warning_temp):
                 deductions.append(
                     ScoreDeduction(
                         reason="Temperature warning",

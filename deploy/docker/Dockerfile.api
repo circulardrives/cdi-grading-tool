@@ -1,10 +1,15 @@
 FROM python:3.12-slim-bookworm
 
+# Pango + a font are for PDF reports (WeasyPrint); the slim image has neither.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         smartmontools \
         nvme-cli \
         sg3-utils \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz-subset0 \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -18,9 +23,13 @@ RUN chmod +x /usr/local/bin/cdi-api-entrypoint.sh
 # The VCS directory is excluded from the build context, so source builds report a dev version.
 ARG VERSION=0.0.0.dev0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
-RUN pip install --no-cache-dir ".[api]"
+RUN pip install --no-cache-dir ".[api,pdf]"
 
 ENV CDI_HEALTH_DATA_DIR=/var/lib/cdi-health
+# The dashboard's demo mode scans the sample drives at this path (the
+# dashboard image is built with VITE_CDI_MOCK_DATA_PATH pointing here). The
+# package itself is installed into site-packages, so allow this copy too.
+ENV CDI_HEALTH_API_ALLOWED_DATA_PATHS=/app/src/cdi_health/mock_data
 RUN mkdir -p /var/lib/cdi-health
 
 EXPOSE 8844

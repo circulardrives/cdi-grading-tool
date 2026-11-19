@@ -677,3 +677,96 @@ class TestSynologySataDevices:
         devices = Devices(dev_root=str(tmp_path / "does-not-exist"))
 
         assert devices.scanned == []
+
+
+class TestNvmeSelfTestFailedCount:
+    """NVMe Log Page 06h: results 5-7 are failures; 1-4, 8 and 9 are aborts (#130)."""
+
+    @staticmethod
+    def _device(tmp_path: Path, results: list[int]) -> dict:
+        source = Path(__file__).parent.parent / "src/cdi_health/mock_data/nvme/SSDPE2KE032T8_healthy.json"
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        payload["nvme_self_test_log"] = {
+            "current_self_test_operation": {"value": 0, "string": "No self-test in progress"},
+            "table": [
+                {"self_test_code": {"value": 2}, "self_test_result": {"value": result}, "power_on_hours": 100 + index}
+                for index, result in enumerate(results)
+            ],
+        }
+        capture = tmp_path / "nvme.json"
+        capture.write_text(json.dumps(payload), encoding="utf-8")
+        return create_mock_device(json_file=str(capture)).to_dict(pop=True)
+
+    def test_aborted_test_is_not_a_failure(self, tmp_path: Path) -> None:
+        """Result 1 is what the tool's own abort leaves in the log; it failed the drive under binary."""
+        device = self._device(tmp_path, [1, 0])
+        assert device["nvme_self_test_failed_count"] == 0
+
+        from cdi_health.classes.config import ThresholdConfig
+
+        ThresholdConfig.reset_instance()
+        try:
+            ThresholdConfig.get_instance().set_grading_profile("binary")
+            score = HealthScoreCalculator().calculate(device)
+        finally:
+            ThresholdConfig.reset_instance()
+        assert score.grade != "F"
+        assert not any("self-test" in d.reason.lower() for d in score.deductions)
+
+    @pytest.mark.parametrize("result", [5, 6, 7])
+    def test_real_failures_are_counted(self, tmp_path: Path, result: int) -> None:
+        assert self._device(tmp_path, [result, 0])["nvme_self_test_failed_count"] == 1
+
+    @pytest.mark.parametrize("result", [0, 1, 2, 3, 4, 8, 9, 15])
+    def test_pass_abort_and_unused_are_not_counted(self, tmp_path: Path, result: int) -> None:
+        assert self._device(tmp_path, [result])["nvme_self_test_failed_count"] == 0
+
+
+class TestScsiIdentityKeys:
+    """smartctl 7.3 renamed the SCSI identity keys; both spellings must be read."""
+
+    SOURCE = Path(__file__).parent.parent / "src/cdi_health/mock_data/scsi/healthy_sas.json"
+
+    @staticmethod
+    def _device(tmp_path: Path, payload: dict) -> dict:
+        capture = tmp_path / "sas.json"
+        capture.write_text(json.dumps(payload), encoding="utf-8")
+        return create_mock_device(json_file=str(capture)).to_dict(pop=True)
+
+    def test_smartctl_7_2_bare_keys(self, tmp_path: Path) -> None:
+        """Every SAS drive scanned with smartctl 7.2 showed "Not Reported" for all three."""
+        payload = json.loads(self.SOURCE.read_text(encoding="utf-8"))
+        assert "vendor" in payload and "scsi_vendor" not in payload
+
+        device = self._device(tmp_path, payload)
+
+        assert device["vendor"] == "SEAGATE"
+        assert device["model_number"] == "ST600MM0026"
+        assert device["firmware_revision"] == "0004"
+        assert device["interface_link"] == "SAS"
+
+    def test_smartctl_7_3_prefixed_keys(self, tmp_path: Path) -> None:
+        payload = json.loads(self.SOURCE.read_text(encoding="utf-8"))
+        for bare in ("vendor", "product", "model_name", "revision"):
+            payload[f"scsi_{bare}"] = payload.pop(bare)
+        payload.pop("transport_protocol")
+        payload["scsi_transport_protocol"] = {"name": "SAS (SPL-4)", "value": 6}
+
+        device = self._device(tmp_path, payload)
+
+        assert device["vendor"] == "SEAGATE"
+        assert device["model_number"] == "ST600MM0026"
+        assert device["firmware_revision"] == "0004"
+        # A readable name, not the repr of smartctl's {"name": ..., "value": ...} object.
+        assert device["interface_link"] == "SAS (SPL-4)"
+        assert device["transport_version"] == "SAS (SPL-4)"
+
+    def test_unreported_identity_stays_not_reported(self, tmp_path: Path) -> None:
+        payload = json.loads(self.SOURCE.read_text(encoding="utf-8"))
+        for key in ("vendor", "product", "model_name", "revision"):
+            payload.pop(key)
+
+        device = self._device(tmp_path, payload)
+
+        assert device["vendor"] == "Not Reported"
+        assert device["firmware_revision"] == "Not Reported"

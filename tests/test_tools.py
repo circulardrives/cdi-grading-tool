@@ -27,8 +27,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from cdi_health.classes import tools
 from cdi_health.classes.exceptions import CommandException
-from cdi_health.classes.tools import Command, SG3Utils, Smartctl
+from cdi_health.classes.tools import Command, SG3Utils, Smartctl, nvme_controller_name, nvme_readiness
 
 
 def _python_cmd(code: str) -> str:
@@ -208,3 +209,88 @@ class TestTestUnitReady:
     def test_medium_hardware_error_is_not_ready(self) -> None:
         state, _ = self._tur([3, 3])
         assert state == "Not Ready"
+
+
+class TestNvmeReadiness:
+    """#162: NVMe readiness is the kernel's controller state, never a translated SCSI TUR."""
+
+    @staticmethod
+    def _sysfs(tmp_path, monkeypatch, states: dict[str, str]):
+        for controller, state in states.items():
+            directory = tmp_path / controller
+            directory.mkdir()
+            (directory / "state").write_text(f"{state}\n", encoding="utf-8")
+        monkeypatch.setattr(tools, "NVME_SYSFS_ROOT", tmp_path)
+
+    @pytest.mark.parametrize(
+        ("device", "controller"),
+        [
+            ("/dev/nvme0", "nvme0"),
+            ("/dev/nvme0n1", "nvme0"),
+            ("/dev/nvme12n3p2", "nvme12"),
+            ("/dev/sda", None),
+            ("/dev/sg3", None),
+        ],
+    )
+    def test_controller_name(self, device: str, controller: str | None) -> None:
+        assert nvme_controller_name(device) == controller
+
+    @pytest.mark.parametrize(
+        ("state", "expected"),
+        [
+            ("live", "Ready"),
+            ("LIVE", "Ready"),
+            ("dead", "Not Ready"),
+            # Transitional states say nothing about the drive's health.
+            ("resetting", "Unknown"),
+            ("connecting", "Unknown"),
+            ("deleting", "Unknown"),
+            ("new", "Unknown"),
+            ("", "Unknown"),
+        ],
+    )
+    def test_controller_state(self, tmp_path, monkeypatch, state: str, expected: str) -> None:
+        self._sysfs(tmp_path, monkeypatch, {"nvme0": state})
+        assert nvme_readiness("/dev/nvme0") == expected
+        assert nvme_readiness("/dev/nvme0n1") == expected
+
+    def test_each_drive_reads_its_own_controller(self, tmp_path, monkeypatch) -> None:
+        self._sysfs(tmp_path, monkeypatch, {"nvme0": "live", "nvme1": "dead"})
+        assert nvme_readiness("/dev/nvme0n1") == "Ready"
+        assert nvme_readiness("/dev/nvme1n1") == "Not Ready"
+
+    def test_no_sysfs_entry_is_unknown(self, tmp_path, monkeypatch) -> None:
+        """No sysfs (some containers, non-Linux) is not evidence of a bad drive."""
+        self._sysfs(tmp_path, monkeypatch, {})
+        assert nvme_readiness("/dev/nvme0") == "Unknown"
+
+    def test_nvme_is_never_sent_a_scsi_tur(self, tmp_path, monkeypatch) -> None:
+        """No sg_turs / sg_start process is started for an NVMe drive."""
+        self._sysfs(tmp_path, monkeypatch, {"nvme2": "live"})
+
+        class ForbiddenCommand:
+            def __init__(self, command, **_kwargs):
+                raise AssertionError(f"NVMe readiness ran a subprocess: {command}")
+
+        with patch("cdi_health.classes.tools.Command", ForbiddenCommand):
+            assert SG3Utils("/dev/nvme2").test_unit_ready() == "Ready"
+            assert SG3Utils("/dev/nvme2n1").test_unit_ready() == "Ready"
+
+    def test_sata_and_sas_still_use_tur(self, tmp_path, monkeypatch) -> None:
+        self._sysfs(tmp_path, monkeypatch, {})
+        calls: list = []
+
+        class FakeCommand:
+            def __init__(self, command, **_kwargs):
+                calls.append(command)
+
+            def run(self):
+                return None
+
+            def get_return_code(self):
+                return 0
+
+        with patch("cdi_health.classes.tools.Command", FakeCommand):
+            assert SG3Utils("/dev/sg0").test_unit_ready() == "Ready"
+        # (The tool path itself is cached per process, so only check the device.)
+        assert len(calls) == 1 and calls[0].endswith("-vvvv /dev/sg0")

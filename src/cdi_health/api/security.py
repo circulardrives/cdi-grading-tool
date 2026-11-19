@@ -73,6 +73,11 @@ def no_auth_mode() -> bool:
     return os.getenv(NO_AUTH_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+# Values shipped in the example env files and docs. They are public, so on a
+# network-facing bind they protect nothing.
+PLACEHOLDER_API_TOKENS = frozenset({"replace-with-strong-token"})
+
+
 def api_token_is_enabled() -> bool:
     """Return True when an API token is configured and enforced."""
     return get_configured_api_token() is not None
@@ -154,7 +159,16 @@ def assert_token_required_for_bind(host: str) -> None:
     """
     if is_loopback_host(host):
         return
-    if no_auth_mode() or api_token_is_enabled():
+    if no_auth_mode():
+        return
+    token = (get_configured_api_token() or "").strip()
+    if token in PLACEHOLDER_API_TOKENS:
+        raise RuntimeError(
+            f"CDI Health API refuses to bind non-loopback host {host!r}: {API_TOKEN_ENV} is still the "
+            "example value from the documentation, which anyone can read. Set your own token "
+            "(for example: openssl rand -hex 32)."
+        )
+    if token:
         return
     raise RuntimeError(
         f"CDI Health API refuses to bind non-loopback host {host!r} without "

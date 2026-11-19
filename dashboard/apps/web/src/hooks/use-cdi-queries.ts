@@ -181,19 +181,24 @@ export function useScanThisBenchMutation() {
 }
 
 /**
- * The header's "Scan all benches": scans every registered bench, or this
- * bench alone when there are none (or while Demo mode is on, since sample
- * drives only exist here). `start()` does nothing while a scan is running.
+ * The header's "Scan all benches": scans every registered bench and this
+ * bench's own drives, or this bench alone when there are no others (or while
+ * Demo mode is on, since sample drives only exist here). `start()` does
+ * nothing while a scan is running.
  */
 export function useScanAllBenches() {
   const fleetScan = useScanAllHostsMutation()
   const localScan = useScanThisBenchMutation()
   const machines = useMachinesQuery().data
+  const fleetHosts = useFleetDevicesQuery().data?.hosts
   const { useMockData } = useMockDataSettings()
   const { pending } = useScanAllStatus()
   const hasRemoteBenches = (machines ?? []).some(hostHasAddress)
   const scansThisBenchOnly =
     useMockData || (machines != null && !hasRemoteBenches)
+  const thisBenchHasDrives = (fleetHosts ?? []).some(
+    (host) => host.machine_id === null && host.device_count > 0
+  )
 
   return {
     start: () => {
@@ -202,9 +207,15 @@ export function useScanAllBenches() {
       }
       if (scansThisBenchOnly) {
         localScan.mutate()
-      } else {
-        fleetScan.mutate()
+        return
       }
+      // POST /fleet/scan only rescans the other benches. Without its own
+      // scan, this bench kept showing the drives and grades of its last one
+      // while the toast said every bench had been scanned.
+      if (thisBenchHasDrives) {
+        localScan.mutate()
+      }
+      fleetScan.mutate()
     },
     pending,
     scansThisBenchOnly,

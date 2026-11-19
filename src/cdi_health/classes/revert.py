@@ -36,6 +36,7 @@ this module keeps working unchanged once the scoring engine lands them.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -286,6 +287,11 @@ def is_ungraded(device: dict) -> bool:
     return device.get("grading_status") == STATUS_UNGRADED or bool(ungraded_reasons(device))
 
 
+def ungraded_rationale(reasons: list[str]) -> str:
+    """The one sentence every output shows in place of a grade (§15)."""
+    return "Not graded: " + "; ".join(reasons) + ". Drive requires manual review before disposition."
+
+
 def _normalized_state(device: dict) -> str:
     state = device.get("state")
     if state is None:
@@ -468,17 +474,32 @@ def revert_fields(device: dict, score: Any = None) -> dict[str, Any]:
     }
 
     if ungraded:
+        rationale = ungraded_rationale(reasons)
+        blockers = [f"not graded: {reason}" for reason in reasons]
         fields.update(
             {
                 "health_grade": UNGRADED_GRADE,
                 "health_status": "Ungraded",
                 "health_score": None,
                 "is_certified": False,
-                "certification_rationale": (
-                    "Not graded: " + "; ".join(reasons) + ". Drive requires manual review before disposition."
-                ),
+                "certification": "false",
+                "certification_rationale": rationale,
+                "certification_blockers": blockers,
             }
         )
+        # The scoring engine still scored whatever data it had (often none, so
+        # a clean A / 100 / certified). None of that may reach the output.
+        explanation = device.get("grading_explanation")
+        if isinstance(explanation, dict):
+            fields["grading_explanation"] = {
+                **explanation,
+                "score": None,
+                "grade": UNGRADED_GRADE,
+                "status": "Ungraded",
+                "is_certified": False,
+                "certification_rationale": rationale,
+                "certification_blockers": blockers,
+            }
 
     return fields
 
@@ -511,6 +532,24 @@ def _usable_serial(device: dict) -> str | None:
     return serial
 
 
+_CSV_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+_CSV_PLAIN_NUMBER_RE = re.compile(r"[+-]?\d+(\.\d+)?")
+
+
+def csv_safe(text: str) -> str:
+    """Stop a spreadsheet from running a cell as a formula.
+
+    Model, serial, firmware and bench names come from drive firmware and from
+    other machines. A cell starting with ``=``, ``+``, ``-`` or ``@`` is
+    evaluated by Excel and LibreOffice when the CSV is opened, so such text is
+    prefixed with an apostrophe, which they show as plain text. Plain numbers
+    (``-5``) are left alone.
+    """
+    if text.startswith(_CSV_FORMULA_LEADERS) and not _CSV_PLAIN_NUMBER_RE.fullmatch(text):
+        return "'" + text
+    return text
+
+
 def csv_cell(value: Any) -> str:
     """Flatten a §13 value (list/dict/bool/None) for a CSV cell."""
     if value is None:
@@ -518,7 +557,7 @@ def csv_cell(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, list):
-        return " | ".join(str(v) for v in value)
+        return csv_safe(" | ".join(str(v) for v in value))
     if isinstance(value, dict):
         return json.dumps(value, ensure_ascii=False, default=str) if value else ""
-    return str(value)
+    return csv_safe(str(value))

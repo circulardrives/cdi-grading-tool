@@ -50,7 +50,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from cdi_health.api.discovery import DEFAULT_CDI_PORT, is_private_ipv4
+from cdi_health.api.discovery import DEFAULT_CDI_PORT, build_direct_opener, is_private_ipv4
 
 HEALTH_TIMEOUT_SECONDS = 5.0
 # Self-test start/abort/status and job polling: starting a test returns quickly
@@ -207,18 +207,6 @@ def forwarded_scan_body(request: Any) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key not in SCAN_FIELDS_NOT_FORWARDED}
 
 
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Refuse redirects so the host token never leaves the validated address."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ANN201
-        return None
-
-
-def _build_opener() -> urllib.request.OpenerDirector:
-    # ProxyHandler({}) ignores HTTP(S)_PROXY: LAN benches are reached directly.
-    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirectHandler())
-
-
 class RemoteHostClient:
     """Blocking client for one registered remote cdi-health-api host."""
 
@@ -237,7 +225,7 @@ class RemoteHostClient:
         self.health_timeout = health_timeout
         self.scan_timeout = scan_timeout if scan_timeout is not None else remote_scan_timeout()
         self.endpoint = resolve_endpoint(address, name=name)
-        self._opener = _build_opener()
+        self._opener = build_direct_opener()
 
     # -- transport -----------------------------------------------------
 

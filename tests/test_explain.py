@@ -208,6 +208,82 @@ class TestJSONIncludesExplainability:
         assert "deductions" in data[0]
 
 
+# A drive whose SMART data could not be read. The scoring engine sees no
+# defects in the empty record, so it scores a clean A / 100 / certified.
+UNREADABLE_DRIVE = {
+    "dut": "/dev/nvme0",
+    "model_number": "UNREADABLE NVME",
+    "serial_number": "UNREADABLE-1",
+    "transport_protocol": "NVMe",
+    "media_type": "SSD",
+    "state": "Ready",
+    "smart_data_readable": False,
+}
+# A drive that could not be opened at all scores F on "Device not ready".
+UNOPENABLE_DRIVE = {
+    "dut": "/dev/sdq",
+    "model_number": "Not Reported",
+    "serial_number": "Not Reported",
+    "transport_protocol": "Unknown",
+    "state": "Not Ready",
+    "grading_status": "UNGRADED",
+    "ungraded_reasons": ["DEVICE_OPEN_FAILURE"],
+    "ungraded_detail": "smartctl open failed: Permission denied",
+    "smart_data_readable": False,
+}
+
+
+class TestUngradedDrivesNeverShowAGrade:
+    """§15: an UNGRADED drive must not carry a letter grade in any output."""
+
+    def test_explain_does_not_grade_an_unreadable_drive(self) -> None:
+        Colors.disable()
+        text = format_explanations([UNREADABLE_DRIVE])
+        assert "Grade: UNGRADED" in text
+        assert "Not graded: SMART_UNREADABLE" in text
+        assert "Certified: No" in text
+        assert "Grade: A" not in text
+        assert "Certified: Yes" not in text
+        assert "Score:" not in text
+
+    def test_explain_does_not_fail_an_unopenable_drive(self) -> None:
+        Colors.disable()
+        text = format_explanations([UNOPENABLE_DRIVE])
+        assert "Grade: UNGRADED" in text
+        assert "DEVICE_OPEN_FAILURE" in text
+        assert "Permission denied" in text
+        assert "Grade: F" not in text
+        assert "grade is F" not in text
+
+    def test_explain_still_grades_readable_drives_alongside(self, sample_nvme_device: dict) -> None:
+        Colors.disable()
+        text = format_explanations([UNREADABLE_DRIVE, sample_nvme_device])
+        assert text.count("Grade: UNGRADED") == 1
+        assert "Score:" in text
+
+    def test_json_carries_no_grade_for_an_unreadable_drive(self) -> None:
+        record = json.loads(JSONFormatter().format([UNREADABLE_DRIVE]))[0]
+        assert record["health_grade"] == "UNGRADED"
+        assert record["is_certified"] is False
+        assert record["certification"] == "false"
+        assert record["revert_certified"] == "false"
+        assert record["certification_blockers"] == ["not graded: SMART_UNREADABLE"]
+
+        explanation = record["grading_explanation"]
+        assert explanation["grade"] == "UNGRADED"
+        assert explanation["score"] is None
+        assert explanation["is_certified"] is False
+        assert explanation["certification_rationale"] == record["certification_rationale"]
+        assert "Not graded" in explanation["certification_rationale"]
+
+    def test_json_carries_no_grade_for_an_unopenable_drive(self) -> None:
+        record = json.loads(JSONFormatter().format([UNOPENABLE_DRIVE]))[0]
+        assert record["certification"] == "false"
+        assert record["grading_explanation"]["grade"] == "UNGRADED"
+        assert all("grade is F" not in blocker for blocker in record["certification_blockers"])
+        assert all("grade is F" not in blocker for blocker in record["grading_explanation"]["certification_blockers"])
+
+
 class TestExplainCLI:
     def test_parser_explain_flag(self) -> None:
         parser = create_parser()

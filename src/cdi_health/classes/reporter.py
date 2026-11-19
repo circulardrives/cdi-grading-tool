@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from cdi_health.classes.explain import attach_explanation
-from cdi_health.classes.revert import flag_duplicate_serials, is_ungraded, revert_fields
+from cdi_health.classes.revert import csv_safe, flag_duplicate_serials, is_ungraded, revert_fields
 from cdi_health.classes.scoring import HealthScoreCalculator
 
 
@@ -161,7 +161,7 @@ class ReportGenerator:
                         row[h] = str(fn(d))
                     except Exception:
                         row[h] = ""
-            rows.append(row)
+            rows.append({header: csv_safe(value) for header, value in row.items()})
         with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=headers, extrasaction="ignore")
             writer.writeheader()
@@ -181,7 +181,11 @@ class ReportGenerator:
             raise RuntimeError("PDF generation requires weasyprint. Install with: pip install weasyprint")
 
         enriched = self._prepare_devices(devices)
-        html_content = self._generate_html_content(enriched, default_view="advanced", source_label=source_label)
+        # The simple view (score, grade, status, then each drive's evidence
+        # card) is the one that fits a page. The advanced view hides all of
+        # that and shows only the wide table, which runs off the paper after
+        # the first four columns, so a PDF had no grades in it at all.
+        html_content = self._generate_html_content(enriched, default_view="simple", source_label=source_label)
         HTML(string=html_content).write_pdf(output_path)
 
     def _prepare_devices(self, devices: list[dict]) -> list[dict]:
@@ -543,6 +547,15 @@ class ReportGenerator:
             return str(reason)
         return str(d)
 
+    @staticmethod
+    def _device_deductions(device: dict):
+        """A drive's deductions, under whichever key its record carries them.
+
+        Scoring output (``attach_explanation``, saved API scans) stores them as
+        ``deductions``; ``health_deductions`` is the older table-formatter key.
+        """
+        return device.get("health_deductions") or device.get("deductions")
+
     def _format_deductions_short(self, deductions) -> str:
         """One-line summary for table cells."""
         if not deductions:
@@ -599,9 +612,12 @@ class ReportGenerator:
             variant = "bad"
         return self._badge_html(status_text, variant)
 
-    def _render_deduction_list(self, deductions) -> str:
+    def _render_deduction_list(self, deductions, *, ungraded: bool = False) -> str:
         items = self._iter_deduction_dicts(deductions)
         if not items:
+            if ungraded:
+                # Nothing was evaluated; "within policy" would be a false claim.
+                return '<p class="evidence-empty">Not graded — no deductions were evaluated.</p>'
             return '<p class="evidence-empty">No score deductions — metrics within policy.</p>'
         lis = []
         for item in items:
@@ -694,7 +710,7 @@ class ReportGenerator:
               {extra_html}
               <div class="evidence-deductions">
                 <h4>Grading deductions</h4>
-                {self._render_deduction_list(device.get("health_deductions"))}
+                {self._render_deduction_list(self._device_deductions(device), ungraded=ungraded)}
               </div>
             </article>"""
 
@@ -1197,7 +1213,7 @@ class ReportGenerator:
             ("Revert standard version", lambda d: d.get("revert_standard_version", "—")),
             ("CDI certified", lambda d: "Yes" if d.get("is_certified") else "No"),
             ("Certification rationale", lambda d: d.get("certification_rationale", "—")),
-            ("Deductions", lambda d: self._format_deductions_short(d.get("health_deductions"))),
+            ("Deductions", lambda d: self._format_deductions_short(self._device_deductions(d))),
         ]
 
     def _nvme_supplemental_column_specs(self, devices: list[dict]) -> list[tuple]:
@@ -1310,6 +1326,8 @@ class ReportGenerator:
     def _category_panel(self, title: str, slug: str, devices: list[dict], active: bool = False) -> str:
         active_class = self._active_class(active)
         if not devices:
+            # On paper an empty category is a wasted page.
+            active_class += " tab-panel--empty"
             body = '<p class="empty-cat">No devices in this category.</p>'
         else:
             rows_simple = "".join(self._generate_row_simple(d) for d in devices)
@@ -2035,7 +2053,10 @@ class ReportGenerator:
           .main { max-width: 100%; padding: 1rem; }
           .tab-panel { display: block !important; page-break-before: always; }
           .tab-panel:first-of-type { page-break-before: auto; }
-          .evidence-card { break-inside: avoid; }
+          .tab-panel--empty { display: none !important; }
+          /* A flex container cannot keep its items whole across a page break. */
+          .evidence-grid { display: block; }
+          .evidence-card { break-inside: avoid; margin-bottom: 1rem; }
           .view-mode-bar { display: none; }
         }
         @media (max-width: 900px) {

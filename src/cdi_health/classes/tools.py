@@ -36,6 +36,7 @@ import subprocess
 
 # Date and Time
 from datetime import datetime
+from pathlib import Path
 
 # Exceptions
 from cdi_health.classes.exceptions import CommandException
@@ -89,6 +90,51 @@ TUR_UNKNOWN = "Unknown"
 # 15 device open failure, 33 transport timeout, 50+ OS errors, 97-99 other)
 # is inconclusive.
 TUR_DEVICE_NOT_READY_CODES = frozenset({2, 3})
+
+# NVMe readiness is the kernel's view of the controller (#162). A SCSI TEST
+# UNIT READY reaches an NVMe drive only through sg3_utils' SCSI-to-NVMe
+# translation, which sends Get Features with a broadcast namespace ID. Some
+# firmware rejects that: the drive looks Not Ready and every scan adds
+# entries to its error log.
+NVME_SYSFS_ROOT = Path("/sys/class/nvme")
+_NVME_CONTROLLER_RE = re.compile(r"^nvme\d+")
+
+
+def is_nvme_path(device_id: str) -> bool:
+    """True for NVMe controller, namespace and partition device paths."""
+    return "/dev/nvme" in device_id
+
+
+def nvme_controller_name(device_id: str) -> str | None:
+    """``/dev/nvme0``, ``/dev/nvme0n1`` and ``/dev/nvme0n1p2`` are all ``nvme0``."""
+    match = _NVME_CONTROLLER_RE.match(Path(device_id).name)
+    return match.group(0) if match else None
+
+
+def nvme_readiness(device_id: str) -> str:
+    """
+    Readiness of an NVMe drive, from its controller state in sysfs (#162).
+
+    ``live`` is Ready. ``dead`` means the kernel gave up on the controller
+    (for example after a fatal controller status) and is Not Ready. A
+    controller in a transitional state (``resetting``, ``connecting``,
+    ``deleting``, ``new``), or a state that cannot be read at all, is
+    Unknown: that is not evidence of a bad drive.
+
+    :return: "Ready" | "Not Ready" | "Unknown"
+    """
+    controller = nvme_controller_name(device_id)
+    if controller is None:
+        return TUR_UNKNOWN
+    try:
+        state = (NVME_SYSFS_ROOT / controller / "state").read_text(encoding="utf-8").strip().lower()
+    except (OSError, ValueError):
+        return TUR_UNKNOWN
+    if state == "live":
+        return TUR_READY
+    if state == "dead":
+        return TUR_NOT_READY
+    return TUR_UNKNOWN
 
 
 class Command:
@@ -347,7 +393,7 @@ class SG3Utils:
         """
 
         # If it's an NVMe device, return as is
-        if "/dev/nvme" in self.dut:
+        if is_nvme_path(self.dut):
             return self.dut
 
         # Try
@@ -413,8 +459,14 @@ class SG3Utils:
         fail-gate (F-NO-RESPONSE). Tool-side errors are reported as
         "Unknown" so a missing sg3_utils install never fails a drive.
 
+        NVMe drives are never sent a SCSI TUR (#162); their readiness is the
+        controller state the kernel reports.
+
         :return: "Ready" | "Not Ready" | "Unknown"
         """
+        if is_nvme_path(self.dut):
+            return nvme_readiness(self.dut)
+
         state = self._run_tur()
         if state != TUR_NOT_READY:
             return state

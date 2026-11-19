@@ -29,6 +29,7 @@ from __future__ import annotations
 from typing import Any
 
 from cdi_health.classes.colors import Colors, Symbols
+from cdi_health.classes.revert import UNGRADED_GRADE, ungraded_rationale, ungraded_reasons
 from cdi_health.classes.scoring import HealthScore, HealthScoreCalculator, ScoreDeduction
 
 
@@ -153,8 +154,30 @@ def _color_severity(severity: str) -> str:
     return Colors.colorize(severity, color)
 
 
+def _format_ungraded_explanation(device: dict[str, Any], reasons: list[str]) -> str:
+    """Explanation for a drive that must not receive a grade (§15)."""
+    lines = [
+        Colors.bold(f"Device: {device.get('dut') or device.get('device') or '—'}"),
+        f"  Model:  {device.get('model_number') or '—'}",
+        f"  Serial: {device.get('serial_number') or '—'}",
+        "",
+        f"  Grade: {Colors.yellow(UNGRADED_GRADE)}    Certified: {Colors.red('No')}",
+        f"  {ungraded_rationale(reasons)}",
+    ]
+    detail = str(device.get("ungraded_detail") or "").strip()
+    if detail:
+        lines.append(f"  Detail: {detail}")
+    return "\n".join(lines)
+
+
 def format_device_explanation(device: dict[str, Any], score: HealthScore | None = None) -> str:
     """Format a single device grading explanation for the terminal."""
+    # An unreadable or locked drive scores a clean A / 100 on its empty data;
+    # show why it was not graded instead (as the table, JSON and reports do).
+    reasons = ungraded_reasons(device)
+    if reasons:
+        return _format_ungraded_explanation(device, reasons)
+
     if score is None:
         score = HealthScoreCalculator().calculate(device)
 
@@ -230,7 +253,7 @@ def format_explanations(devices: list[dict[str, Any]]) -> str:
     ]
 
     for index, device in enumerate(devices):
-        score = calculator.calculate(device)
+        score = None if ungraded_reasons(device) else calculator.calculate(device)
         sections.append(format_device_explanation(device, score))
         if index < len(devices) - 1:
             sections.append("")

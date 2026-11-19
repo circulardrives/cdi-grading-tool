@@ -1,6 +1,6 @@
 {
   "name": "cdi-dashboard",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "private": true,
   "scripts": {
     "build": "turbo build",
@@ -16,7 +16,7 @@
     "turbo": "^2.8.17",
     "typescript": "5.9.3"
   },
-  "packageManager": "bun@1.3.12",
+  "packageManager": "bun@1.4.4",
   "engines": {
     "node": ">=20"
   },

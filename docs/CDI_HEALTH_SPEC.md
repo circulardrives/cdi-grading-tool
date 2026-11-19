@@ -126,12 +126,18 @@ Applies to NVMe (`percentage_used`, `available_spare` / AVSPT from log 02h), SAT
 
 ### Readiness (TEST UNIT READY)
 
-CDI issues SCSI TEST UNIT READY (`sg_turs`) to every device (issue #128):
+CDI issues SCSI TEST UNIT READY (`sg_turs`) to every SATA and SAS device (issue #128):
 
 - Only a genuine *Not Ready* sense (sg_turs exit 2) or medium/hardware error (exit 3) counts as **Not Ready**. A Not Ready drive is retried once after a best-effort START UNIT (`sg_start --start`).
 - Tool missing, timeout, permission/open failure, or transport timeout → readiness **Unknown**, flag `TUR_UNAVAILABLE`. Not a fail-gate.
 - **SCSI/SAS** Not Ready after retry → **F-NO-RESPONSE** fail-gate.
-- **ATA/NVMe** Not Ready is waived when the drive returned readable SMART/health data (flag `TUR_NOT_READY`); the SAT/NVMe translation of TUR is not trusted over valid health data.
+- **ATA** Not Ready is waived when the drive returned readable SMART/health data (flag `TUR_NOT_READY`); the SAT translation of TUR is not trusted over valid health data.
+
+**NVMe** drives are never sent a SCSI TUR (issue #162). `sg_turs` reaches an NVMe drive only through sg3_utils' SCSI-to-NVMe translation, which some firmware rejects, and each rejected command adds an entry to the drive's error log. Readiness is the controller state the kernel reports in `/sys/class/nvme/<controller>/state`:
+
+- `live` → **Ready**.
+- `dead` (the kernel gave up on the controller, e.g. after a fatal controller status) → **Not Ready**; waived like ATA only if the drive still returned readable health data.
+- A transitional state (`resetting`, `connecting`, `deleting`, `new`), or a state that cannot be read → **Unknown**, flag `TUR_UNAVAILABLE`. Not a fail-gate.
 
 ### Missing and unknown data
 
@@ -306,7 +312,7 @@ SAS SSDs use SCSI/SAS SMART data, SCSI error counters, and any SSD endurance fie
 
 ### NVMe SSD
 
-NVMe SSDs use the standard **SMART / Health Information** log page (**log identifier 02h**) for grading. Optional **OCP** log page **C0h** adds datacenter telemetry but is not required for grading.
+NVMe SSDs use the standard **SMART / Health Information** log page (**log identifier 02h**) for grading. The optional **OCP** log page **C0h** (SMART / Health Information Extended) is not required, but when a drive provides it CDI grades on it as well. The full NVMe rule table, including the C0h rules, is in [NVMe Health Grading Policy](NVME_HEALTH_POLICY.md).
 
 **Collected health data from log 02h:**
 
@@ -316,13 +322,16 @@ NVMe SSDs use the standard **SMART / Health Information** log page (**log identi
 - Media and data-integrity errors.
 - Temperature.
 - Data units read/written, host reads/writes, power cycles, unsafe shutdowns, error log entries, and POH.
-- NVMe self-test log when present.
+- NVMe self-test log (log 06h) when present.
+- Warning and critical composite temperature thresholds (WCTEMP / CCTEMP, from Identify Controller).
 
 **Affects score:**
 
 - Percentage used / endurance — points only below 100%; C/D at/past rated endurance ([details](#ssd-endurance-and-available-spare)).
 - Available spare — graded A–D by `nvme.available_spare_bands`, compared to the drive-reported threshold; CDI uses its configured fallback only when the drive does not report a threshold.
-- Temperature warning/critical bands.
+- Composite temperature at or above the drive's WCTEMP (warning).
+- Lifetime Warning Composite Temperature Time (WCTT) above `nvme.wctt_warning_minutes` (warning).
+- OCP C0h warnings: bad user NAND blocks, system data used, incomplete shutdowns, thermal throttling.
 - NVMe self-test result.
 
 **Hard-fails:**
@@ -334,7 +343,10 @@ NVMe SSDs use the standard **SMART / Health Information** log page (**log identi
 - Available spare is below threshold (AVSPT).
 - Percentage used exceeds the CDI threshold (`binary` only; `abcdf` grades C/D).
 - Failed NVMe self-tests (result codes 5–7) per [Self-test history](#self-test-history). CDI accepts both `entries[].result` and smartctl `table[].self_test_result.value` shapes.
-- Temperature above maximum operating temperature.
+- Composite temperature at or above the drive's CCTEMP. The fixed 55/60 °C fallback is never used for NVMe.
+- Lifetime Critical Composite Temperature Time (CCTT) above `nvme.cctt_critical_minutes` (default 0).
+- Endurance Group Critical Warning Summary is non-zero, when reported.
+- OCP C0h, when present: capacitor health below `nvme.ocp.capacitor_health_min`, uncorrectable read errors, uncorrected end-to-end errors, bad user NAND blocks below `nvme.ocp.bad_user_nand_critical`, system data used at 100%. These thresholds are CDI's own, not OCP requirements.
 
 **Telemetry only:**
 

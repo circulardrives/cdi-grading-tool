@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-18
+
+A full review of the grading engine, reports, API, dashboard and packaging, plus a check of the spec against NVMe Base 2.4 and OCP 2.7. Several fixes change what a report shows or how a drive grades; read the upgrade notes before rolling this out.
+
+### Upgrade notes
+- **Grades can change.** NVMe drives that report only one temperature threshold are no longer failed against the 60 °C HDD fallback. Under `abcdf`, self-test failures on drives past 65,535 power-on hours are now aged correctly, which can lower a grade. Under `binary`, an aborted NVMe self-test no longer fails a drive, and a really failed one now does.
+- **Reports look different.** HTML and CSV reports list each drive's deductions again. PDF reports now show the grade table and evidence cards instead of the wide data table.
+- **The API refuses to start on a LAN address with the example token** (`replace-with-strong-token`). Set a real token first.
+- **Editing a bench's address removes its saved token.** Enter the new bench's token in the same edit.
+- **Threshold configs are checked more strictly.** A partial band table that no longer runs in order once merged with the defaults is an error (CLI exit 2, HTTP 400), as is an invalid `nvme.endurance_exceeded_grade`.
+- **CSV cells that start with `=`, `+`, `-` or `@` get a leading apostrophe.** Scripts that read model or serial columns should expect it on such values.
+- **The Docker API image is about 120 MB larger** (PDF support).
+
+### Security
+- **Bench tokens stay with their address:** editing a bench's address no longer sends its saved token to the new address (during the edit, or on later checks and scans). The token is dropped unless a new one is supplied, and the old bench's reported name and cached scan are forgotten. The dashboard's edit dialog asks for the new token.
+- **Discovery probes** refuse redirects, ignore proxy environment variables and read at most 64 KiB. A host in a scanned subnet could previously redirect the probe (and the probe token) to any URL and have its JSON returned.
+- **Example token refused on the LAN:** the API will not bind a non-loopback address with `CDI_HEALTH_API_TOKEN=replace-with-strong-token` (the value in the example env files) or a blank token.
+- **CSV exports** prefix cells that start with `=`, `+`, `-`, `@`, tab or CR with an apostrophe, so drive or bench strings are never run as spreadsheet formulas.
+- **API reports:** `output_file` must end in the requested `format`'s extension (a CSV saved as `.html` was served as HTML), and reports requested in the same second can no longer share a file.
+- **Token files:** the API token file is installed mode 600 (#163); `docker-up.sh` keeps `deploy/docker/.env` at 600; the dashboard's systemd env file is installed 600.
+- **Docs:** CDI Health is not published on PyPI. The README no longer says `pip install cdi-health`, a name this project does not own.
+
+### Fixed
+- **Reports show deductions again:** every HTML evidence card said "No score deductions — metrics within policy" and the CSV Deductions column was "—", including for grade F drives (regression in 0.12.0).
+- **PDF reports contain the grades:** PDFs rendered only the wide data table, cut off after four columns. They now show the score/grade/status table and each drive's evidence card. Empty categories no longer take a page each.
+- **UNGRADED drives never show a grade:** `scan --explain` printed "Grade A, Score 100, Certified: Yes" for a drive whose SMART data could not be read; JSON/YAML/API records kept `certification: "true"` and a `grading_explanation` with a grade.
+- **NVMe temperature:** a drive reporting only WCTEMP (or only CCTEMP) had the missing limit filled in from the 55/60 °C HDD fallback and could be graded F below its own warning threshold. NVMe never uses that fallback now, and its thresholds are inclusive (≥ WCTEMP warns, ≥ CCTEMP fails), as `docs/NVME_HEALTH_POLICY.md` states.
+- **Self-test recency past 65,535 power-on hours:** ATA/SCSI self-test logs store the hour in 16 bits, so on older drives every failure looked old and was under-penalised (`abcdf`).
+- **NVMe failed self-test count** used result 1 (aborted) instead of 5–7 (failed); under `binary` an aborted test graded the drive F.
+- **NVMe readiness (#162):** NVMe drives are no longer sent a SCSI TEST UNIT READY through sg3_utils' translation layer, which some firmware rejects and logs as errors. Readiness is the controller state in `/sys/class/nvme/<controller>/state`.
+- **SAS identity:** vendor, model and firmware were "Not Reported" for SAS drives scanned with smartctl 7.2 (Ubuntu 22.04).
+- **Threshold overrides:** a partial band table (e.g. `reallocated_sectors_bands: {D: 20}`) is rejected when it no longer runs in order once merged with the defaults, instead of silently grading with a mixed table. `nvme.endurance_exceeded_grade` is validated at load.
+- **CLI:** `scan --device /dev/nvme12` no longer returns `/dev/nvme1`; `selftest --abort` / `--status` without `--device` exit 2 instead of starting a self-test on every drive.
+- **#167 follow-ups:** `capacity` is filled in `scan -o csv` and the drive CSV export; the Docker API image can make PDF reports (new `pdf` extra; image is ~120 MB larger); reports and the CSV `bench` column name a bench added by address by its hostname.
+- **Dashboard:** "Scan all benches" also scans the drives on the bench the dashboard runs on.
+- **Docker:** demo mode ("Use mock data") works in the Docker stack (the sample-drive path is allowed in the API image).
+- **`.deb` / `.rpm` dependency locks:** the package shipped one dependency lock made on Python 3.12. It pinned a release that Python 3.10 cannot install, so the post-install step failed on Ubuntu 22.04. The package now ships a lock per Python version (3.10–3.14) and uses the one for the system `python3`; a newer Python falls back to the package's own requirements.
+- **`.deb` install test** runs on Ubuntu 24.04, Debian 12 and Debian 13 (was Ubuntu 22.04 and Debian 12).
+- **Host dependency installer:** `install-host-dependencies.sh` no longer aborts with "unbound variable" after installing OpenSeaChest or building nvme-cli.
+- **Dashboard systemd env example** uses the variable names the proxy reads (`VITE_CDI_API_PROXY_TARGET`, `CDI_HEALTH_API_TOKEN`).
+- **NVMe self-test code 3h** (Host-Initiated Refresh) is recognised instead of shown as "Unknown (3)" / not running.
+- **Spec:** `docs/CDI_HEALTH_SPEC.md` and `docs/NVME_HEALTH_POLICY.md` checked against NVMe Base 2.4 and OCP 2.7. Corrected: OCP config key names that did not exist, section/figure references, the meaning of Critical Warning bit 1, and the NVMe fail-gates the core spec did not list (CCTT, EGCWS, OCP C0h). No grading rule changed.
+
+### Added
+- **Static public demo** of the dashboard with sample drives (#169).
+
+### Changed
+- Bun 1.4.4 for the dashboard (CI, `packageManager`, Docker builder).
+
 ## [0.13.1] - 2026-09-26
 
 ### Fixed
@@ -115,7 +164,8 @@ See git history and [v0.9.0 release notes](https://github.com/circulardrives/cdi
 ### Added
 - Initial beta release (pre-dashboard CLI line).
 
-[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/circulardrives/cdi-grading-tool/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.14.0
 [0.13.1]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.13.1
 [0.13.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.13.0
 [0.12.0]: https://github.com/circulardrives/cdi-grading-tool/releases/tag/v0.12.0

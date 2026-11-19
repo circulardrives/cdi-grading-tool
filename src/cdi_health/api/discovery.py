@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import os
@@ -45,6 +46,30 @@ PRIVATE_NETWORKS = (
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("169.254.0.0/16"),
 )
+
+
+# A /health answer is a few hundred bytes; anything much larger is not one.
+MAX_PROBE_RESPONSE_BYTES = 64 * 1024
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects so a token never leaves the address it was sent to."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ANN201
+        return None
+
+
+def build_direct_opener() -> urllib.request.OpenerDirector:
+    """Opener for talking to benches on the LAN.
+
+    Redirects are refused, and ``ProxyHandler({})`` ignores HTTP(S)_PROXY:
+    benches are reached directly, at the address that was validated.
+    """
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirectHandler())
+
+
+def _open_probe(request: urllib.request.Request, timeout: float):  # noqa: ANN202
+    return build_direct_opener().open(request, timeout=timeout)
 
 
 class DiscoveryError(ValueError):
@@ -237,16 +262,27 @@ def probe_cdi_health(
     probe_token: str | None,
     timeout_seconds: float,
 ) -> dict[str, Any] | None:
-    """Probe a remote CDI Health API health endpoint."""
+    """Probe a remote CDI Health API health endpoint.
+
+    Only this host and port are contacted. A redirect is refused rather than
+    followed: following one would send ``probe_token`` wherever a scanned
+    host points, and hand the caller whatever that other URL returns.
+    """
     url = f"http://{ip}:{port}/api/v1/health"
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     if probe_token:
         request.add_header("X-API-Token", probe_token)
 
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        with _open_probe(request, timeout_seconds) as response:
+            raw = response.read(MAX_PROBE_RESPONSE_BYTES + 1)
+    except (urllib.error.URLError, TimeoutError, http.client.HTTPException, OSError):
+        return None
+    if len(raw) > MAX_PROBE_RESPONSE_BYTES:
+        return None
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return None
 
     return payload if isinstance(payload, dict) else None

@@ -675,6 +675,55 @@ def test_fleet_csv_single_bench_has_exact_cli_columns(api_client: TestClient, fa
     assert api_client.get("/api/v1/fleet/devices.csv?machine_id=nope").status_code == 404
 
 
+@pytest.mark.parametrize(
+    ("machine", "expected"),
+    [
+        # Added by address: the saved name is the address, so use what the bench calls itself.
+        ({"name": "192.168.0.74", "address": "http://192.168.0.74:8844", "remote_hostname": "bench-01"}, "bench-01"),
+        ({"name": "192.168.0.74:8844", "address": "192.168.0.74:8844", "remote_hostname": "bench-01"}, "bench-01"),
+        ({"name": "10.0.0.5:9000", "address": "http://10.0.0.5:9000/", "remote_hostname": "bench-02"}, "bench-02"),
+        ({"name": "", "address": "10.0.0.5:8844", "remote_hostname": "bench-02.lab.example"}, "bench-02"),
+        # A name someone chose is kept.
+        ({"name": "Rack 3 left", "address": "10.0.0.5:8844", "remote_hostname": "bench-02"}, "Rack 3 left"),
+        # Nothing reported yet (never checked, or an older API): fall back to the saved name.
+        ({"name": "192.168.0.74", "address": "192.168.0.74:8844", "remote_hostname": None}, "192.168.0.74"),
+        ({"name": "", "address": "http://192.168.0.74:8844/"}, "192.168.0.74"),
+        # A bench that reports an IP as its hostname is not shortened to "192".
+        ({"name": "192.168.0.74", "address": "192.168.0.74", "remote_hostname": "192.168.0.74"}, "192.168.0.74"),
+        ({}, "Unnamed bench"),
+    ],
+)
+def test_bench_display_name(machine: dict[str, Any], expected: str) -> None:
+    from cdi_health.api.machines import bench_display_name
+
+    assert bench_display_name(machine) == expected
+
+
+def test_fleet_csv_names_a_bench_added_by_address_by_its_hostname(
+    api_client: TestClient, fake_remote: FakeRemote
+) -> None:
+    """#167: the bench column showed the IP while the dashboard showed the bench's hostname."""
+    import csv
+    import io
+
+    # What the dashboard saves when a bench is added by address and not named.
+    machine_id = _register(api_client, fake_remote.address, fake_remote.address)["id"]
+    assert api_client.post(f"/api/v1/machines/{machine_id}/check").status_code == 200
+    assert api_client.post("/api/v1/fleet/scan").status_code == 200
+
+    fleet = api_client.get("/api/v1/fleet/devices.csv")
+    benches = {row["bench"] for row in csv.DictReader(io.StringIO(fleet.text))}
+    assert "bench-01" in benches
+    assert fake_remote.address not in benches
+
+    single = api_client.get(f"/api/v1/fleet/devices.csv?machine_id={machine_id}")
+    assert 'filename="cdi-drives-bench-01-' in single.headers["content-disposition"]
+
+    report = api_client.post("/api/v1/reports", json={"source": "fleet", "format": "csv"})
+    assert report.status_code == 200, report.text
+    assert "bench-01" in [host["name"] for host in report.json()["hosts"]]
+
+
 # --- self-discovery: never add this bench as a remote of itself ------------
 
 SELF_DETAIL = "That address is this bench itself"
@@ -730,6 +779,73 @@ def test_edit_bench_address_refuses_own_address(api_client: TestClient, fake_rem
 
     # Edits that do not touch the address never probe.
     assert api_client.patch(f"/api/v1/machines/{machine_id}", json={"notes": "rack 2"}).status_code == 200
+
+
+# --- editing a bench's address: the saved token stays with the old address ---
+
+
+def _tokens_received(fake_remote: FakeRemote) -> list[str]:
+    return [r["headers"]["x-api-token"] for r in fake_remote.requests if "x-api-token" in r["headers"]]
+
+
+def test_editing_the_address_never_sends_the_saved_token_there(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    """The saved token was sent to the new address during the PATCH and on every later check and scan."""
+    machine_id = _register(api_client, "Bench A", f"127.0.0.1:{_closed_port()}")["id"]
+
+    response = api_client.patch(f"/api/v1/machines/{machine_id}", json={"address": fake_remote.address})
+    assert response.status_code == 200, response.text
+    assert response.json()["has_api_token"] is False
+
+    api_client.post(f"/api/v1/machines/{machine_id}/check")
+    api_client.post("/api/v1/fleet/scan")
+    assert fake_remote.requests, "the new address was never contacted"
+    assert _tokens_received(fake_remote) == []
+
+
+def test_editing_the_address_with_a_new_token_uses_that_token(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    machine_id = _register(api_client, "Bench A", f"127.0.0.1:{_closed_port()}", token="old-bench-token")["id"]
+
+    response = api_client.patch(
+        f"/api/v1/machines/{machine_id}", json={"address": fake_remote.address, "api_token": REMOTE_TOKEN}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["has_api_token"] is True
+
+    check = api_client.post(f"/api/v1/machines/{machine_id}/check").json()
+    assert check["machine"]["status"] == "reachable"
+    assert set(_tokens_received(fake_remote)) == {REMOTE_TOKEN}
+
+
+def test_rewriting_the_same_address_keeps_the_saved_token(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    """``host:8844`` → ``http://host:8844/`` is the same bench, not a new address."""
+    machine_id = _register(api_client, "Bench A", "10.0.0.5:8844")["id"]
+
+    for same in ("10.0.0.5", "http://10.0.0.5:8844/", "10.0.0.5:8844"):
+        response = api_client.patch(f"/api/v1/machines/{machine_id}", json={"address": same})
+        assert response.status_code == 200, response.text
+        assert response.json()["has_api_token"] is True
+
+    assert api_client.patch(f"/api/v1/machines/{machine_id}", json={"notes": "rack 2"}).json()["has_api_token"] is True
+
+
+def test_editing_the_address_forgets_the_old_bench(api_client: TestClient, fake_remote: FakeRemote) -> None:
+    """A different address may be a different bench: its name and drives must not carry over."""
+    machine_id = _register(api_client, "Bench A", fake_remote.address)["id"]
+    assert api_client.post(f"/api/v1/machines/{machine_id}/check").status_code == 200
+    assert api_client.post("/api/v1/fleet/scan").status_code == 200
+    before = api_client.get(f"/api/v1/machines/{machine_id}").json()
+    assert before["remote_hostname"] == "bench-01"
+    assert before["last_scan_at"] is not None
+
+    response = api_client.patch(f"/api/v1/machines/{machine_id}", json={"address": f"127.0.0.1:{_closed_port()}"})
+    assert response.status_code == 200, response.text
+    after = response.json()
+    assert after["remote_hostname"] is None
+    assert after["status"] == "unknown"
+    assert after["last_scan_at"] is None
+
+    fleet = api_client.get("/api/v1/fleet/devices").json()
+    assert [d for d in fleet["devices"] if d["machine_id"] == machine_id] == []
 
 
 def test_check_refuses_self_and_fleet_skips_it(api_client: TestClient, fake_remote: FakeRemote) -> None:

@@ -79,6 +79,8 @@ ensure_env() {
     return 0
   fi
   mkdir -p "$(dirname "$ENV_FILE")"
+  # The file holds the API token: keep it private to this user.
+  umask 077
   local token
   token="$(openssl rand -hex 24 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(24))')"
   if [[ -f "$ENV_FILE" ]]; then
@@ -96,6 +98,7 @@ DASHBOARD_PORT=${DASHBOARD_PORT}
 CDI_HEALTH_API_TOKEN=${token}
 EOF
   fi
+  chmod 600 "$ENV_FILE"
   echo "Wrote ${ENV_FILE} (generated CDI_HEALTH_API_TOKEN)."
 }
 

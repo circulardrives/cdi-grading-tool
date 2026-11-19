@@ -469,3 +469,82 @@ class TestWearAndSparePolicy:
         assert calculate_health_score(_nvme(spare=85)).grade == "B"
         with pytest.raises(ConfigError):
             cfg.load_from_dict({"nvme": {"available_spare_bands": {"A": 40, "B": 60}}})
+
+
+class TestSelfTestHoursPastSixteenBits:
+    """ATA and SCSI self-test logs store the power-on hour in 16 bits (abcdf recency, §10)."""
+
+    @staticmethod
+    def _ata(poh: int, logged_hours: list[int]) -> dict:
+        return {
+            "transport_protocol": "ATA",
+            "media_type": "HDD",
+            "drive_class": "enterprise",
+            "smart_status": True,
+            "state": "Ready",
+            "power_on_hours": poh,
+            "reallocated_sectors": 0,
+            "pending_sectors": 0,
+            "uncorrectable_errors": 0,
+            "smart_self_tests": [
+                {"status": {"passed": False, "string": "Completed: read failure"}, "lifetime_hours": hours}
+                for hours in logged_hours
+            ],
+        }
+
+    @staticmethod
+    def _sas(poh: int, logged_hours: list[int]) -> dict:
+        return {
+            "transport_protocol": "SCSI",
+            "media_type": "HDD",
+            "smart_status": True,
+            "state": "Ready",
+            "power_on_hours": poh,
+            "grown_defects": 0,
+            "uncorrected_errors": 0,
+            "smart_self_tests": [
+                {"status": {"passed": False, "string": "Failed"}, "power_on_time": {"hours": hours}}
+                for hours in logged_hours
+            ],
+        }
+
+    @staticmethod
+    def _history(device: dict) -> tuple[int, int]:
+        info = HealthScoreCalculator().calculate(device).attribute_grades["self_test_history"]
+        return info["recent_failures"], info["old_failures"]
+
+    def test_ata_failures_after_the_wrap_are_recent(self) -> None:
+        """Failures at hours 65,900 and 65,950 are logged as 364 and 414."""
+        device = self._ata(66_000, [414, 364])
+        assert self._history(device) == (2, 0)
+        assert HealthScoreCalculator().calculate(device).grade == "F"
+
+    def test_ata_old_failure_before_the_wrap_stays_old(self) -> None:
+        """A failure at hour 60,000 on a drive now at 66,000 is 6,000 hours old."""
+        assert self._history(self._ata(66_000, [60_000])) == (0, 1)
+
+    def test_ata_below_the_limit_is_unchanged(self) -> None:
+        assert self._history(self._ata(60_000, [59_950, 59_900])) == (2, 0)
+        assert self._history(self._ata(60_000, [10_000])) == (0, 1)
+
+    def test_sas_saturated_hour_is_unknown_so_recent(self) -> None:
+        """FFFFh on a drive past 65,535 hours only means "65,535 or later"."""
+        device = self._sas(70_000, [0xFFFF])
+        assert self._history(device) == (1, 0)
+        assert HealthScoreCalculator().calculate(device).grade == "D"
+
+    def test_sas_real_hour_before_saturation_stays_old(self) -> None:
+        assert self._history(self._sas(70_000, [40_000])) == (0, 1)
+
+    def test_sas_at_exactly_ffff_hours_is_a_real_reading(self) -> None:
+        """A drive at 65,535 hours with a failure logged at 65,535 failed just now."""
+        assert self._history(self._sas(0xFFFF, [0xFFFF])) == (1, 0)
+
+    def test_nvme_hours_are_never_wrapped(self) -> None:
+        device = {
+            "transport_protocol": "NVMe",
+            "smart_status": True,
+            "power_on_hours": 70_000,
+            "nvme_self_test_log": {"entries": [{"self_test_result": {"value": 6}, "power_on_hours": 364}]},
+        }
+        assert self._history(device) == (0, 1)

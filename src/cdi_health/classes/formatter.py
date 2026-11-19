@@ -37,6 +37,33 @@ from cdi_health.classes.revert import csv_cell, flag_duplicate_serials, is_ungra
 from cdi_health.classes.scoring import HealthScoreCalculator, ScoreDeduction
 
 
+def format_capacity(capacity: Any, *, missing: str = "-") -> str:
+    """Capacity in decimal units ("960 GB", "1.92 TB"), as printed on drive labels.
+
+    :param capacity: Size in bytes (int or numeric string)
+    :param missing: Text for an unreported size
+    """
+    if capacity is None:
+        return missing
+
+    try:
+        value = float(int(capacity))
+    except (ValueError, TypeError):
+        return str(capacity)
+
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    unit_idx = 0
+    while value >= 1000 and unit_idx < len(units) - 1:
+        value /= 1000
+        unit_idx += 1
+
+    if value >= 100:
+        return f"{value:.0f} {units[unit_idx]}"
+    if value >= 10:
+        return f"{value:.1f} {units[unit_idx]}"
+    return f"{value:.2f} {units[unit_idx]}"
+
+
 class BaseFormatter(ABC):
     """Base class for output formatters."""
 
@@ -282,29 +309,7 @@ class TableFormatter(BaseFormatter):
 
     def _format_capacity(self, capacity) -> str:
         """Format capacity in human-readable form."""
-        if capacity is None:
-            return "-"
-
-        try:
-            bytes_val = int(capacity)
-        except (ValueError, TypeError):
-            return str(capacity)
-
-        # Convert to appropriate unit
-        units = ["B", "KB", "MB", "GB", "TB", "PB"]
-        unit_idx = 0
-        value = float(bytes_val)
-
-        while value >= 1000 and unit_idx < len(units) - 1:
-            value /= 1000
-            unit_idx += 1
-
-        if value >= 100:
-            return f"{value:.0f} {units[unit_idx]}"
-        elif value >= 10:
-            return f"{value:.1f} {units[unit_idx]}"
-        else:
-            return f"{value:.2f} {units[unit_idx]}"
+        return format_capacity(capacity)
 
     def _align_text(self, text: str, width: int, align: str) -> str:
         """Align text within width, accounting for ANSI codes."""
@@ -529,9 +534,20 @@ class CSVFormatter(BaseFormatter):
         writer.writeheader()
 
         for device in devices:
-            writer.writerow({field: csv_cell(device.get(field)) for field in self.FIELDS})
+            writer.writerow({field: self._cell(device, field) for field in self.FIELDS})
 
         return output.getvalue()
+
+    @staticmethod
+    def _cell(device: dict, field: str) -> str:
+        """One CSV cell. ``capacity`` is the size as the table shows it."""
+        value = device.get(field)
+        if field == "capacity":
+            # Scans report the size as ``bytes``; ``capacity`` is display-only.
+            if value is None:
+                value = device.get("bytes")
+            return format_capacity(value, missing="")
+        return csv_cell(value)
 
     def _enrich_devices(self, devices: list[dict]) -> list[dict]:
         """Add health scores and Revert Standard §13/§15 fields."""

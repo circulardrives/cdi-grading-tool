@@ -436,6 +436,20 @@ def _args(**overrides) -> Namespace:
     return Namespace(**base)
 
 
+@pytest.mark.parametrize("flag", ["abort", "status"])
+def test_abort_and_status_without_a_device_start_nothing(flag: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """``selftest --abort`` with no --device used to start a short test on every drive."""
+    from cdi_health.cli import cmd_selftest
+
+    with patch("cdi_health.classes.nvme_selftest.NVMeSelfTest") as handler_class:
+        rc = cmd_selftest(_args(device=None, wait=False, **{flag: True}))
+
+    assert rc == 2
+    assert f"--{flag} needs --device" in capsys.readouterr().err
+    handler_class.find_supported_devices.assert_not_called()
+    handler_class.assert_not_called()
+
+
 def _handler(logs: list[list[dict]]) -> MagicMock:
     """Mock handler whose get_results() returns successive entry lists (last one repeats)."""
     handler = MagicMock()
@@ -540,3 +554,10 @@ class TestCmdSelftestScanWait:
         assert result["test_aborted"] is True
         assert result["test_failed"] is False
         handler.execute_short.assert_not_called()
+
+
+def test_host_initiated_refresh_is_a_known_self_test_operation() -> None:
+    """Self-test code 3h (NVMe Base 2.3+): it showed as "Unknown (3)" and was not counted as running."""
+    assert nst.SELF_TEST_CODE_STRINGS[nst.CODE_REFRESH] == "Host-Initiated Refresh"
+    assert nst.CODE_REFRESH in nst.IN_PROGRESS_OPERATIONS
+    assert nst._op_string(nst.CODE_REFRESH) == "Host-Initiated Refresh in progress"

@@ -31,9 +31,10 @@ ata:
   uncorrectable_errors_bands: {A: 0, B: 5, C: 25, D: 100}
 
 # NVMe Device Thresholds
-# See docs/NVME_HEALTH_POLICY.md for the full Base Spec 2.3 + OCP v2.7 algorithm.
+# See docs/NVME_HEALTH_POLICY.md for the full Base Spec 2.4 + OCP v2.7 algorithm.
 nvme:
-  # Maximum percentage used endurance (0-100, some drives report >100)
+  # Percentage Used at which rated endurance is consumed. The drive reports
+  # 0-255: values may exceed 100, and anything above 254 reads as 255.
   maximum_percentage_used: 100
 
   # SSDs at/past rated endurance (percentage used >= maximum_percentage_used)

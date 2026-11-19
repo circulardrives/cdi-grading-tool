@@ -26,6 +26,7 @@ Main entry point for the CDI Health Scanner tool.
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -176,6 +177,9 @@ def scan_single_mock(mock_file: str) -> list[dict]:
     return [device.to_dict(pop=True)]
 
 
+_NVME_NAMESPACE_SUFFIX_RE = re.compile(r"n\d+(p\d+)?")
+
+
 def _filter_devices_by_path(devices: list[dict], path: str) -> list[dict]:
     """Keep devices whose ``dut`` matches *path* (exact, or NVMe controller vs namespace)."""
     path = path.strip()
@@ -191,10 +195,11 @@ def _filter_devices_by_path(devices: list[dict], path: str) -> list[dict]:
             continue
         if "/nvme" not in dut:
             continue
-        # e.g. dut=/dev/nvme0 and path=/dev/nvme0n1, or the reverse
-        if path.startswith(dut) and len(path) > len(dut):
-            out.append(d)
-        elif dut.startswith(path) and len(dut) > len(path) and dut[len(path) : len(path) + 1] == "n":
+        # e.g. dut=/dev/nvme0 and path=/dev/nvme0n1, or the reverse. The rest
+        # must be a namespace (or partition) suffix: /dev/nvme1 is not /dev/nvme12.
+        if (path.startswith(dut) and _NVME_NAMESPACE_SUFFIX_RE.fullmatch(path[len(dut) :])) or (
+            dut.startswith(path) and _NVME_NAMESPACE_SUFFIX_RE.fullmatch(dut[len(path) :])
+        ):
             out.append(d)
     return out
 
@@ -474,6 +479,12 @@ def cmd_selftest(args: Namespace) -> int:
     # Setup logging
     setup_logging(verbose=args.verbose, no_color=args.no_color)
 
+    # Without a device these fell through to "start a test on every drive".
+    if (getattr(args, "abort", False) or getattr(args, "status", False)) and not args.device:
+        flag = "--abort" if getattr(args, "abort", False) else "--status"
+        print(f"selftest {flag} needs --device (for example: --device /dev/nvme0).", file=sys.stderr)
+        return 2
+
     import time
 
     from cdi_health.classes.devices import Device
@@ -689,16 +700,16 @@ def cmd_selftest(args: Namespace) -> int:
 
                 for use_sudo in [True, False]:
                     sudo_prefix = ["sudo"] if use_sudo else []
-                    result = subprocess.run(
+                    id_ctrl = subprocess.run(
                         sudo_prefix + ["nvme", "id-ctrl", device_path, "-o", "json"],
                         capture_output=True,
                         text=True,
                         timeout=5,
                     )
-                    if result.returncode == 0:
+                    if id_ctrl.returncode == 0:
                         import json
 
-                        data = json.loads(result.stdout)
+                        data = json.loads(id_ctrl.stdout)
                         model = data.get("mn", "Unknown").strip() or "Unknown"
                         serial = data.get("sn", "Unknown").strip() or "Unknown"
                         if model != "Unknown":
@@ -857,16 +868,16 @@ def cmd_selftest(args: Namespace) -> int:
 
                     for use_sudo in [True, False]:
                         sudo_prefix = ["sudo"] if use_sudo else []
-                        result = subprocess.run(
+                        id_ctrl = subprocess.run(
                             sudo_prefix + ["nvme", "id-ctrl", dev_info["device"], "-o", "json"],
                             capture_output=True,
                             text=True,
                             timeout=5,
                         )
-                        if result.returncode == 0:
+                        if id_ctrl.returncode == 0:
                             import json
 
-                            data = json.loads(result.stdout)
+                            data = json.loads(id_ctrl.stdout)
                             model = data.get("mn", "Unknown").strip() or "Unknown"
                             serial = data.get("sn", "Unknown").strip() or "Unknown"
                             if model != "Unknown":

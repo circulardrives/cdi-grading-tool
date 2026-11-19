@@ -237,7 +237,7 @@ Linux release packages are built in CI (see `.github/workflows/release.yml`) usi
 Every run install-tests the built `.deb` in clean containers. Reproduce locally after building `dist/cdi-health_*_all.deb`:
 
 ```bash
-docker run --rm -v "$PWD:/work:ro" -w /work ubuntu:22.04 bash scripts/deb-smoke-test.sh
+docker run --rm -v "$PWD:/work:ro" -w /work ubuntu:24.04 bash scripts/deb-smoke-test.sh
 ```
 
 **Release gating:** on a `v*` tag, images are pushed to GHCR and the GitHub Release is created only after pytest and the `.deb` install test pass. The workflow token is read-only by default; only the publish jobs get `packages: write` / `contents: write`. Release assets ship with a `SHA256SUMS` file and GitHub build-provenance attestations (`gh attestation verify <file> --repo circulardrives/cdi-grading-tool`); images carry SBOM + provenance attestations.
@@ -272,7 +272,7 @@ pip install -e .[dev]
 1. Update version in git tags
 2. Build: `python -m build`
 3. Test installation: `pip install dist/cdi_health-*.whl`
-4. Upload to PyPI: `twine upload dist/*`
+4. Releases are published by `.github/workflows/release.yml` on a `v*` tag (GitHub Release + GHCR images). The package is not published to PyPI.
 
 ## Debugging
 
