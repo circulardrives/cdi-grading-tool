@@ -2,9 +2,9 @@
 # Install-test a cdi-health .deb inside a throwaway Debian/Ubuntu container.
 #
 # Run from the repo root after building dist/cdi-health_*_all.deb (release.yml
-# does this in CI for ubuntu:22.04 and debian:bookworm):
+# does this in CI for ubuntu:24.04, debian:bookworm and debian:trixie):
 #
-#   docker run --rm -v "$PWD:/work:ro" -w /work ubuntu:22.04 \
+#   docker run --rm -v "$PWD:/work:ro" -w /work ubuntu:24.04 \
 #     bash scripts/deb-smoke-test.sh [dist/cdi-health_X.Y.Z_all.deb]
 #
 # Checks: apt resolves Depends, postinst builds the venv (and fails the install

@@ -43,6 +43,8 @@ A full review of the grading engine, reports, API, dashboard and packaging, plus
 - **#167 follow-ups:** `capacity` is filled in `scan -o csv` and the drive CSV export; the Docker API image can make PDF reports (new `pdf` extra; image is ~120 MB larger); reports and the CSV `bench` column name a bench added by address by its hostname.
 - **Dashboard:** "Scan all benches" also scans the drives on the bench the dashboard runs on.
 - **Docker:** demo mode ("Use mock data") works in the Docker stack (the sample-drive path is allowed in the API image).
+- **`.deb` / `.rpm` dependency locks:** the package shipped one dependency lock made on Python 3.12. It pinned a release that Python 3.10 cannot install, so the post-install step failed on Ubuntu 22.04. The package now ships a lock per Python version (3.10–3.14) and uses the one for the system `python3`; a newer Python falls back to the package's own requirements.
+- **`.deb` install test** runs on Ubuntu 24.04, Debian 12 and Debian 13 (was Ubuntu 22.04 and Debian 12).
 - **Host dependency installer:** `install-host-dependencies.sh` no longer aborts with "unbound variable" after installing OpenSeaChest or building nvme-cli.
 - **Dashboard systemd env example** uses the variable names the proxy reads (`VITE_CDI_API_PROXY_TARGET`, `CDI_HEALTH_API_TOKEN`).
 - **NVMe self-test code 3h** (Host-Initiated Refresh) is recognised instead of shown as "Unknown (3)" / not running.

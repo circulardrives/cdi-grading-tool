@@ -1,8 +1,9 @@
 #!/bin/sh
 # cdi-health post-install (deb postinst / rpm %post).
 #
-# Builds /opt/cdi-health/venv from the bundled wheel + requirements-lock.txt,
-# reloads systemd, and restarts cdi-health-api if it was already running (so an
+# Builds /opt/cdi-health/venv from the bundled wheel and the dependency lock
+# for this system's python3 (requirements-lock-py3.X.txt), reloads systemd,
+# and restarts cdi-health-api if it was already running (so an
 # upgrade never leaves old code serving). Any failure aborts the install with a
 # clear message instead of leaving a package whose commands cannot start.
 #
@@ -15,7 +16,6 @@ set -e
 
 ROOT=/opt/cdi-health
 VENV="${ROOT}/venv"
-LOCK="${ROOT}/pkg/requirements-lock.txt"
 UNIT=cdi-health-api.service
 
 die() {
@@ -42,7 +42,6 @@ python_minor() {
 install_venv() {
   command -v python3 >/dev/null 2>&1 || die "python3 not found in PATH"
   wheel=$(find_wheel) || die "no bundled wheel found under ${ROOT}/pkg"
-  [ -f "$LOCK" ] || die "missing ${LOCK}; cannot install reproducible dependencies"
 
   # Recreate the venv when missing, broken, or built for a different python3
   # (e.g. after a distribution upgrade replaced the system interpreter).
@@ -57,11 +56,21 @@ install_venv() {
   pip="${VENV}/bin/pip"
   "$pip" install -q --disable-pip-version-check --upgrade pip ||
     die "could not upgrade pip in ${VENV} (needs network access to PyPI or a mirror; see /etc/pip.conf)"
-  # Locked runtime deps first, then the wheel itself without re-resolving.
-  "$pip" install -q --disable-pip-version-check -r "$LOCK" ||
-    die "could not install dependencies from ${LOCK} (needs network access to PyPI or a mirror; see /etc/pip.conf)"
-  "$pip" install -q --disable-pip-version-check --no-deps --force-reinstall "$wheel" ||
-    die "could not install ${wheel} into ${VENV}"
+  # The package ships one lock per python3 minor version: a release pinned
+  # for one interpreter may not install on another.
+  lock="${ROOT}/pkg/requirements-lock-py${sys_py}.txt"
+  if [ -f "$lock" ]; then
+    # Locked runtime deps first, then the wheel itself without re-resolving.
+    "$pip" install -q --disable-pip-version-check -r "$lock" ||
+      die "could not install dependencies from ${lock} (needs network access to PyPI or a mirror; see /etc/pip.conf)"
+    "$pip" install -q --disable-pip-version-check --no-deps --force-reinstall "$wheel" ||
+      die "could not install ${wheel} into ${VENV}"
+  else
+    # A python3 newer (or older) than the ones this package was locked for.
+    echo "cdi-health: note: no dependency lock for python3 ${sys_py}; resolving from the package's own requirements" >&2
+    "$pip" install -q --disable-pip-version-check --force-reinstall "${wheel}[api]" ||
+      die "could not install ${wheel} and its dependencies into ${VENV} (needs network access to PyPI or a mirror; see /etc/pip.conf)"
+  fi
 
   "${VENV}/bin/python" -c 'import cdi_health' ||
     die "cdi_health does not import from ${VENV}"

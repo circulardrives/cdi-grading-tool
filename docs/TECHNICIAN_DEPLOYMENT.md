@@ -132,7 +132,7 @@ Layout:
 - **`/usr/local/bin/cdi-health`** — CLI
 - **`/usr/local/bin/cdi-health-api`** — API entry point (includes FastAPI/uvicorn dependencies)
 - **`/opt/cdi-health/venv`** — Python venv created at install time (matches system `python3`, including 3.14+)
-- **`/opt/cdi-health/pkg`** — bundled wheel + `requirements-lock.txt` used by postinst
+- **`/opt/cdi-health/pkg`** — bundled wheel + one `requirements-lock-py3.X.txt` per supported python3; postinst uses the one matching the system python3
 - **`/usr/share/cdi-health/examples/`** — LAN drop-in (`systemd/cdi-health-api.service.d/lan.conf`) and `cdi-health-api.env.example`
 
 **Install-time network access:** postinst installs the locked Python dependencies with pip, so the bench needs to reach PyPI (or a mirror). If that fails, `apt` reports an error and the package stays unconfigured — fix the cause and run `sudo dpkg --configure -a`. For air-gapped benches, stage a wheelhouse (`pip download -r /opt/cdi-health/pkg/requirements-lock.txt -d /srv/wheelhouse` on a connected machine with the same Python version) and add to `/etc/pip.conf`:

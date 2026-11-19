@@ -35,9 +35,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Every python3 the packages are installed on gets its own dependency
+      # lock (see "Prepare package layout"). 3.12 is listed last so it stays
+      # the default interpreter for the build itself.
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: |
+            3.10
+            3.11
+            3.13
+            3.14
+            3.12
           cache: pip
 
       - name: Extract version
@@ -61,16 +69,27 @@ jobs:
 
           cp dist/cdi_health-*.whl build/pkg/opt/cdi-health/pkg/
 
-          # Lock runtime deps from a clean venv so .deb postinst installs are reproducible.
-          python -m venv /tmp/cdi-lock-venv
-          /tmp/cdi-lock-venv/bin/pip install --upgrade pip
-          /tmp/cdi-lock-venv/bin/pip install "$(ls dist/cdi_health-*.whl)[api]"
-          # Filter the project itself in every form pip freeze can emit:
-          # "cdi-health==x", "cdi_health==x", "cdi-health @ file://...", "cdi_health @ file://..."
-          /tmp/cdi-lock-venv/bin/pip freeze \
-            | grep -v -E '^cdi[-_]health(==| @)' \
-            > build/pkg/opt/cdi-health/pkg/requirements-lock.txt
-          test -s build/pkg/opt/cdi-health/pkg/requirements-lock.txt
+          # Lock runtime deps from a clean venv so .deb postinst installs are
+          # reproducible. One lock per python3 the package may meet (3.10 on
+          # Ubuntu 22.04 up to 3.14): a single lock made on one interpreter
+          # pins releases that others cannot install (annotated-doc 0.0.7
+          # needs >= 3.11, which broke installs on Ubuntu 22.04). Each lock is
+          # made by a real install on that interpreter, so it is known to
+          # resolve there. postinst picks the one matching the system python3.
+          for pyver in 3.10 3.11 3.12 3.13 3.14; do
+            lock_venv="/tmp/cdi-lock-venv-${pyver}"
+            lock_file="build/pkg/opt/cdi-health/pkg/requirements-lock-py${pyver}.txt"
+            "python${pyver}" -m venv "$lock_venv"
+            "$lock_venv/bin/pip" install --quiet --upgrade pip
+            "$lock_venv/bin/pip" install --quiet "$(ls dist/cdi_health-*.whl)[api]"
+            # Filter the project itself in every form pip freeze can emit:
+            # "cdi-health==x", "cdi_health==x", "cdi-health @ file://...", "cdi_health @ file://..."
+            "$lock_venv/bin/pip" freeze \
+              | grep -v -E '^cdi[-_]health(==| @)' \
+              > "$lock_file"
+            test -s "$lock_file"
+            echo "python ${pyver}: $(wc -l < "$lock_file") pinned packages"
+          done
 
           cat > build/pkg/usr/local/bin/cdi-health << 'WRAPPER'
           #!/bin/sh
@@ -139,8 +158,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # System python3: 3.10 (Jammy) and 3.11 (Bookworm), the oldest runtimes we ship to.
-        image: ["ubuntu:22.04", "debian:bookworm"]
+        # System python3: 3.12 (Ubuntu 24.04), 3.11 (Debian 12), 3.13 (Debian 13).
+        # Each picks its own dependency lock in postinst.
+        image: ["ubuntu:24.04", "debian:bookworm", "debian:trixie"]
     steps:
       - uses: actions/checkout@v4
 
