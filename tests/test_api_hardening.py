@@ -721,9 +721,21 @@ def test_reports_requested_in_the_same_second_get_different_files(
     monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(tmp_path))
     services.reports_directory().mkdir(parents=True, exist_ok=True)
 
-    with ThreadPoolExecutor(max_workers=16) as pool:
-        paths = list(pool.map(lambda _i: services.resolve_report_output_path(None, "html"), range(48)))
+    # Keep asking until the names span two clock seconds, so every run also
+    # covers requests on either side of a second boundary.
+    deadline = time.monotonic() + 3.0
 
+    def ask(_index: int) -> list[Path]:
+        mine: list[Path] = []
+        while time.monotonic() < deadline and len(mine) < 40:
+            mine.append(services.resolve_report_output_path(None, "html"))
+            time.sleep(0.03)
+        return mine
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        paths = [path for chunk in pool.map(ask, range(16)) for path in chunk]
+
+    assert len({path.name[: len("cdi-report-YYYYMMDD-HHMMSS")] for path in paths}) >= 2
     assert len(set(paths)) == len(paths)
     assert all(path.suffix == ".html" for path in paths)
 
@@ -749,3 +761,37 @@ def test_report_file_with_matching_extension_is_accepted(tmp_path: Path, monkeyp
     monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(tmp_path))
     assert services.resolve_report_output_path("Lot-42.HTML", "html").name == "Lot-42.HTML"
     assert services.resolve_report_output_path("lot-42.csv", "csv").name == "lot-42.csv"
+
+
+def test_report_names_stay_unique_when_requests_straddle_a_second(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A request that read the clock in second T but ran after one from T+1 got T's first name again.
+
+    That is the order three requests take when one is delayed between reading
+    the clock and allocating its name; no report file exists yet for any of them.
+    """
+    from datetime import datetime as real_datetime
+
+    from cdi_health.api import services
+
+    monkeypatch.setenv("CDI_HEALTH_DATA_DIR", str(tmp_path))
+    services.reports_directory().mkdir(parents=True, exist_ok=True)
+
+    clock = [
+        real_datetime(2026, 11, 19, 21, 13, 18),
+        real_datetime(2026, 11, 19, 21, 13, 19),
+        real_datetime(2026, 11, 19, 21, 13, 18),
+        real_datetime(2026, 11, 19, 21, 13, 19),
+    ]
+
+    class SteppedClock:
+        @staticmethod
+        def now(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN205
+            return clock.pop(0)
+
+    monkeypatch.setattr(services, "datetime", SteppedClock)
+
+    names = [services.resolve_report_output_path(None, "html").name for _ in range(4)]
+
+    assert len(set(names)) == 4, names
