@@ -192,6 +192,6 @@ jobs:
       - smoke-wheel
       - dashboard
     steps:
-      - uses: re-actors/alls-green@release/v1.2
+      - uses: re-actors/alls-green@release/v1.3
         with:
           jobs: ${{ toJSON(needs) }}
