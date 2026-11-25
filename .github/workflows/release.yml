@@ -189,7 +189,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Build API image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/docker/Dockerfile.api
@@ -203,7 +203,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=cdi-health-api
 
       - name: Build dashboard image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/docker/Dockerfile.dashboard
@@ -275,7 +275,7 @@ jobs:
 
       - name: Build and push API image
         id: push-api
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/docker/Dockerfile.api
@@ -308,7 +308,7 @@ jobs:
 
       - name: Build and push dashboard image
         id: push-dashboard
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/docker/Dockerfile.dashboard
