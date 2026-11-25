@@ -290,7 +290,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=cdi-health-api
 
       - name: Attest API image provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/circulardrives/cdi-health-api
           subject-digest: ${{ steps.push-api.outputs.digest }}
@@ -323,7 +323,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=cdi-health-dashboard
 
       - name: Attest dashboard image provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/circulardrives/cdi-health-dashboard
           subject-digest: ${{ steps.push-dashboard.outputs.digest }}
@@ -364,7 +364,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Attest release asset provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/cdi*
 
